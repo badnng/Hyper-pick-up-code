@@ -1,6 +1,8 @@
 package com.Badnng.moe
 
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
@@ -9,6 +11,7 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
@@ -52,7 +55,7 @@ import com.Badnng.moe.screens.QrCodeDialog
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
-    intentToProcess: Intent? = null // 增加参数接收
+    intentToProcess: Intent? = null
 ) {
     val pagerState = rememberPagerState(pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
@@ -63,10 +66,21 @@ fun HomeScreen(
     val orders by viewModel.orders.collectAsState()
     var selectedOrderForQr by remember { mutableStateOf<OrderEntity?>(null) }
     var isFromNotification by remember { mutableStateOf(false) }
+    var isManaging by remember { mutableStateOf(false) }
+
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
+    
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "nav_alignment") navAlignment = p.getString(key, "center") ?: "center"
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     val activity = context as? MainActivity
     
-    // 监听 intentToProcess 的变化，弹出二维码卡片
     LaunchedEffect(intentToProcess, orders) {
         if (intentToProcess?.getBooleanExtra("show_qr_detail", false) == true) {
             val orderId = intentToProcess.getStringExtra("order_id")
@@ -74,8 +88,7 @@ fun HomeScreen(
             if (order != null) {
                 selectedOrderForQr = order
                 isFromNotification = intentToProcess.getBooleanExtra("from_notification", false)
-                // 成功捕获后清除状态
-                activity?.intentToProcess = null
+                activity?.intentToProcess = null 
             }
         }
     }
@@ -87,8 +100,10 @@ fun HomeScreen(
     }
 
     var isSettingsSubPageOpen by remember { mutableStateOf(false) }
+    val isUiHidden = isSettingsSubPageOpen || isManaging
+    
     val uiAlpha by animateFloatAsState(
-        targetValue = if (isSettingsSubPageOpen) 0f else 1f,
+        targetValue = if (isUiHidden) 0f else 1f,
         label = "uiAlpha"
     )
 
@@ -97,120 +112,78 @@ fun HomeScreen(
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .alpha(uiAlpha)
-                    .navigationBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                contentAlignment = Alignment.BottomCenter
-            ) {
+            if (!isUiHidden) {
+                val alignment = when (navAlignment) {
+                    "left" -> Alignment.BottomStart
+                    "right" -> Alignment.BottomEnd
+                    else -> Alignment.BottomCenter
+                }
+                val barWidth = if (navAlignment == "center") 240.dp else 160.dp
+                
                 Box(
                     modifier = Modifier
-                        .widthIn(min = 200.dp, max = 240.dp)
-                        .height(64.dp)
-                        .border(
-                            BorderStroke(0.5.dp, Color.White.copy(alpha = 0.3f)),
-                            RoundedCornerShape(20.dp)
-                        )
-                        .drawBackdrop(
-                            backdrop = backdrop,
-                            shape = { RoundedCornerShape(20.dp) },
-                            effects = {
-                                vibrancy()
-                                blur(16.dp.toPx())
-                                lens(20.dp.toPx(), 40.dp.toPx())
-                            },
-                            onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = 0.1f))
-                            }
-                        ),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .alpha(uiAlpha)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    contentAlignment = alignment
                 ) {
-                    NavigationBar(
-                        containerColor = Color.Transparent,
-                        modifier = Modifier.fillMaxSize(),
-                        windowInsets = WindowInsets(0, 0, 0, 0)
+                    Box(
+                        modifier = Modifier
+                            .width(barWidth)
+                            .height(64.dp)
+                            .border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
+                            .drawBackdrop(
+                                backdrop = backdrop,
+                                shape = { RoundedCornerShape(20.dp) },
+                                effects = { vibrancy(); blur(16.dp.toPx()); lens(20.dp.toPx(), 40.dp.toPx()) },
+                                onDrawSurface = { drawRect(Color.White.copy(alpha = 0.1f)) }
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        val isHomeSelected = pagerState.currentPage == 0
-                        val homeIconSize by animateDpAsState(if (isHomeSelected) 28.dp else 24.dp, label = "hSize")
-
-                        NavigationBarItem(
-                            icon = { Icon(Icons.Default.Home, null, Modifier.size(homeIconSize)) },
-                            label = { Text("识别", fontSize = 12.sp) },
-                            selected = isHomeSelected,
-                            onClick = { if (!isSettingsSubPageOpen) coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                            colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                        )
-
-                        val isSettingsSelected = pagerState.currentPage == 1
-                        val settingsIconSize by animateDpAsState(if (isSettingsSelected) 28.dp else 24.dp, label = "sSize")
-
-                        NavigationBarItem(
-                            icon = { Icon(Icons.Default.Settings, null, Modifier.size(settingsIconSize)) },
-                            label = { Text("设置", fontSize = 12.sp) },
-                            selected = isSettingsSelected,
-                            onClick = { if (!isSettingsSubPageOpen) coroutineScope.launch { pagerState.animateScrollToPage(1) } },
-                            colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                        )
+                        NavigationBar(containerColor = Color.Transparent, modifier = Modifier.fillMaxSize(), windowInsets = WindowInsets(0, 0, 0, 0)) {
+                            val isHomeSelected = pagerState.currentPage == 0
+                            val homeIconSize by animateDpAsState(if (isHomeSelected) 28.dp else 24.dp, label = "hSize")
+                            NavigationBarItem(icon = { Icon(Icons.Default.Home, null, Modifier.size(homeIconSize)) }, label = { Text("识别", fontSize = 12.sp) }, selected = isHomeSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                            val isSettingsSelected = pagerState.currentPage == 1
+                            val settingsIconSize by animateDpAsState(if (isSettingsSelected) 28.dp else 24.dp, label = "sSize")
+                            NavigationBarItem(icon = { Icon(Icons.Default.Settings, null, Modifier.size(settingsIconSize)) }, label = { Text("设置", fontSize = 12.sp) }, selected = isSettingsSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(1) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                        }
                     }
                 }
             }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { if (!isSettingsSubPageOpen) showBottomSheet = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White,
-                shape = RoundedCornerShape(15.dp),
-                modifier = Modifier.alpha(uiAlpha).navigationBarsPadding().padding(bottom = 8.dp, end = 24.dp)
+            // 优化：使用 AnimatedVisibility 实现平滑过渡
+            AnimatedVisibility(
+                visible = pagerState.currentPage == 0 && !isManaging && !isSettingsSubPageOpen,
+                enter = scaleIn() + fadeIn(),
+                exit = scaleOut() + fadeOut()
             ) {
-                Icon(Icons.Default.Add, "添加", Modifier.size(32.dp))
+                FloatingActionButton(
+                    onClick = { showBottomSheet = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.White,
+                    shape = RoundedCornerShape(15.dp),
+                    modifier = Modifier.navigationBarsPadding().padding(bottom = 8.dp, end = 24.dp)
+                ) {
+                    Icon(Icons.Default.Add, "添加", Modifier.size(32.dp))
+                }
             }
         }
     ) { _ ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(backgroundColor)
-        ) {
+        Box(modifier = Modifier.fillMaxSize().background(backgroundColor)) {
             Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxSize(),
-                    beyondViewportPageCount = 1,
-                    userScrollEnabled = !isSettingsSubPageOpen
-                ) { page ->
+                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !isManaging && !isSettingsSubPageOpen) { page ->
                     when (page) {
-                        0 -> CaptureScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            bottomPadding = 100.dp,
-                            backdrop = backdrop
-                        )
-                        1 -> SettingsScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            onSubPageStatusChange = { isSettingsSubPageOpen = it }
-                        )
+                        0 -> CaptureScreen(modifier = Modifier.fillMaxSize(), bottomPadding = 100.dp, backdrop = backdrop, onEditModeChange = { isManaging = it })
+                        1 -> SettingsScreen(modifier = Modifier.fillMaxSize(), onSubPageStatusChange = { isSettingsSubPageOpen = it })
                     }
                 }
             }
 
             if (showBottomSheet) {
-                ModalBottomSheet(
-                    onDismissRequest = { showBottomSheet = false },
-                    sheetState = sheetState,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    dragHandle = { BottomSheetDefaults.DragHandle() },
-                    shape = RoundedCornerShape(topStart = 15.dp, topEnd = 15.dp)
-                ) {
+                ModalBottomSheet(onDismissRequest = { showBottomSheet = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.surface, dragHandle = { BottomSheetDefaults.DragHandle() }, shape = RoundedCornerShape(topStart = 15.dp, topEnd = 15.dp)) {
                     BottomSheetContent(viewModel) { showBottomSheet = false }
                 }
             }
@@ -218,10 +191,7 @@ fun HomeScreen(
             if (selectedOrderForQr != null) {
                 QrCodeDialog(order = selectedOrderForQr!!, onDismiss = { 
                     selectedOrderForQr = null
-                    if (isFromNotification) {
-                        activity?.handleBackToPrevious()
-                        isFromNotification = false
-                    }
+                    if (isFromNotification) { activity?.handleBackToPrevious(); isFromNotification = false }
                 })
             }
         }
@@ -230,10 +200,7 @@ fun HomeScreen(
 
 @Composable
 fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth().fillMaxHeight(0.35f).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.35f).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("添加记录", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 24.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             ActionButton(Icons.Default.PhotoCamera, "截图识别", onClick = { onDismiss() })
@@ -241,7 +208,7 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
             ActionButton(Icons.Default.TextFields, "手动输入", onClick = { showManualInput = true })
             if (showManualInput) {
                 ManualInputDialog(onDismiss = { showManualInput = false }, onConfirm = { code, qrData, type ->
-                    viewModel.addOrder(OrderEntity(takeoutCode = code, qrCodeData = qrData, screenshotPath = "", recognizedText = "手动输入", orderType = type))
+                    viewModel.addOrder(OrderEntity(takeoutCode = code, qrCodeData = qrData, screenshotPath = "", recognizedText = "手动输入", orderType = type, brandName = null))
                     showManualInput = false
                     onDismiss()
                 })
@@ -271,25 +238,19 @@ fun ManualInputDialog(onDismiss: () -> Unit, onConfirm: (String, String?, String
     val options = listOf("餐食", "饮品")
     val context = LocalContext.current
     
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
+    val photoPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
             } else {
+                @Suppress("DEPRECATION")
                 MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
             }
-            
             val image = InputImage.fromBitmap(bitmap, 0)
             val scanner = BarcodeScanning.getClient()
-            scanner.process(image)
-                .addOnSuccessListener { barcodes ->
-                    for (barcode in barcodes) {
-                        detectedQrData = barcode.rawValue
-                        break
-                    }
-                }
+            scanner.process(image).addOnSuccessListener { barcodes ->
+                for (barcode in barcodes) { detectedQrData = barcode.rawValue; break }
+            }
         }
     }
 
@@ -298,62 +259,16 @@ fun ManualInputDialog(onDismiss: () -> Unit, onConfirm: (String, String?, String
         title = { Text("手动输入取餐码") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("输入取餐码") },
-                    singleLine = true,
-                    trailingIcon = {
-                        IconButton(onClick = {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        }) {
-                            Icon(
-                                if (detectedQrData != null) Icons.Default.QrCodeScanner else Icons.Default.PhotoLibrary,
-                                contentDescription = "识别二维码",
-                                tint = if (detectedQrData != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                )
-                
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = !expanded }
-                ) {
-                    OutlinedTextField(
-                        value = orderType,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("餐品类别") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
+                OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("输入取餐码") }, singleLine = true, trailingIcon = { IconButton(onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Icon(if (detectedQrData != null) Icons.Default.QrCodeScanner else Icons.Default.PhotoLibrary, contentDescription = "识别二维码", tint = if (detectedQrData != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) } })
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+                    OutlinedTextField(value = orderType, onValueChange = {}, readOnly = true, label = { Text("餐品类别") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }, modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable))
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         options.forEach { selectionOption ->
-                            DropdownMenuItem(
-                                text = { Text(selectionOption) },
-                                onClick = {
-                                    orderType = selectionOption
-                                    expanded = false
-                                }
-                            )
+                            DropdownMenuItem(text = { Text(selectionOption) }, onClick = { orderType = selectionOption; expanded = false })
                         }
                     }
                 }
-
-                if (detectedQrData != null) {
-                    Text(
-                        text = "已识别到二维码信息",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                }
+                if (detectedQrData != null) { Text(text = "已识别到二维码信息", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp)) }
             }
         },
         confirmButton = { Button(onClick = { onConfirm(text, detectedQrData, orderType) }) { Text("添加") } },

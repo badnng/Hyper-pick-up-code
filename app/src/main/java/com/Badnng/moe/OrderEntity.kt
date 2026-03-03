@@ -15,5 +15,6 @@ data class OrderEntity(
     val isCompleted: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null,
-    val orderType: String = "餐食"
+    val orderType: String = "餐食",
+    val brandName: String? = null // 补全品牌名称字段
 )

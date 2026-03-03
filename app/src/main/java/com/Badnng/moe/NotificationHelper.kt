@@ -12,7 +12,6 @@ import android.os.Bundle
 class NotificationHelper(private val context: Context) {
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val channelId = "promoted_live_update_channel"
-    private val orderNotificationId = 2001 // 关键：使用独立 ID，避免被 Service 销毁
 
     init {
         createNotificationChannel()
@@ -31,7 +30,7 @@ class NotificationHelper(private val context: Context) {
         }
     }
 
-    fun showPromotedLiveUpdate(order: OrderEntity) {
+    fun showPromotedLiveUpdate(order: OrderEntity, detectedBrand: String? = null) {
         val completeIntent = Intent(context, NotificationReceiver::class.java).apply {
             action = "ACTION_MARK_COMPLETED"
             putExtra("order_id", order.id)
@@ -41,49 +40,87 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // 修改：点击通知主体的 Intent (仅执行高亮滚动)
         val viewIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("show_qr_detail", true)
-            putExtra("order_id", order.id)
+            putExtra("highlight_order_id", order.id)
             putExtra("from_notification", true)
+            // 不再自动添加 show_qr_detail
         }
         val viewPendingIntent = PendingIntent.getActivity(
             context, order.id.hashCode() + 1, viewIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val iconRes = if (order.orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
+        // 保留：专门用于“展示二维码”按钮的 Intent
+        val qrDetailIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("highlight_order_id", order.id)
+            putExtra("show_qr_detail", true)
+            putExtra("order_id", order.id)
+            putExtra("from_notification", true)
+        }
+        val qrDetailPendingIntent = PendingIntent.getActivity(
+            context, order.id.hashCode() + 2, qrDetailIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val brandToUse = detectedBrand ?: order.brandName
+        val iconRes = getBrandIcon(brandToUse, order.orderType)
 
         val builder = Notification.Builder(context, channelId)
-            .setContentTitle("取餐提醒")
+            .setContentTitle("取餐提醒 - ${brandToUse ?: "新订单"}")
             .setContentText("取餐码: ${order.takeoutCode}")
             .setSmallIcon(iconRes)
             .setOngoing(true) 
+            .setContentIntent(viewPendingIntent) // 点击通知主体 -> 仅回 App 并滚动高亮
             .setStyle(Notification.BigTextStyle().bigText("取餐码: ${order.takeoutCode}"))
             .addAction(Notification.Action.Builder(null, "已完成", completePendingIntent).build())
             
         if (!order.qrCodeData.isNullOrEmpty()) {
-             builder.addAction(Notification.Action.Builder(null, "展示二维码", viewPendingIntent).build())
-             builder.setContentIntent(viewPendingIntent)
+             // “展示二维码”按钮 -> 跳转详情
+             builder.addAction(Notification.Action.Builder(null, "展示二维码", qrDetailPendingIntent).build())
         }
             
-        // 针对 Android 15 (API 35) 及以上版本的实况窗优化
         if (Build.VERSION.SDK_INT >= 35) {
             val extras = Bundle()
             extras.putBoolean("android.requestPromotedOngoing", true)
             builder.addExtras(extras)
             try {
-                // 如果是 Android 16 (API 36) 预览版或更高
                 if (Build.VERSION.SDK_INT >= 36) {
-                    builder.setShortCriticalText("取餐: ${order.takeoutCode}")
+                    builder.setShortCriticalText("${brandToUse ?: "取餐"}: ${order.takeoutCode}")
                 }
             } catch (e: Exception) {}
         }
 
-        notificationManager.notify(orderNotificationId, builder.build())
+        notificationManager.notify(order.id.hashCode(), builder.build())
     }
 
-    fun cancelNotification() {
-        notificationManager.cancel(orderNotificationId)
+    private fun getBrandIcon(brandName: String?, orderType: String): Int {
+        if (brandName == null) {
+            return if (orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
+        }
+
+        val resName = when (brandName) {
+            "麦当劳" -> "ic_mcdonalds"
+            "肯德基", "KFC" -> "ic_kfc"
+            "瑞幸" -> "ic_luckin"
+            "喜茶" -> "ic_heytea"
+            "星巴克" -> "ic_starbucks"
+            "霸王茶姬" -> "ic_chagee"
+            "古茗" -> "ic_goodme"
+            else -> null
+        }
+
+        if (resName != null) {
+            val resId = context.resources.getIdentifier(resName, "drawable", context.packageName)
+            if (resId != 0) return resId
+        }
+
+        return if (orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
+    }
+
+    fun cancelNotification(orderId: String) {
+        notificationManager.cancel(orderId.hashCode())
     }
 }

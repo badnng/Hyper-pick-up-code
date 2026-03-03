@@ -3,8 +3,6 @@ package com.Badnng.moe
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,20 +50,22 @@ class OrderViewModel(application: Application) : AndroidViewModel(application) {
     fun addOrder(order: OrderEntity) {
         viewModelScope.launch {
             repository.insertOrder(order)
-            notificationHelper.showPromotedLiveUpdate(order)
+            // 关键：手动创建时也传入品牌名（如果有的话），确保通知高亮逻辑打通
+            notificationHelper.showPromotedLiveUpdate(order, order.brandName)
         }
     }
 
     fun markAsCompleted(orderId: String) {
         viewModelScope.launch {
             repository.markAsCompleted(orderId)
-            notificationHelper.cancelNotification()
+            notificationHelper.cancelNotification(orderId)
         }
     }
 
     fun deleteOrder(order: OrderEntity) {
         viewModelScope.launch {
             repository.deleteOrder(order)
+            notificationHelper.cancelNotification(order.id)
         }
     }
 
