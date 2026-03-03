@@ -247,11 +247,11 @@ fun CaptureScreenContent(
         }
 
         if (showMultiDeleteConfirm) {
-            DeleteConfirmDialog(title = "确认删除所选", description = "确定要删除选中的 ${selectedIds.size} 条记录吗？", onDismiss = { showMultiDeleteConfirm = false }, onConfirm = { onDeleteMultiple(selectedIds); selectedIds = emptySet(); isEditMode = false; showMultiDeleteConfirm = false })
+            DeleteConfirmDialog(title = "确认删除所选？", description = "确定要删除选中的 ${selectedIds.size} 条记录吗？该操作不可撤销！", onDismiss = { showMultiDeleteConfirm = false }, onConfirm = { onDeleteMultiple(selectedIds); selectedIds = emptySet(); isEditMode = false; showMultiDeleteConfirm = false })
         }
 
         if (showClearAllConfirm) {
-            DeleteConfirmDialog(title = "确认清空", description = "确定要清空所有已完成的记录吗？该操作不可撤销。", onDismiss = { showClearAllConfirm = false }, onConfirm = { onClearAllCompleted(); isEditMode = false; showClearAllConfirm = false })
+            DeleteConfirmDialog(title = "确认清空？", description = "确定要清空所有已完成的记录吗？该操作不可撤销！", onDismiss = { showClearAllConfirm = false }, onConfirm = { onClearAllCompleted(); isEditMode = false; showClearAllConfirm = false })
         }
 
         if (selectedOrderForQr != null) {
@@ -368,7 +368,7 @@ fun StatusButton(selected: Boolean, label: String, count: Int, onClick: () -> Un
 }
 
 @Composable
-fun DeleteConfirmDialog(title: String = "确认删除", description: String = "删除后将无法找回此条记录，确定要继续吗？", onDismiss: () -> Unit, onConfirm: () -> Unit) {
+fun DeleteConfirmDialog(title: String = "确认删除？", description: String = "删除后将无法找回此条记录，确定要继续吗？", onDismiss: () -> Unit, onConfirm: () -> Unit) {
     var animateTrigger by remember { mutableStateOf(false) }
     var confirmed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { animateTrigger = true }

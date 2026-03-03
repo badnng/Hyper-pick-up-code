@@ -25,20 +25,28 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val recognitionHelper = TextRecognitionHelper()
+    
+    // 使用 lazy 确保在首次访问时才初始化，避开 Service 实例化阶段
+    private val recognitionHelper: TextRecognitionHelper by lazy { TextRecognitionHelper() }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val useShizuku = intent?.getBooleanExtra("use_shizuku", false) ?: false
         
-        // 关键修复：Android 14+ 必须显式指定前台服务类型
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                1001, 
-                createNotification(), 
-                if (useShizuku) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-        } else {
-            startForeground(1001, createNotification())
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val type = if (useShizuku) {
+                    if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                }
+                startForeground(1001, createNotification(), type)
+            } else {
+                startForeground(1001, createNotification())
+            }
+        } catch (e: Exception) {
+            Log.e("CaptureLog", "启动前台服务失败", e)
+            stopSelf()
+            return START_NOT_STICKY
         }
 
         if (useShizuku) {
@@ -69,12 +77,15 @@ class ScreenCaptureService : Service() {
     private fun startShizukuCaptureSingleTry() {
         scope.launch {
             delay(1500)
-            val bitmap = captureShizukuScreenshot()
-            if (bitmap != null) {
-                val cropped = cropStatusBar(bitmap)
-                val result = processRecognize(cropped)
-                if (!result) stopSelf()
-            } else {
+            try {
+                val bitmap = captureShizukuScreenshot()
+                if (bitmap != null) {
+                    val cropped = cropStatusBar(bitmap)
+                    if (!processRecognize(cropped)) stopSelf()
+                } else {
+                    stopSelf()
+                }
+            } catch (e: Exception) {
                 stopSelf()
             }
         }
@@ -103,6 +114,7 @@ class ScreenCaptureService : Service() {
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, null
             )
         } catch (e: Exception) {
+            Log.e("CaptureLog", "创建显示器失败", e)
             stopSelf()
             return
         }
@@ -126,49 +138,48 @@ class ScreenCaptureService : Service() {
             image.close()
             
             val cropped = cropStatusBar(cleanBitmap)
-            val result = processRecognize(cropped)
-            if (!result) stopSelf()
+            if (!processRecognize(cropped)) stopSelf()
         }
     }
 
     private fun cropStatusBar(src: Bitmap): Bitmap {
-        return try {
-            val statusBarHeight = 150
-            if (src.height > statusBarHeight) {
-                Bitmap.createBitmap(src, 0, statusBarHeight, src.width, src.height - statusBarHeight)
-            } else src
-        } catch (e: Exception) {
-            src
-        }
+        val statusBarHeight = 150
+        return if (src.height > statusBarHeight) {
+            Bitmap.createBitmap(src, 0, statusBarHeight, src.width, src.height - statusBarHeight)
+        } else src
     }
 
     private suspend fun processRecognize(bitmap: Bitmap): Boolean {
-        val result = recognitionHelper.recognizeAll(bitmap)
-        if (result.code != null) {
-            val order = OrderEntity(
-                takeoutCode = result.code,
-                qrCodeData = result.qr,
-                screenshotPath = ScreenshotHelper(applicationContext).saveBitmap(bitmap),
-                recognizedText = "自动识别",
-                orderType = result.type,
-                brandName = result.brand
-            )
-            OrderDatabase.getDatabase(applicationContext).orderDao().insert(order)
-            withContext(Dispatchers.Main) {
-                NotificationHelper(applicationContext).showPromotedLiveUpdate(order, result.brand)
-                Toast.makeText(applicationContext, "识别成功：${result.code}", Toast.LENGTH_SHORT).show()
-            }
-            stopSelf()
-            return true
+        return try {
+            val result = recognitionHelper.recognizeAll(bitmap)
+            if (result.code != null) {
+                val order = OrderEntity(
+                    takeoutCode = result.code,
+                    qrCodeData = result.qr,
+                    screenshotPath = ScreenshotHelper(applicationContext).saveBitmap(bitmap),
+                    recognizedText = "自动识别",
+                    orderType = result.type,
+                    brandName = result.brand
+                )
+                OrderDatabase.getDatabase(applicationContext).orderDao().insert(order)
+                withContext(Dispatchers.Main) {
+                    NotificationHelper(applicationContext).showPromotedLiveUpdate(order, result.brand)
+                    Toast.makeText(applicationContext, "识别成功：${result.code}", Toast.LENGTH_SHORT).show()
+                }
+                stopSelf()
+                true
+            } else false
+        } catch (e: Exception) {
+            Log.e("CaptureLog", "识别逻辑异常", e)
+            false
         }
-        return false
     }
 
     private fun createNotification(): Notification {
         val channelId = "capture_service"
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "识别中", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(channelId, "正在识别", NotificationManager.IMPORTANCE_LOW)
             manager.createNotificationChannel(channel)
         }
         return NotificationCompat.Builder(this, channelId)
@@ -182,7 +193,6 @@ class ScreenCaptureService : Service() {
         scope.cancel()
         virtualDisplay?.release()
         mediaProjection?.stop()
-        recognitionHelper.close()
         super.onDestroy()
     }
 

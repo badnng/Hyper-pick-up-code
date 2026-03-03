@@ -40,19 +40,16 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 修改：点击通知主体的 Intent (仅执行高亮滚动)
         val viewIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("highlight_order_id", order.id)
             putExtra("from_notification", true)
-            // 不再自动添加 show_qr_detail
         }
         val viewPendingIntent = PendingIntent.getActivity(
             context, order.id.hashCode() + 1, viewIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 保留：专门用于“展示二维码”按钮的 Intent
         val qrDetailIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("highlight_order_id", order.id)
@@ -73,12 +70,11 @@ class NotificationHelper(private val context: Context) {
             .setContentText("取餐码: ${order.takeoutCode}")
             .setSmallIcon(iconRes)
             .setOngoing(true) 
-            .setContentIntent(viewPendingIntent) // 点击通知主体 -> 仅回 App 并滚动高亮
+            .setContentIntent(viewPendingIntent)
             .setStyle(Notification.BigTextStyle().bigText("取餐码: ${order.takeoutCode}"))
             .addAction(Notification.Action.Builder(null, "已完成", completePendingIntent).build())
             
         if (!order.qrCodeData.isNullOrEmpty()) {
-             // “展示二维码”按钮 -> 跳转详情
              builder.addAction(Notification.Action.Builder(null, "展示二维码", qrDetailPendingIntent).build())
         }
             
@@ -97,27 +93,17 @@ class NotificationHelper(private val context: Context) {
     }
 
     private fun getBrandIcon(brandName: String?, orderType: String): Int {
-        if (brandName == null) {
-            return if (orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
+        // 关键修复：直接显式映射 R.drawable，不使用反射以避免混淆失效
+        return when (brandName) {
+            "麦当劳" -> R.drawable.ic_mcdonalds
+            "肯德基", "KFC" -> R.drawable.ic_kfc
+            "瑞幸" -> R.drawable.ic_luckin
+            "喜茶" -> R.drawable.ic_heytea
+            "星巴克" -> R.drawable.ic_starbucks
+            "霸王茶姬" -> R.drawable.ic_chagee
+            "古茗" -> R.drawable.ic_goodme
+            else -> if (orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
         }
-
-        val resName = when (brandName) {
-            "麦当劳" -> "ic_mcdonalds"
-            "肯德基", "KFC" -> "ic_kfc"
-            "瑞幸" -> "ic_luckin"
-            "喜茶" -> "ic_heytea"
-            "星巴克" -> "ic_starbucks"
-            "霸王茶姬" -> "ic_chagee"
-            "古茗" -> "ic_goodme"
-            else -> null
-        }
-
-        if (resName != null) {
-            val resId = context.resources.getIdentifier(resName, "drawable", context.packageName)
-            if (resId != 0) return resId
-        }
-
-        return if (orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
     }
 
     fun cancelNotification(orderId: String) {

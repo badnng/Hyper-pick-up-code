@@ -128,14 +128,15 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
 }
 
 private fun requestAddTile(context: Context) {
-    val statusBarManager = context.getSystemService(Context.STATUS_BAR_SERVICE) as StatusBarManager
-    statusBarManager.requestAddTileService(
-        ComponentName(context, CaptureTileService::class.java),
-        "截图识别",
-        Icon.createWithResource(context, R.drawable.ic_launcher_foreground),
-        {},
-        {}
-    )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val statusBarManager = context.getSystemService(Context.STATUS_BAR_SERVICE) as StatusBarManager
+        statusBarManager.requestAddTileService(
+            ComponentName(context, CaptureTileService::class.java),
+            "截图识别",
+            Icon.createWithResource(context, R.drawable.ic_launcher_foreground),
+            {}, {}
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -164,7 +165,7 @@ fun PreferenceSettingsContent() {
         PreferenceSection(title = "底栏位置") { Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("left" to "靠左", "center" to "居中", "right" to "靠右").forEach { (key, label) -> ChoiceChip(label = label, selected = navAlignment == key, onClick = { navAlignment = key; prefs.edit().putString("nav_alignment", key).apply() }, modifier = Modifier.weight(1f)) } } }
         PreferenceSection(title = "外观设置") { Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) { PreferenceSwitchItem(title = "莫奈取色 (Dynamic Color)", description = "开启后主题色将跟随系统壁纸自动变化", checked = monetEnabled, onCheckedChange = { monetEnabled = it; prefs.edit().putBoolean("monet_enabled", it).apply() }) } }
         AnimatedVisibility(visible = !monetEnabled, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { PreferenceSection(title = "自定义主题色") { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("滑动调节色相", style = MaterialTheme.typography.bodySmall); Slider(value = customHue, onValueChange = { customHue = it }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth()); val previewColor = remember(customHue) { Color.hsv(customHue, 0.7f, 0.9f) }; Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(previewColor).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)); Button(onClick = { selectedColorInt = previewColor.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }, shape = RoundedCornerShape(15.dp), modifier = Modifier.weight(1f).height(56.dp)) { Text("应用颜色") } } ; Text("MD3 建议色", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)); val md3Colors = listOf(0xFF6750A4, 0xFF006A60, 0xFF984061, 0xFF005AC1, 0xFF605D62, 0xFF3B6939); Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { md3Colors.forEach { colorLong -> val color = Color(colorLong); Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(color).border(width = if (selectedColorInt == color.toArgb()) 3.dp else 0.dp, color = MaterialTheme.colorScheme.primary, shape = CircleShape).clickable { selectedColorInt = color.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }) } } } } }
-        PreferenceSection(title = "显示模式") { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统").forEach { (key, label) -> Row(modifier = Modifier.fillMaxWidth().clickable { themeMode = key; prefs.edit().putString("theme_mode", key).apply() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = themeMode == key, onClick = null); Spacer(Modifier.width(16.dp)); Text(label, fontSize = 16.sp) } } } }
+        PreferenceSection(title = "显示模式") { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统").forEach { (key, label) -> Row(modifier = Modifier.fillMaxWidth().clickable { themeMode = key; prefs.edit().putString("theme_mode", key).apply() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = themeMode == key, onClick = null); Spacer(Modifier.width(12.dp)); Text(label, fontSize = 16.sp) } } } }
         Spacer(modifier = Modifier.height(48.dp))
     }
 }
@@ -177,8 +178,8 @@ fun ScreenshotSettingsContent() {
     LaunchedEffect(Unit) { while (true) { shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }; if (!shizukuReady && captureMode == "shizuku") { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() }; delay(1500) } }
     Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Text("选择截图技术方案", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，兼容性好，但每次使用磁贴需要系统弹窗授权确认。", selected = captureMode == "media_projection", onClick = { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
-        CaptureModeItem(title = "Shizuku 永授权", description = if (shizukuReady) "通过 Shizuku 授权后可实现一键后台截图识别。" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
+        CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认。", selected = captureMode == "media_projection", onClick = { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
+        CaptureModeItem(title = "Shizuku 永授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别。（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
     }
 }
 
