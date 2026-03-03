@@ -1,4 +1,4 @@
-package com.Badnng.moe.screens
+package com.Badnng.moe
 
 import android.content.Intent
 import android.graphics.Bitmap
@@ -44,10 +44,16 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.effects.lens
 import kotlinx.coroutines.launch
+import com.Badnng.moe.screens.CaptureScreen
+import com.Badnng.moe.screens.SettingsScreen
+import com.Badnng.moe.screens.QrCodeDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier) {
+fun HomeScreen(
+    modifier: Modifier = Modifier,
+    intentToProcess: Intent? = null // 增加参数接收
+) {
     val pagerState = rememberPagerState(pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
     var showBottomSheet by remember { mutableStateOf(false) }
@@ -59,15 +65,17 @@ fun HomeScreen(modifier: Modifier = Modifier) {
     var isFromNotification by remember { mutableStateOf(false) }
 
     val activity = context as? MainActivity
-    LaunchedEffect(activity?.intentToProcess, orders) {
-        val intent = activity?.intentToProcess
-        if (intent?.getBooleanExtra("show_qr_detail", false) == true) {
-            val orderId = intent.getStringExtra("order_id")
+    
+    // 监听 intentToProcess 的变化，弹出二维码卡片
+    LaunchedEffect(intentToProcess, orders) {
+        if (intentToProcess?.getBooleanExtra("show_qr_detail", false) == true) {
+            val orderId = intentToProcess.getStringExtra("order_id")
             val order = orders.find { it.id == orderId }
             if (order != null) {
                 selectedOrderForQr = order
-                isFromNotification = intent.getBooleanExtra("from_notification", false)
-                activity.intentToProcess = null 
+                isFromNotification = intentToProcess.getBooleanExtra("from_notification", false)
+                // 成功捕获后清除状态
+                activity?.intentToProcess = null
             }
         }
     }
@@ -133,7 +141,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                             selected = isHomeSelected,
                             onClick = { if (!isSettingsSubPageOpen) coroutineScope.launch { pagerState.animateScrollToPage(0) } },
                             colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = Color.Transparent,
+                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
@@ -148,7 +156,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                             selected = isSettingsSelected,
                             onClick = { if (!isSettingsSubPageOpen) coroutineScope.launch { pagerState.animateScrollToPage(1) } },
                             colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = Color.Transparent,
+                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )

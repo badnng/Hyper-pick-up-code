@@ -34,7 +34,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,10 +45,13 @@ import com.Badnng.moe.OrderViewModel
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import java.text.SimpleDateFormat
 import java.util.*
-
+import android.view.ViewGroup
+import android.graphics.drawable.ColorDrawable
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 @Composable
 fun CaptureScreen(
     modifier: Modifier = Modifier,
@@ -235,7 +237,10 @@ fun QrCodeDialog(order: OrderEntity, onDismiss: () -> Unit) {
 
     Dialog(
         onDismissRequest = { animateTrigger = false },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
         Box(
             modifier = Modifier
@@ -464,6 +469,30 @@ fun DeleteConfirmDialog(
     var confirmed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { animateTrigger = true }
 
+    val view = LocalView.current
+    SideEffect {
+        // 1. 获取 Dialog 所在的原始 Window
+        val window = (view.parent as? DialogWindowProvider)?.window
+
+        window?.let { w ->
+            // 2. 核心：强制 Window 布局占满物理屏幕（忽略系统栏限制）
+            w.setLayout(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+
+            // 3. 核心：设置沉浸式，允许内容延伸到状态栏和导航栏下方
+            WindowCompat.setDecorFitsSystemWindows(w, false)
+
+            // 4. 核心：将 Window 自带的默认黑色/灰色背景设为透明
+            // 这样你的 Box(modifier = Modifier.background(Color.Black.copy(alpha = bgAlpha))) 才能无缝覆盖
+            w.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+
+            // 5. 可选：如果底部手势线处有白色遮挡，可以尝试清除某些 Flag
+            // w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        }
+    }
+
     val bgAlpha by animateFloatAsState(
         targetValue = if (animateTrigger) 0.55f else 0f,
         animationSpec = tween(durationMillis = 300),
@@ -512,7 +541,7 @@ fun DeleteConfirmDialog(
                     .alpha(cardAlpha)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null
+                        indication = null,
                     ) { },
                 shape = RoundedCornerShape(15.dp),
                 colors = CardDefaults.cardColors(

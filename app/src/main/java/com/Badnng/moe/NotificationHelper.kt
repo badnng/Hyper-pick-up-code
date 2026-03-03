@@ -12,21 +12,23 @@ import android.os.Bundle
 class NotificationHelper(private val context: Context) {
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val channelId = "promoted_live_update_channel"
-    private val notificationId = 1001
+    private val orderNotificationId = 2001 // 关键：使用独立 ID，避免被 Service 销毁
 
     init {
         createNotificationChannel()
     }
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            channelId,
-            "订单实况更新",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "用于在状态栏和锁屏显示订单实时进度"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "订单实况更新",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "用于在状态栏和锁屏显示订单实时进度"
+            }
+            notificationManager.createNotificationChannel(channel)
         }
-        notificationManager.createNotificationChannel(channel)
     }
 
     fun showPromotedLiveUpdate(order: OrderEntity) {
@@ -54,10 +56,10 @@ class NotificationHelper(private val context: Context) {
 
         val builder = Notification.Builder(context, channelId)
             .setContentTitle("取餐提醒")
-            .setContentText("订单号: ${order.takeoutCode}")
+            .setContentText("取餐码: ${order.takeoutCode}")
             .setSmallIcon(iconRes)
             .setOngoing(true) 
-            .setStyle(Notification.BigTextStyle().bigText("订单号: ${order.takeoutCode}"))
+            .setStyle(Notification.BigTextStyle().bigText("取餐码: ${order.takeoutCode}"))
             .addAction(Notification.Action.Builder(null, "已完成", completePendingIntent).build())
             
         if (!order.qrCodeData.isNullOrEmpty()) {
@@ -65,19 +67,23 @@ class NotificationHelper(private val context: Context) {
              builder.setContentIntent(viewPendingIntent)
         }
             
-        if (Build.VERSION.SDK_INT >= 36) {
+        // 针对 Android 15 (API 35) 及以上版本的实况窗优化
+        if (Build.VERSION.SDK_INT >= 35) {
             val extras = Bundle()
             extras.putBoolean("android.requestPromotedOngoing", true)
             builder.addExtras(extras)
-            builder.setShortCriticalText("取件: ${order.takeoutCode}")
-        } else {
-            builder.setCategory(Notification.CATEGORY_PROGRESS)
+            try {
+                // 如果是 Android 16 (API 36) 预览版或更高
+                if (Build.VERSION.SDK_INT >= 36) {
+                    builder.setShortCriticalText("取餐: ${order.takeoutCode}")
+                }
+            } catch (e: Exception) {}
         }
 
-        notificationManager.notify(notificationId, builder.build())
+        notificationManager.notify(orderNotificationId, builder.build())
     }
 
     fun cancelNotification() {
-        notificationManager.cancel(notificationId)
+        notificationManager.cancel(orderNotificationId)
     }
 }

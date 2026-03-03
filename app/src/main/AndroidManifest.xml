@@ -2,11 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 基础通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- 实况窗/提升通知权限 (Android 16+) -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
     <application
         android:allowBackup="true"
@@ -23,15 +22,37 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.澎湃记">
+            android:theme="@style/Theme.澎湃记"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- 注册广播接收器，用于处理通知按钮点击 -->
+        <!-- 必须注册此透明 Activity -->
+        <activity
+            android:name=".PermissionActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+
+        <service
+            android:name=".CaptureTileService"
+            android:exported="true"
+            android:label="截图识别"
+            android:icon="@drawable/ic_launcher_foreground"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
         <receiver android:name=".NotificationReceiver" android:exported="false" />
 
     </application>
