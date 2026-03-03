@@ -88,6 +88,10 @@ dependencies {
     // ML Kit
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.text.recognition.chinese)
+    implementation(libs.mlkit.barcode.scanning)
+
+    // ZXing
+    implementation(libs.zxing.core)
 
     // Coil
     implementation(libs.coil.compose)

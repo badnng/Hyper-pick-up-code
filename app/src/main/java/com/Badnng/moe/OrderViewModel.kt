@@ -30,7 +30,6 @@ class OrderViewModel(application: Application) : AndroidViewModel(application) {
         orderDao = database.orderDao()
         repository = OrderRepository(orderDao)
 
-        // 观察订单列表变化
         viewModelScope.launch {
             repository.getAllOrders().collect { orders ->
                 _orders.value = orders
@@ -50,21 +49,16 @@ class OrderViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // 添加订单并触发动态更新
     fun addOrder(order: OrderEntity) {
         viewModelScope.launch {
             repository.insertOrder(order)
-
-            // 发送实况窗通知
-            notificationHelper.showPromotedLiveUpdate(order.id, order.takeoutCode)
+            notificationHelper.showPromotedLiveUpdate(order)
         }
     }
 
-    // 标记为已完成
     fun markAsCompleted(orderId: String) {
         viewModelScope.launch {
             repository.markAsCompleted(orderId)
-            // 当订单完成时，取消并移除实况窗
             notificationHelper.cancelNotification()
         }
     }

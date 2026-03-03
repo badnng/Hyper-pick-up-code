@@ -29,50 +29,48 @@ class NotificationHelper(private val context: Context) {
         notificationManager.createNotificationChannel(channel)
     }
 
-    /**
-     * 发送完全符合 Android 16+ 标准的“提升级”实况通知
-     */
-    fun showPromotedLiveUpdate(orderId: String, takeoutCode: String) {
-        // 1. “已完成”操作：发送广播
+    fun showPromotedLiveUpdate(order: OrderEntity) {
         val completeIntent = Intent(context, NotificationReceiver::class.java).apply {
             action = "ACTION_MARK_COMPLETED"
-            putExtra("order_id", orderId)
+            putExtra("order_id", order.id)
         }
         val completePendingIntent = PendingIntent.getBroadcast(
-            context, orderId.hashCode(), completeIntent, 
+            context, order.id.hashCode(), completeIntent, 
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 2. “查看取餐码”操作：打开应用
         val viewIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("show_qr_detail", true)
+            putExtra("order_id", order.id)
+            putExtra("from_notification", true)
         }
         val viewPendingIntent = PendingIntent.getActivity(
-            context, 0, viewIntent, 
+            context, order.id.hashCode() + 1, viewIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+
+        val iconRes = if (order.orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
 
         val builder = Notification.Builder(context, channelId)
             .setContentTitle("取餐提醒")
-            .setContentText("订单号: $takeoutCode")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentText("订单号: ${order.takeoutCode}")
+            .setSmallIcon(iconRes)
             .setOngoing(true) 
-            // 改用 BigTextStyle 以取消进度条（那根线）
-            .setStyle(Notification.BigTextStyle().bigText("订单号: $takeoutCode"))
+            .setStyle(Notification.BigTextStyle().bigText("订单号: ${order.takeoutCode}"))
             .addAction(Notification.Action.Builder(null, "已完成", completePendingIntent).build())
-            .addAction(Notification.Action.Builder(null, "查看取餐码", viewPendingIntent).build())
             
-        // Android 16 (API 36) 核心提升 API
+        if (!order.qrCodeData.isNullOrEmpty()) {
+             builder.addAction(Notification.Action.Builder(null, "展示二维码", viewPendingIntent).build())
+             builder.setContentIntent(viewPendingIntent)
+        }
+            
         if (Build.VERSION.SDK_INT >= 36) {
             val extras = Bundle()
-            // EXTRA_REQUEST_PROMOTED_ONGOING 对应 key 为 "android.requestPromotedOngoing"
             extras.putBoolean("android.requestPromotedOngoing", true)
             builder.addExtras(extras)
-            
-            // 设置状态栏文本
-            builder.setShortCriticalText("取件: $takeoutCode")
+            builder.setShortCriticalText("取件: ${order.takeoutCode}")
         } else {
-            // 旧版本兼容
             builder.setCategory(Notification.CATEGORY_PROGRESS)
         }
 
