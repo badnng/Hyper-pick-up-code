@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    id("com.google.devtools.ksp") // 这里的版本已经在根目录指定
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -48,6 +48,9 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 }
 
@@ -60,13 +63,10 @@ dependencies {
     implementation("io.github.kyant0:backdrop:2.0.0-alpha03")
     implementation("dev.rikka.shizuku:provider:${shizuku_version}")
     implementation("dev.rikka.shizuku:api:${shizuku_version}")
-    // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
-
-    // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
@@ -76,35 +76,19 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.animation)
     implementation(libs.androidx.material3.windowsizeclass)
-
-    // Navigation
     implementation(libs.androidx.navigation.compose)
-
-    // Window Management
     implementation(libs.androidx.window)
-
-    // Room Database
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-
-    // ML Kit
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.text.recognition.chinese)
     implementation(libs.mlkit.barcode.scanning)
-
-    // ZXing
     implementation(libs.zxing.core)
-
-    // Coil
     implementation(libs.coil.compose)
-
-    // Coroutines
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.play.services)
-
-    // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

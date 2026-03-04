@@ -50,6 +50,7 @@ import kotlinx.coroutines.launch
 import com.Badnng.moe.screens.CaptureScreen
 import com.Badnng.moe.screens.SettingsScreen
 import com.Badnng.moe.screens.QrCodeDialog
+import com.Badnng.moe.screens.LogScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,7 +58,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     intentToProcess: Intent? = null
 ) {
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    val pagerState = rememberPagerState(pageCount = { 3 })
     val coroutineScope = rememberCoroutineScope()
     var showBottomSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
@@ -118,7 +119,7 @@ fun HomeScreen(
                     "right" -> Alignment.BottomEnd
                     else -> Alignment.BottomCenter
                 }
-                val barWidth = if (navAlignment == "center") 240.dp else 160.dp
+                val barWidth = if (navAlignment == "center") 275.dp else 250.dp
                 
                 Box(
                     modifier = Modifier
@@ -145,16 +146,20 @@ fun HomeScreen(
                             val isHomeSelected = pagerState.currentPage == 0
                             val homeIconSize by animateDpAsState(if (isHomeSelected) 28.dp else 24.dp, label = "hSize")
                             NavigationBarItem(icon = { Icon(Icons.Default.Home, null, Modifier.size(homeIconSize)) }, label = { Text("识别", fontSize = 12.sp) }, selected = isHomeSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
-                            val isSettingsSelected = pagerState.currentPage == 1
+                            
+                            val isLogSelected = pagerState.currentPage == 1
+                            val logIconSize by animateDpAsState(if (isLogSelected) 28.dp else 24.dp, label = "lSize")
+                            NavigationBarItem(icon = { Icon(Icons.Default.List, null, Modifier.size(logIconSize)) }, label = { Text("日志", fontSize = 12.sp) }, selected = isLogSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(1) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                            
+                            val isSettingsSelected = pagerState.currentPage == 2
                             val settingsIconSize by animateDpAsState(if (isSettingsSelected) 28.dp else 24.dp, label = "sSize")
-                            NavigationBarItem(icon = { Icon(Icons.Default.Settings, null, Modifier.size(settingsIconSize)) }, label = { Text("设置", fontSize = 12.sp) }, selected = isSettingsSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(1) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                            NavigationBarItem(icon = { Icon(Icons.Default.Settings, null, Modifier.size(settingsIconSize)) }, label = { Text("设置", fontSize = 12.sp) }, selected = isSettingsSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(2) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
                         }
                     }
                 }
             }
         },
         floatingActionButton = {
-            // 优化：使用 AnimatedVisibility 实现平滑过渡
             AnimatedVisibility(
                 visible = pagerState.currentPage == 0 && !isManaging && !isSettingsSubPageOpen,
                 enter = scaleIn() + fadeIn(),
@@ -177,7 +182,8 @@ fun HomeScreen(
                 HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !isManaging && !isSettingsSubPageOpen) { page ->
                     when (page) {
                         0 -> CaptureScreen(modifier = Modifier.fillMaxSize(), bottomPadding = 100.dp, backdrop = backdrop, onEditModeChange = { isManaging = it })
-                        1 -> SettingsScreen(modifier = Modifier.fillMaxSize(), onSubPageStatusChange = { isSettingsSubPageOpen = it })
+                        1 -> LogScreen(modifier = Modifier.fillMaxSize())
+                        2 -> SettingsScreen(modifier = Modifier.fillMaxSize(), onSubPageStatusChange = { isSettingsSubPageOpen = it })
                     }
                 }
             }

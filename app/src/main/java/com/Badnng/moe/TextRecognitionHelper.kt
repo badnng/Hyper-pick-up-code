@@ -40,18 +40,31 @@ class TextRecognitionHelper {
         var takeoutCode: String? = null
         val blocks = textResult?.textBlocks ?: emptyList()
         
+        // 品牌检测逻辑 (提前进行以辅助识别)
+        var detectedBrand: String? = null
+        val brandHits = mutableMapOf<String, Int>()
+        if (fullText.contains("熊猫币") || fullText.contains("葫芦")) brandHits["古茗"] = 15
+        if (fullText.contains("喜茶GO")) brandHits["喜茶"] = 15
+        for (brand in drinkBrands + foodBrands) {
+            if (fullText.contains(brand, ignoreCase = true)) {
+                val score = if (Regex("$brand[:：]\\d").containsMatchIn(fullText)) 1 else 4
+                brandHits[brand] = (brandHits[brand] ?: 0) + score
+            }
+        }
+        detectedBrand = brandHits.maxByOrNull { it.value }?.key
+        if (detectedBrand == "KFC") detectedBrand = "肯德基"
+
         if (!isLikelyHomePage) {
-            // 2. 精准定位：寻找关键字所在的块，支持 B680 这种字母+数字组合
+            // 2. 精准定位
             var targetKeywordRect: android.graphics.Rect? = null
-            val preciseKeywords = listOf("取餐号", "取餐码", "取茶号", "券码")
+            val preciseKeywords = listOf("取餐号", "取餐码", "取茶号", "券码", "订单号")
             
             for (block in blocks) {
                 val text = block.text.replace(" ", "")
                 if (preciseKeywords.any { text.contains(it) }) {
                     targetKeywordRect = block.boundingBox
-                    // 尝试匹配字母+数字
                     val match = Regex("[A-Z0-9]{3,6}").find(text)
-                    if (match != null && !preciseKeywords.contains(match.value)) {
+                    if (match != null && !preciseKeywords.any { it.contains(match.value) || match.value.contains(it) }) {
                         takeoutCode = match.value
                         break
                     }
@@ -66,7 +79,7 @@ class TextRecognitionHelper {
                     
                     if (Regex("^[A-Z0-9]{3,6}$").matches(text)) {
                         val dist = Math.abs((box.top + box.bottom)/2 - (targetKeywordRect!!.top + targetKeywordRect!!.bottom)/2)
-                        if (dist < 350) text to dist else null
+                        if (dist < 400) text to dist else null
                     } else null
                 }.sortedBy { it.second }
                 takeoutCode = candidates.firstOrNull()?.first
@@ -75,35 +88,22 @@ class TextRecognitionHelper {
             // 4. 权重兜底
             if (takeoutCode == null && hasTakeoutKeywords) {
                 val pattern = Regex("(?<![a-zA-Z0-9])([A-Z0-9]{3,5})(?![a-zA-Z0-9])")
-                val candidates = blocks.mapNotNull { block ->
+                val candidates = blocks.flatMap { block ->
                     val text = block.text.replace(" ", "").replace("\n", "")
-                    if (isDistraction(text)) return@mapNotNull null
-                    val match = pattern.find(text)
-                    if (match != null) {
+                    pattern.findAll(text).mapNotNull { match ->
                         val value = match.value
-                        if (value.startsWith("202") && value.length == 4) return@mapNotNull null
-                        val weight = (block.boundingBox?.width() ?: 0) * value.length
+                        if (isInvalidValue(value, text)) return@mapNotNull null
+                        
+                        var weight = (block.boundingBox?.width() ?: 0) * value.length
+                        // 麦当劳 5 位码权重极大
+                        if (detectedBrand == "麦当劳" && value.length == 5 && value.all { it.isDigit() }) weight *= 5
+                        
                         value to weight
-                    } else null
+                    }.toList()
                 }.sortedByDescending { it.second }
                 takeoutCode = candidates.firstOrNull()?.first
             }
         }
-
-        // 品牌检测逻辑
-        var detectedBrand: String? = null
-        val brandHits = mutableMapOf<String, Int>()
-        if (fullText.contains("熊猫币") || fullText.contains("葫芦")) brandHits["古茗"] = 15
-        if (fullText.contains("喜茶GO")) brandHits["喜茶"] = 15
-
-        for (brand in drinkBrands + foodBrands) {
-            if (fullText.contains(brand, ignoreCase = true)) {
-                val score = if (Regex("$brand[:：]\\d").containsMatchIn(fullText)) 1 else 4
-                brandHits[brand] = (brandHits[brand] ?: 0) + score
-            }
-        }
-        detectedBrand = brandHits.maxByOrNull { it.value }?.key
-        if (detectedBrand == "KFC") detectedBrand = "肯德基"
 
         var category = "餐食"
         if (drinkBrands.contains(detectedBrand) || fullText.contains("奶茶") || fullText.contains("咖啡")) category = "饮品"
@@ -120,12 +120,17 @@ class TextRecognitionHelper {
         return RecognitionResult(takeoutCode, qrCode, category, detectedBrand)
     }
 
-    private fun isDistraction(text: String): Boolean {
-        val lowerText = text.lowercase()
-        return lowerText.contains("ml") || lowerText.contains("g") || lowerText.contains("元") || 
-               lowerText.contains("¥") || lowerText.contains(":") || lowerText.contains("/") ||
-               lowerText.contains("年") || lowerText.contains("月") || lowerText.contains("日") ||
-               text.length > 8
+    private fun isInvalidValue(value: String, context: String): Boolean {
+        if (value.startsWith("202") && value.length == 4) return true // 年份排除
+        val lowerContext = context.lowercase()
+        // 排除常见的促销/广告/金额干扰
+        val distractions = listOf("ml", "g", "元", "¥", "购", "券", "赢", "送", "补贴", "减", "满", "起")
+        if (distractions.any { lowerContext.contains(it) && lowerContext.indexOf(it) in (lowerContext.indexOf(value)-2)..(lowerContext.indexOf(value)+value.length+2) }) return true
+        if (lowerContext.contains(":") || lowerContext.contains("/") || lowerContext.contains("年") || lowerContext.contains("月") || lowerContext.contains("日")) {
+            // 如果包含这些，且 value 只是其中一部分，排除
+            if (context.length > value.length + 5) return true
+        }
+        return false
     }
 
     fun close() {

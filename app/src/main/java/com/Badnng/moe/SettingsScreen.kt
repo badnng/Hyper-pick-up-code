@@ -118,7 +118,7 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
         
         SettingsListItem(
             title = "添加到控制中心", 
-            description = "将“截图识别”磁贴添加到控制中心快捷栏", 
+            description = "将“截图识别”磁贴添加到控制中心快捷栏",
             onClick = { requestAddTile(context) }
         )
         
