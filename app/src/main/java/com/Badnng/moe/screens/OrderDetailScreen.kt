@@ -89,7 +89,7 @@ fun OrderDetailScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    InfoItem("来源应用", order.sourceApp ?: "旧版数据")
+                    InfoItem("来源应用", order.sourceApp ?: "无数据")
                     InfoItem("来源包名", order.sourcePackage ?: "暂无记录")
                     InfoItem("识别类型", order.orderType)
                 }
@@ -112,7 +112,7 @@ fun OrderDetailScreen(
                     if (!order.screenshotPath.isNullOrEmpty() && File(order.screenshotPath).exists()) {
                         AsyncImage(
                             model = File(order.screenshotPath),
-                            contentDescription = "截图",
+                            contentDescription = "原图",
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(400.dp)
@@ -142,7 +142,7 @@ fun OrderDetailScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "暂无图片数据占位图",
+                                "暂无图片数据",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                 fontSize = 14.sp
                             )
@@ -197,7 +197,7 @@ fun FullTextCodeBlock(text: String?) {
             
             SelectionContainer {
                 Text(
-                    text = text ?: "旧版识别，未存储原始文本",
+                    text = text ?: "旧版数据或未记录",
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
                     lineHeight = 18.sp,

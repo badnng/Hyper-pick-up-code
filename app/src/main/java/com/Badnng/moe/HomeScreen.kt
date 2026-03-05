@@ -177,7 +177,7 @@ fun HomeScreen(
                         NavigationBar(containerColor = Color.Transparent, modifier = Modifier.fillMaxSize(), windowInsets = WindowInsets(0, 0, 0, 0)) {
                             val isHomeSelected = pagerState.currentPage == 0
                             val homeIconSize by animateDpAsState(if (isHomeSelected) 28.dp else 24.dp, label = "hSize")
-                            NavigationBarItem(icon = { Icon(Icons.Default.Home, null, Modifier.size(homeIconSize)) }, label = { Text("识别", fontSize = 12.sp) }, selected = isHomeSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                            NavigationBarItem(icon = { Icon(Icons.Default.Home, null, Modifier.size(homeIconSize)) }, label = { Text("主页", fontSize = 12.sp) }, selected = isHomeSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
                             
                             val isLogSelected = pagerState.currentPage == 1
                             val logIconSize by animateDpAsState(if (isLogSelected) 28.dp else 24.dp, label = "lSize")

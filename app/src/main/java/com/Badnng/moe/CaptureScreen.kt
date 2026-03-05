@@ -188,7 +188,7 @@ fun CaptureScreenContent(
                         }
                     } else if (showCompletedOnly && completedOrders.isNotEmpty()) {
                         OutlinedButton(onClick = { showClearAllConfirm = true }, shape = RoundedCornerShape(15.dp)) {
-                            Text("清空已完成")
+                            Text("清空全部")
                         }
                     }
                 }

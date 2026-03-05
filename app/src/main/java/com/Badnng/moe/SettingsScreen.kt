@@ -181,8 +181,8 @@ fun ScreenshotSettingsContent() {
     LaunchedEffect(Unit) { while (true) { shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }; if (!shizukuReady && captureMode == "shizuku") { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() }; delay(1500) } }
     Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Text("选择截图技术方案", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认。", selected = captureMode == "media_projection", onClick = { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
-        CaptureModeItem(title = "Shizuku 永授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别。（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
+        CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认", selected = captureMode == "media_projection", onClick = { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
+        CaptureModeItem(title = "Shizuku 免授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
     }
 }
 
