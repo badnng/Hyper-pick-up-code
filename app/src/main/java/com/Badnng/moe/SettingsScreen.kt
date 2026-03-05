@@ -1,12 +1,15 @@
 package com.Badnng.moe.screens
 
+import android.app.AppOpsManager
 import android.app.StatusBarManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
+import android.net.Uri
 import android.os.Build
+import android.os.Process
 import android.provider.Settings
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
@@ -115,7 +118,7 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
         SettingsListItem(title = "偏好设置", description = "管理自行习惯的设置", onClick = { onNavigate(SettingsPage.Preference) })
         SettingsListItem(title = "权限设置", description = "管理此App授予的权限", onClick = { onNavigate(SettingsPage.Permission) })
         SettingsListItem(title = "截图方式", description = "管理App截图的方式", onClick = { onNavigate(SettingsPage.Screenshot) })
-        
+
         SettingsListItem(
             title = "添加到控制中心", 
             description = "将“截图识别”磁贴添加到控制中心快捷栏",
@@ -185,12 +188,73 @@ fun ScreenshotSettingsContent() {
 
 @Composable
 fun PermissionSettingsContent() {
-    val context = LocalContext.current; var hasNotificationPermission by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }; var shizukuReady by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { while (true) { hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled(); shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }; delay(1500) } }
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        PermissionItem(title = "通知权限", description = "请授予该权限，该权限用于收取取餐码通知，如关闭/拒绝该权限将会无法收到此通知", isGranted = hasNotificationPermission, actionButton = if (!hasNotificationPermission) { { Button(onClick = { val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply { putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName) }; context.startActivity(intent) }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) { Icon(Icons.Default.Build, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去修复") } } } else null)
-        PermissionItem(title = "Shizuku 运行状态", description = "该软件用于免授权截图识别的必须条件，如无则无法使用免授权截图", isGranted = shizukuReady, actionButton = if (!shizukuReady) { { Button(onClick = { if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary), modifier = Modifier.fillMaxWidth().height(56.dp)) { Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("如果Shizuku已运行请点我") } } } else null)
+    val context = LocalContext.current
+    var hasNotificationPermission by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
+    var hasUsageStatsPermission by remember { mutableStateOf(checkUsageStatsPermission(context)) }
+    var shizukuReady by remember { mutableStateOf(false) }
+    
+    LaunchedEffect(Unit) { 
+        while (true) { 
+            hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled()
+            hasUsageStatsPermission = checkUsageStatsPermission(context)
+            shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }
+            delay(1500) 
+        } 
     }
+    
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        PermissionItem(
+            title = "通知权限", 
+            description = "请授予该权限，该权限用于收取取餐码通知，如关闭/拒绝该权限将会无法收到此通知", 
+            isGranted = hasNotificationPermission, 
+            actionButton = if (!hasNotificationPermission) { { 
+                Button(onClick = { 
+                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply { putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName) }
+                    context.startActivity(intent) 
+                }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
+                    Icon(Icons.Default.Build, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去修复") 
+                } 
+            } } else null
+        )
+
+        PermissionItem(
+            title = "应用使用情况", 
+            description = "此权限能更好的识别当前处在的app是哪个品牌，推荐授权！", 
+            isGranted = hasUsageStatsPermission, 
+            actionButton = if (!hasUsageStatsPermission) { { 
+                Button(onClick = { 
+                    val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    }
+                    try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+                }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
+                    Icon(Icons.Default.Security, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去授权") 
+                } 
+            } } else null
+        )
+
+        PermissionItem(
+            title = "Shizuku 运行状态", 
+            description = "该软件用于免授权截图识别的必须条件，如无则无法使用免授权截图", 
+            isGranted = shizukuReady, 
+            actionButton = if (!shizukuReady) { { 
+                Button(onClick = { if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
+                    Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("如果Shizuku已运行请点我") 
+                } 
+            } } else null
+        )
+    }
+}
+
+private fun checkUsageStatsPermission(context: Context): Boolean {
+    val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+    val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+    } else {
+        @Suppress("DEPRECATION")
+        appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+    }
+    return mode == AppOpsManager.MODE_ALLOWED
 }
 
 @Composable
@@ -239,7 +303,7 @@ fun CaptureModeItem(title: String, description: String, selected: Boolean, enabl
         Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(6.dp)); Text(text = description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 18.sp)
+                Spacer(modifier = Modifier.height(6.dp)); Text(text = description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 18.sp)
             }
             RadioButton(selected = selected, onClick = onClick, enabled = enabled)
         }

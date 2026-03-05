@@ -16,5 +16,8 @@ data class OrderEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null,
     val orderType: String = "餐食",
-    val brandName: String? = null // 补全品牌名称字段
+    val brandName: String? = null,
+    val sourceApp: String? = null,
+    val sourcePackage: String? = null,
+    val fullText: String? = null
 )

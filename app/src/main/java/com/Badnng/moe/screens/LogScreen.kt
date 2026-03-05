@@ -24,7 +24,7 @@ fun LogScreen(modifier: Modifier = Modifier) {
     var showFilter by remember { mutableStateOf(false) }
     var selectedLevels by remember { mutableStateOf(setOf("DEBUG", "INFO", "WARN", "ERROR")) }
     var showRecognitionMonitor by remember { mutableStateOf(true) }
-    
+
     val filteredLogs = LogManager.logs.filter {
         if (it.tag == "RecognitionMonitor") {
             showRecognitionMonitor
@@ -38,23 +38,34 @@ fun LogScreen(modifier: Modifier = Modifier) {
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text("运行日志") },
-                actions = {
-                    IconButton(onClick = { showFilter = true }) {
-                        Icon(Icons.Default.FilterList, null)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-            )
+            Surface(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                tonalElevation = 3.dp
+            ) {
+                TopAppBar(
+                    title = { Text("运行日志") },
+                    actions = {
+                        IconButton(onClick = { showFilter = true }) {
+                            Icon(Icons.Default.FilterList, null)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                    windowInsets = TopAppBarDefaults.windowInsets
+                )
+            }
         },
-        containerColor = Color.Transparent
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+        containerColor = Color.Transparent,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { _ ->
+        Box(modifier = Modifier.fillMaxSize()) {
             SelectionContainer {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp,
+                        bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 100.dp
+                    )
                 ) {
                     items(filteredLogs) { log ->
                         LogItem(log)
@@ -107,7 +118,7 @@ fun LogItem(log: LogEntry) {
         "DEBUG" -> Color(0xFF64B5F6)
         else -> Color.White
     }
-    
+
     Text(
         text = "${log.time} ${log.level.first()}/${log.tag}: ${log.message}",
         color = color,

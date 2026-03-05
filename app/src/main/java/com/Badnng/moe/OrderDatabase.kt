@@ -4,14 +4,24 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OrderEntity::class], version = 2, exportSchema = false) // 升级版本到 2
+@Database(entities = [OrderEntity::class], version = 3, exportSchema = false)
 abstract class OrderDatabase : RoomDatabase() {
     abstract fun orderDao(): OrderDao
 
     companion object {
         @Volatile
         private var INSTANCE: OrderDatabase? = null
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE orders ADD COLUMN fullText TEXT")
+                db.execSQL("ALTER TABLE orders ADD COLUMN sourceApp TEXT")
+                db.execSQL("ALTER TABLE orders ADD COLUMN sourcePackage TEXT")
+            }
+        }
 
         fun getDatabase(context: Context): OrderDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -20,7 +30,8 @@ abstract class OrderDatabase : RoomDatabase() {
                     OrderDatabase::class.java,
                     "order_database"
                 )
-                .fallbackToDestructiveMigration() // 允许在版本不匹配时直接重置数据库
+                .addMigrations(MIGRATION_2_3)
+                .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance
                 instance

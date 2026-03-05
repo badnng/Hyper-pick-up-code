@@ -1,6 +1,8 @@
 package com.Badnng.moe
 
 import android.app.*
+import android.app.usage.UsageStatsManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -18,7 +20,8 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import rikka.shizuku.Shizuku
-import java.io.InputStream
+import java.io.File
+import java.io.FileOutputStream
 
 class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
@@ -26,7 +29,6 @@ class ScreenCaptureService : Service() {
     private var imageReader: ImageReader? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
-    // 使用 lazy 确保在首次访问时才初始化，避开 Service 实例化阶段
     private val recognitionHelper: TextRecognitionHelper by lazy { TextRecognitionHelper() }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -76,12 +78,14 @@ class ScreenCaptureService : Service() {
 
     private fun startShizukuCaptureSingleTry() {
         scope.launch {
+            val pkg = getForegroundPackageName(applicationContext)
+            val appName = pkg?.let { getAppName(applicationContext, it) }
             delay(1500)
             try {
                 val bitmap = captureShizukuScreenshot()
                 if (bitmap != null) {
                     val cropped = cropStatusBar(bitmap)
-                    if (!processRecognize(cropped)) stopSelf()
+                    if (!processRecognize(cropped, appName, pkg)) stopSelf()
                 } else {
                     stopSelf()
                 }
@@ -104,6 +108,29 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    private fun getForegroundPackageName(context: Context): String? {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val time = System.currentTimeMillis()
+        val stats = usm.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            time - 1000 * 10,
+            time
+        )
+        return stats
+            ?.filter { it.lastTimeUsed > 0 && it.packageName != packageName && it.packageName != "com.android.systemui" }
+            ?.maxByOrNull { it.lastTimeUsed }
+            ?.packageName
+    }
+
+    private fun getAppName(context: Context, packageName: String): String {
+        return try {
+            val info = context.packageManager.getApplicationInfo(packageName, 0)
+            context.packageManager.getApplicationLabel(info).toString()
+        } catch (e: Exception) {
+            packageName
+        }
+    }
+
     private fun startMediaProjectionCaptureSingleTry() {
         val metrics = resources.displayMetrics
         imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
@@ -120,6 +147,8 @@ class ScreenCaptureService : Service() {
         }
 
         scope.launch {
+            val pkg = getForegroundPackageName(applicationContext)
+            val appName = pkg?.let { getAppName(applicationContext, it) }
             delay(1500)
             val image = imageReader?.acquireLatestImage()
             if (image == null) {
@@ -138,7 +167,7 @@ class ScreenCaptureService : Service() {
             image.close()
             
             val cropped = cropStatusBar(cleanBitmap)
-            if (!processRecognize(cropped)) stopSelf()
+            if (!processRecognize(cropped, appName, pkg)) stopSelf()
         }
     }
 
@@ -149,9 +178,9 @@ class ScreenCaptureService : Service() {
         } else src
     }
 
-    private suspend fun processRecognize(bitmap: Bitmap): Boolean {
+    private suspend fun processRecognize(bitmap: Bitmap, sourceApp: String?, sourcePkg: String?): Boolean {
         return try {
-            val result = recognitionHelper.recognizeAll(bitmap)
+            val result = recognitionHelper.recognizeAll(bitmap, sourceApp, sourcePkg)
             if (result.code != null) {
                 val order = OrderEntity(
                     takeoutCode = result.code,
@@ -159,7 +188,10 @@ class ScreenCaptureService : Service() {
                     screenshotPath = ScreenshotHelper(applicationContext).saveBitmap(bitmap),
                     recognizedText = "自动识别",
                     orderType = result.type,
-                    brandName = result.brand
+                    brandName = result.brand,
+                    fullText = result.fullText,
+                    sourceApp = sourceApp,
+                    sourcePackage = sourcePkg
                 )
                 OrderDatabase.getDatabase(applicationContext).orderDao().insert(order)
                 withContext(Dispatchers.Main) {

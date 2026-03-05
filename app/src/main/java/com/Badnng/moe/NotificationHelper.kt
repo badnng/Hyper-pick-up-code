@@ -69,7 +69,7 @@ class NotificationHelper(private val context: Context) {
             .setContentTitle("取餐提醒 - ${brandToUse ?: "新订单"}")
             .setContentText("取餐码: ${order.takeoutCode}")
             .setSmallIcon(iconRes)
-            .setOngoing(true) 
+            .setOngoing(true)
             .setContentIntent(viewPendingIntent)
             .setStyle(Notification.BigTextStyle().bigText("取餐码: ${order.takeoutCode}"))
             .addAction(Notification.Action.Builder(null, "已完成", completePendingIntent).build())
@@ -102,6 +102,7 @@ class NotificationHelper(private val context: Context) {
             "星巴克" -> R.drawable.ic_starbucks
             "霸王茶姬" -> R.drawable.ic_chagee
             "古茗" -> R.drawable.ic_goodme
+            "蜜雪冰城" -> R.drawable.ic_mixue
             else -> if (orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
         }
     }

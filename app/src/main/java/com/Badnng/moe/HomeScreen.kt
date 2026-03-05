@@ -8,6 +8,7 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +18,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -29,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +54,9 @@ import com.Badnng.moe.screens.CaptureScreen
 import com.Badnng.moe.screens.SettingsScreen
 import com.Badnng.moe.screens.QrCodeDialog
 import com.Badnng.moe.screens.LogScreen
+import com.Badnng.moe.screens.OrderDetailScreen
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,8 +72,34 @@ fun HomeScreen(
     val context = LocalContext.current
     val orders by viewModel.orders.collectAsState()
     var selectedOrderForQr by remember { mutableStateOf<OrderEntity?>(null) }
+    var detailOrder by remember { mutableStateOf<OrderEntity?>(null) }
+    var previousDetailOrder by remember { mutableStateOf<OrderEntity?>(null) }
     var isFromNotification by remember { mutableStateOf(false) }
     var isManaging by remember { mutableStateOf(false) }
+
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    var isPredictiveBackInProgress by remember { mutableStateOf(false) }
+
+    LaunchedEffect(detailOrder) {
+        if (detailOrder != null) previousDetailOrder = detailOrder
+    }
+
+    PredictiveBackHandler(enabled = detailOrder != null) { backEvent: Flow<androidx.activity.BackEventCompat> ->
+        isPredictiveBackInProgress = true
+        try {
+            backEvent.collect { event -> backProgress = event.progress }
+            detailOrder = null
+        } catch (e: CancellationException) {
+            detailOrder = previousDetailOrder
+        } finally {
+            isPredictiveBackInProgress = false
+            backProgress = 0f
+        }
+    }
+
+    val currentScale = if (isPredictiveBackInProgress) 1f - (backProgress * 0.08f) else 1f
+    val currentTranslationX = if (isPredictiveBackInProgress) backProgress * 100f else 0f
+    val currentCornerRadius = if (isPredictiveBackInProgress) (backProgress * 32).dp else 0.dp
 
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
@@ -108,12 +140,12 @@ fun HomeScreen(
         label = "uiAlpha"
     )
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            if (!isUiHidden) {
+    Box(modifier = modifier.fillMaxSize().background(backgroundColor)) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
                 val alignment = when (navAlignment) {
                     "left" -> Alignment.BottomStart
                     "right" -> Alignment.BottomEnd
@@ -157,127 +189,148 @@ fun HomeScreen(
                         }
                     }
                 }
-            }
-        },
-        floatingActionButton = {
-            AnimatedVisibility(
-                visible = pagerState.currentPage == 0 && !isManaging && !isSettingsSubPageOpen,
-                enter = scaleIn() + fadeIn(),
-                exit = scaleOut() + fadeOut()
-            ) {
-                FloatingActionButton(
-                    onClick = { showBottomSheet = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White,
-                    shape = RoundedCornerShape(15.dp),
-                    modifier = Modifier.navigationBarsPadding().padding(bottom = 8.dp, end = 24.dp)
+            },
+            floatingActionButton = {
+                AnimatedVisibility(
+                    visible = pagerState.currentPage == 0 && !isManaging && !isSettingsSubPageOpen,
+                    enter = scaleIn() + fadeIn(),
+                    exit = scaleOut() + fadeOut()
                 ) {
-                    Icon(Icons.Default.Add, "添加", Modifier.size(32.dp))
+                    FloatingActionButton(
+                        onClick = { showBottomSheet = true },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = Color.White,
+                        shape = RoundedCornerShape(15.dp),
+                        modifier = Modifier.navigationBarsPadding().padding(bottom = 8.dp, end = 24.dp)
+                    ) {
+                        Icon(Icons.Default.Add, "添加", Modifier.size(32.dp))
+                    }
                 }
             }
-        }
-    ) { _ ->
-        Box(modifier = Modifier.fillMaxSize().background(backgroundColor)) {
+        ) { _ ->
             Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
-                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !isManaging && !isSettingsSubPageOpen) { page ->
+                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !isManaging && !isSettingsSubPageOpen && detailOrder == null) { page ->
                     when (page) {
-                        0 -> CaptureScreen(modifier = Modifier.fillMaxSize(), bottomPadding = 100.dp, backdrop = backdrop, onEditModeChange = { isManaging = it })
+                        0 -> CaptureScreen(modifier = Modifier.fillMaxSize(), bottomPadding = 100.dp, backdrop = backdrop, onEditModeChange = { isManaging = it }, onNavigateToDetail = { detailOrder = it })
                         1 -> LogScreen(modifier = Modifier.fillMaxSize())
                         2 -> SettingsScreen(modifier = Modifier.fillMaxSize(), onSubPageStatusChange = { isSettingsSubPageOpen = it })
                     }
                 }
             }
+        }
 
-            if (showBottomSheet) {
-                ModalBottomSheet(onDismissRequest = { showBottomSheet = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.surface, dragHandle = { BottomSheetDefaults.DragHandle() }, shape = RoundedCornerShape(topStart = 15.dp, topEnd = 15.dp)) {
-                    BottomSheetContent(viewModel) { showBottomSheet = false }
+        AnimatedVisibility(
+            visible = detailOrder != null,
+            enter = slideInHorizontally { it } + fadeIn(),
+            exit = slideOutHorizontally { it } + fadeOut()
+        ) {
+            val displayOrder = detailOrder ?: previousDetailOrder
+            if (displayOrder != null) {
+                Box(modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = currentScale; scaleY = currentScale; translationX = currentTranslationX; shape = RoundedCornerShape(currentCornerRadius); clip = true }.border(width = if (isPredictiveBackInProgress) 1.dp else 0.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = backProgress), shape = RoundedCornerShape(currentCornerRadius)).background(MaterialTheme.colorScheme.background)) {
+                    OrderDetailScreen(order = displayOrder, onBack = { detailOrder = null })
                 }
             }
+        }
 
-            if (selectedOrderForQr != null) {
-                QrCodeDialog(order = selectedOrderForQr!!, onDismiss = { 
-                    selectedOrderForQr = null
-                    if (isFromNotification) { activity?.handleBackToPrevious(); isFromNotification = false }
-                })
+        if (showBottomSheet) {
+            ModalBottomSheet(onDismissRequest = { showBottomSheet = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.surface, dragHandle = { BottomSheetDefaults.DragHandle() }, shape = RoundedCornerShape(topStart = 15.dp, topEnd = 15.dp)) {
+                BottomSheetContent(viewModel) { showBottomSheet = false }
             }
         }
-    }
-}
 
-@Composable
-fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.35f).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("添加记录", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 24.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            ActionButton(Icons.Default.PhotoCamera, "截图识别", onClick = { onDismiss() })
-            var showManualInput by remember { mutableStateOf(false) }
-            ActionButton(Icons.Default.TextFields, "手动输入", onClick = { showManualInput = true })
-            if (showManualInput) {
-                ManualInputDialog(onDismiss = { showManualInput = false }, onConfirm = { code, qrData, type ->
-                    viewModel.addOrder(OrderEntity(takeoutCode = code, qrCodeData = qrData, screenshotPath = "", recognizedText = "手动输入", orderType = type, brandName = null))
-                    showManualInput = false
-                    onDismiss()
-                })
-            }
+        if (selectedOrderForQr != null) {
+            QrCodeDialog(order = selectedOrderForQr!!, onDismiss = { 
+                selectedOrderForQr = null
+                if (isFromNotification) { activity?.handleBackToPrevious(); isFromNotification = false }
+            })
         }
-    }
-}
-
-@Composable
-fun ActionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
-        Surface(onClick = onClick, shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(72.dp)) {
-            Box(contentAlignment = Alignment.Center) { Icon(icon, label, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ManualInputDialog(onDismiss: () -> Unit, onConfirm: (String, String?, String) -> Unit) {
+fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
     var detectedQrData by remember { mutableStateOf<String?>(null) }
     var orderType by remember { mutableStateOf("餐食") }
+    var brandName by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
     val options = listOf("餐食", "饮品")
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     
     val photoPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
-            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
-            } else {
-                @Suppress("DEPRECATION")
-                MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
-            }
-            val image = InputImage.fromBitmap(bitmap, 0)
-            val scanner = BarcodeScanning.getClient()
-            scanner.process(image).addOnSuccessListener { barcodes ->
-                for (barcode in barcodes) { detectedQrData = barcode.rawValue; break }
+            coroutineScope.launch {
+                val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+                } else {
+                    @Suppress("DEPRECATION")
+                    MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                }
+                
+                val helper = TextRecognitionHelper()
+                val result = helper.recognizeAll(bitmap)
+                
+                // 强制全量替换
+                text = result.code ?: ""
+                detectedQrData = result.qr
+                orderType = result.type
+                brandName = result.brand
+                
+                helper.close()
             }
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("手动输入取餐码") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("输入取餐码") }, singleLine = true, trailingIcon = { IconButton(onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Icon(if (detectedQrData != null) Icons.Default.QrCodeScanner else Icons.Default.PhotoLibrary, contentDescription = "识别二维码", tint = if (detectedQrData != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) } })
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-                    OutlinedTextField(value = orderType, onValueChange = {}, readOnly = true, label = { Text("餐品类别") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }, modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable))
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        options.forEach { selectionOption ->
-                            DropdownMenuItem(text = { Text(selectionOption) }, onClick = { orderType = selectionOption; expanded = false })
-                        }
+    Column(modifier = Modifier.fillMaxWidth().wrapContentHeight().padding(horizontal = 24.dp).padding(bottom = 32.dp).navigationBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("添加记录", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 24.dp))
+        
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            OutlinedTextField(
+                value = text, 
+                onValueChange = { text = it }, 
+                label = { Text("输入取餐码") }, 
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                trailingIcon = { 
+                    IconButton(onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { 
+                        Icon(if (detectedQrData != null) Icons.Default.QrCodeScanner else Icons.Default.PhotoLibrary, contentDescription = "选择图片识别", tint = if (detectedQrData != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) 
+                    } 
+                }
+            )
+            
+            ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+                OutlinedTextField(
+                    value = orderType, 
+                    onValueChange = {}, 
+                    readOnly = true, 
+                    label = { Text("餐品类别") }, 
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }, 
+                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                )
+                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    options.forEach { selectionOption ->
+                        DropdownMenuItem(text = { Text(selectionOption) }, onClick = { orderType = selectionOption; expanded = false })
                     }
                 }
-                if (detectedQrData != null) { Text(text = "已识别到二维码信息", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp)) }
             }
-        },
-        confirmButton = { Button(onClick = { onConfirm(text, detectedQrData, orderType) }) { Text("添加") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
+            
+            if (detectedQrData != null) { 
+                Text(text = "已识别到二维码信息", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp)) 
+            }
+
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) {
+                    Text("取消")
+                }
+                Button(onClick = { 
+                    viewModel.addOrder(OrderEntity(takeoutCode = text, qrCodeData = detectedQrData, screenshotPath = "", recognizedText = "手动输入", orderType = orderType, brandName = brandName))
+                    onDismiss()
+                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) {
+                    Text("添加")
+                }
+            }
+        }
+    }
 }

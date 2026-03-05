@@ -35,10 +35,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.Badnng.moe.MainActivity
@@ -50,11 +50,6 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import java.text.SimpleDateFormat
 import java.util.*
-import android.view.ViewGroup
-import android.graphics.drawable.ColorDrawable
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 
 @Composable
@@ -62,7 +57,8 @@ fun CaptureScreen(
     modifier: Modifier = Modifier,
     bottomPadding: Dp = 0.dp,
     backdrop: com.kyant.backdrop.Backdrop,
-    onEditModeChange: (Boolean) -> Unit = {}
+    onEditModeChange: (Boolean) -> Unit = {},
+    onNavigateToDetail: (OrderEntity) -> Unit = {}
 ) {
     val viewModel: OrderViewModel = viewModel()
     val incompleteOrders by viewModel.incompleteOrders.collectAsState()
@@ -81,6 +77,7 @@ fun CaptureScreen(
         },
         onClearAllCompleted = { viewModel.deleteCompletedOrders() },
         onEditModeChange = onEditModeChange,
+        onNavigateToDetail = onNavigateToDetail,
         modifier = modifier,
         bottomPadding = bottomPadding,
         backdrop = backdrop
@@ -96,6 +93,7 @@ fun CaptureScreenContent(
     onDeleteMultiple: (Set<String>) -> Unit,
     onClearAllCompleted: () -> Unit,
     onEditModeChange: (Boolean) -> Unit,
+    onNavigateToDetail: (OrderEntity) -> Unit,
     modifier: Modifier = Modifier,
     bottomPadding: Dp = 0.dp,
     backdrop: com.kyant.backdrop.Backdrop
@@ -209,7 +207,7 @@ fun CaptureScreenContent(
                 } else {
                     LazyColumn(state = currentState, modifier = Modifier.fillMaxSize().verticalScrollbar(currentState, 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding + 32.dp, start = 16.dp, end = 16.dp)) {
                         items(items = currentOrders, key = { it.id }) { order ->
-                            Row(modifier = Modifier.animateItem().animateContentSize(animationSpec = tween(400, easing = FastOutSlowInEasing)), verticalAlignment = Alignment.CenterVertically) {
+                            Row(modifier = Modifier.animateItem().animateContentSize(animationSpec = tween(400)), verticalAlignment = Alignment.CenterVertically) {
                                 AnimatedVisibility(
                                     visible = isEditMode,
                                     enter = expandHorizontally() + fadeIn(),
@@ -218,7 +216,7 @@ fun CaptureScreenContent(
                                     Checkbox(
                                         checked = selectedIds.contains(order.id),
                                         onCheckedChange = { checked ->
-                                            if (checked == true) selectedIds += order.id
+                                            if (checked) selectedIds += order.id
                                             else selectedIds -= order.id
                                         },
                                         modifier = Modifier.padding(end = 8.dp)
@@ -233,6 +231,7 @@ fun CaptureScreenContent(
                                     isCompleted = isCompletedOnly,
                                     isHighlighted = highlightOrderId == order.id,
                                     isEditMode = isEditMode,
+                                    onNavigateToDetail = onNavigateToDetail,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -262,29 +261,30 @@ fun CaptureScreenContent(
 
 @Composable
 fun QrCodeDialog(order: OrderEntity, onDismiss: () -> Unit) {
-    var animateTrigger by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { animateTrigger = true }
-    val bgAlpha by animateFloatAsState(targetValue = if (animateTrigger) 0.6f else 0f, label = "bg_alpha")
-    val scale by animateFloatAsState(targetValue = if (animateTrigger) 1f else 0.8f, animationSpec = tween(350), label = "scale")
-    val alpha by animateFloatAsState(targetValue = if (animateTrigger) 1f else 0f, animationSpec = tween(250), label = "alpha", finishedListener = { if (it == 0f) onDismiss() })
     val qrBitmap = remember(order.qrCodeData) { if (!order.qrCodeData.isNullOrEmpty()) { try { generateQrCode(order.qrCodeData, 512) } catch (e: Exception) { null } } else null }
-    Dialog(onDismissRequest = { animateTrigger = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = bgAlpha)).clickable(remember { MutableInteractionSource() }, null) { animateTrigger = false }, contentAlignment = Alignment.Center) {
-            Card(modifier = Modifier.padding(horizontal = 40.dp).fillMaxWidth().aspectRatio(1f).scale(scale).alpha(alpha).clickable(remember { MutableInteractionSource() }, null) { }, shape = RoundedCornerShape(32.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(12.dp)) {
-                Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "取餐码", fontSize = 12.sp, color = Color.Gray, letterSpacing = 1.2.sp)
-                        Text(text = order.takeoutCode, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
-                        Text(text = "请向商家出示此码", fontSize = 12.sp, color = Color.Gray.copy(alpha = 0.6f), fontWeight = FontWeight.Medium)
-                    }
-                    Box(modifier = Modifier.fillMaxWidth(0.6f).aspectRatio(1f).background(Color.White), contentAlignment = Alignment.Center) {
-                        if (qrBitmap != null) { Image(bitmap = qrBitmap.asImageBitmap(), contentDescription = "二维码", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-                        else { Text(text = "暂无数据", color = Color.Gray, fontSize = 12.sp) }
-                    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        modifier = Modifier.fillMaxWidth(0.8f),
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(text = "取餐码", fontSize = 12.sp, color = Color.Gray, letterSpacing = 1.2.sp)
+                Text(text = order.takeoutCode, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                Text(text = "请向商家出示此码", fontSize = 12.sp, color = Color.Gray.copy(alpha = 0.6f), fontWeight = FontWeight.Medium)
+            }
+        },
+        text = {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth(0.7f).aspectRatio(1f), contentAlignment = Alignment.Center) {
+                    if (qrBitmap != null) { Image(bitmap = qrBitmap.asImageBitmap(), contentDescription = "二维码", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
+                    else { Text(text = "暂无数据", color = Color.Gray, fontSize = 12.sp) }
                 }
             }
-        }
-    }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(32.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    )
 }
 
 fun generateQrCode(content: String, size: Int): Bitmap {
@@ -310,21 +310,22 @@ fun OrderCard(
     isCompleted: Boolean,
     isHighlighted: Boolean = false,
     isEditMode: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNavigateToDetail: (OrderEntity) -> Unit = {}
 ) {
     val context = LocalContext.current
     val timeStr = remember(order.createdAt) { val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault()); sdf.format(Date(order.createdAt)) }
     val brandIcon = remember(order.brandName, order.orderType) {
         val resName = when (order.brandName) {
-            "麦当劳" -> "ic_mcdonalds"; "肯德基", "KFC" -> "ic_kfc"; "瑞幸" -> "ic_luckin"; "喜茶" -> "ic_heytea"; "星巴克" -> "ic_starbucks"; "霸王茶姬" -> "ic_chagee"; "古茗" -> "ic_goodme"; else -> null
+            "麦当劳" -> "ic_mcdonalds"; "肯德基", "KFC" -> "ic_kfc"; "瑞幸" -> "ic_luckin"; "喜茶" -> "ic_heytea"; "星巴克" -> "ic_starbucks"; "霸王茶姬" -> "ic_chagee"; "古茗" -> "ic_goodme"; "蜜雪冰城" -> "ic_mixue"; else -> null
         }
         val resId = if (resName != null) context.resources.getIdentifier(resName, "drawable", context.packageName) else 0
         if (resId != 0) resId else if (order.orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
     }
-    val highlightColor by androidx.compose.animation.animateColorAsState(targetValue = if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else Color.Transparent, animationSpec = tween(1000, easing = FastOutSlowInEasing), label = "highlight")
+    val highlightColor by animateColorAsState(targetValue = if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else Color.Transparent, animationSpec = tween(1000), label = "highlight")
     
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().clickable { onNavigateToDetail(order) },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
         border = BorderStroke(2.dp, highlightColor),
         shape = RoundedCornerShape(15.dp)
@@ -369,41 +370,29 @@ fun StatusButton(selected: Boolean, label: String, count: Int, onClick: () -> Un
 
 @Composable
 fun DeleteConfirmDialog(title: String = "确认删除？", description: String = "删除后将无法找回此条记录，确定要继续吗？", onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    var animateTrigger by remember { mutableStateOf(false) }
-    var confirmed by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { animateTrigger = true }
-    val view = LocalView.current
-    SideEffect {
-        val window = (view.parent as? DialogWindowProvider)?.window
-        window?.let { w ->
-            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            WindowCompat.setDecorFitsSystemWindows(w, false)
-            w.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
-        }
-    }
-    val bgAlpha by animateFloatAsState(targetValue = if (animateTrigger) 0.55f else 0f, animationSpec = tween(300), label = "bg_alpha")
-    val cardScale by animateFloatAsState(targetValue = if (animateTrigger) 1f else 0.85f, animationSpec = tween(350, easing = FastOutSlowInEasing), label = "card_scale")
-    val cardAlpha by animateFloatAsState(targetValue = if (animateTrigger) 1f else 0f, animationSpec = tween(250), label = "card_alpha", finishedListener = { if (it == 0f) { if (confirmed) onConfirm() else onDismiss() } })
-    Dialog(onDismissRequest = { animateTrigger = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = bgAlpha)).clickable(remember { MutableInteractionSource() }, null) { animateTrigger = false }, contentAlignment = Alignment.Center) {
-            Card(modifier = Modifier.fillMaxWidth(0.82f).wrapContentHeight().scale(cardScale).alpha(cardAlpha).clickable(remember { MutableInteractionSource() }, null) { }, shape = RoundedCornerShape(15.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(0.dp)) {
-                Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Button(onClick = { animateTrigger = false }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) { Text("取消", fontWeight = FontWeight.Bold) }
-                        OutlinedButton(onClick = { confirmed = true; animateTrigger = false }, modifier = Modifier.weight(1f), border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) { Text("删除", fontWeight = FontWeight.Bold) }
-                    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(text = title, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
+            }
+        },
+        text = { Text(text = description, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+        confirmButton = {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(onClick = onDismiss, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) {
+                    Text("取消", fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(onClick = onConfirm, modifier = Modifier.weight(1f), border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) {
+                    Text("删除", fontWeight = FontWeight.Bold)
                 }
             }
-        }
-    }
+        },
+        shape = RoundedCornerShape(24.dp)
+    )
 }
 
 fun Modifier.verticalScrollbar(state: LazyListState, width: Dp = 6.dp, color: Color = Color.Gray): Modifier = composed {
-    val alpha by animateFloatAsState(targetValue = if (state.isScrollInProgress) 0.8f else 0f, animationSpec = tween(if (state.isScrollInProgress) 150 else 500), label = "scrollbar_alpha")
     drawWithContent {
         drawContent()
         val layoutInfo = state.layoutInfo
@@ -414,7 +403,7 @@ fun Modifier.verticalScrollbar(state: LazyListState, width: Dp = 6.dp, color: Co
             val scrollOffset = state.firstVisibleItemIndex * (averageItemHeight + 12.dp.toPx()) + state.firstVisibleItemScrollOffset
             val scrollbarHeight = ((viewportHeight / totalContentHeight) * viewportHeight).coerceIn(32.dp.toPx(), viewportHeight)
             val scrollProgress = (scrollOffset / (totalContentHeight - viewportHeight).coerceAtLeast(1f)).coerceIn(0f, 1f)
-            drawRoundRect(color = color.copy(alpha = alpha), topLeft = Offset(size.width - width.toPx() - 2.dp.toPx(), (viewportHeight - scrollbarHeight) * scrollProgress), size = Size(width.toPx(), scrollbarHeight), cornerRadius = CornerRadius(width.toPx() / 2))
+            drawRoundRect(color = color.copy(alpha = 0.5f), topLeft = Offset(size.width - width.toPx() - 2.dp.toPx(), (viewportHeight - scrollbarHeight) * scrollProgress), size = Size(width.toPx(), scrollbarHeight), cornerRadius = CornerRadius(width.toPx() / 2))
         }
     }
 }
