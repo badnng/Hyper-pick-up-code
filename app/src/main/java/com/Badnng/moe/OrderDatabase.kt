@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OrderEntity::class], version = 3, exportSchema = false)
+@Database(entities = [OrderEntity::class], version = 4, exportSchema = false)
 abstract class OrderDatabase : RoomDatabase() {
     abstract fun orderDao(): OrderDao
 
@@ -23,6 +23,12 @@ abstract class OrderDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE orders ADD COLUMN pickupLocation TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): OrderDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -30,7 +36,7 @@ abstract class OrderDatabase : RoomDatabase() {
                     OrderDatabase::class.java,
                     "order_database"
                 )
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

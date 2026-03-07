@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
+import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
@@ -34,7 +35,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,7 +64,18 @@ fun SettingsScreen(
     var currentPage by remember { mutableStateOf(SettingsPage.Main) }
     var previousPage by remember { mutableStateOf(SettingsPage.Main) }
     var backProgress by remember { mutableFloatStateOf(0f) }
+    var backSwipeEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
     var isPredictiveBackInProgress by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    
+    val performHaptic = {
+        if (prefs.getBoolean("haptic_enabled", true)) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
 
     LaunchedEffect(currentPage) {
         onSubPageStatusChange(currentPage != SettingsPage.Main)
@@ -71,7 +85,11 @@ fun SettingsScreen(
     PredictiveBackHandler(enabled = currentPage != SettingsPage.Main) { backEvent: Flow<androidx.activity.BackEventCompat> ->
         isPredictiveBackInProgress = true
         try {
-            backEvent.collect { event -> backProgress = event.progress }
+            backEvent.collect { event -> 
+                backProgress = event.progress
+                backSwipeEdge = event.swipeEdge
+            }
+            performHaptic()
             currentPage = SettingsPage.Main
         } catch (e: CancellationException) {
             currentPage = previousPage
@@ -82,11 +100,14 @@ fun SettingsScreen(
     }
 
     val currentScale = if (isPredictiveBackInProgress) 1f - (backProgress * 0.08f) else 1f
-    val currentTranslationX = if (isPredictiveBackInProgress) backProgress * 100f else 0f
+    val currentTranslationX = if (isPredictiveBackInProgress) {
+        val multiplier = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
+        backProgress * 100f * multiplier
+    } else 0f
     val currentCornerRadius = if (isPredictiveBackInProgress) (backProgress * 32).dp else 0.dp
 
     Box(modifier = modifier.fillMaxSize()) {
-        MainSettingsList(onNavigate = { currentPage = it })
+        MainSettingsList(onNavigate = { performHaptic(); currentPage = it })
 
         AnimatedVisibility(
             visible = currentPage != SettingsPage.Main,
@@ -102,7 +123,7 @@ fun SettingsScreen(
                 else -> ""
             }
             Box(modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = currentScale; scaleY = currentScale; translationX = currentTranslationX; shape = RoundedCornerShape(currentCornerRadius); clip = true }.border(width = if (isPredictiveBackInProgress) 1.dp else 0.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = backProgress), shape = RoundedCornerShape(currentCornerRadius)).background(MaterialTheme.colorScheme.background)) {
-                SubPage(title, displayPage) { currentPage = SettingsPage.Main }
+                SubPage(title, displayPage, performHaptic) { performHaptic(); currentPage = SettingsPage.Main }
             }
         }
     }
@@ -111,6 +132,14 @@ fun SettingsScreen(
 @Composable
 fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    val performHaptic = {
+        if (prefs.getBoolean("haptic_enabled", true)) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "设置", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
@@ -122,7 +151,7 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
         SettingsListItem(
             title = "添加到控制中心", 
             description = "将“截图识别”磁贴添加到控制中心快捷栏",
-            onClick = { requestAddTile(context) }
+            onClick = { performHaptic(); requestAddTile(context) }
         )
         
         SettingsListItem(title = "关于", description = null, onClick = { onNavigate(SettingsPage.About) })
@@ -132,11 +161,12 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
 
 private fun requestAddTile(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        @Suppress("WrongConstant")
         val statusBarManager = context.getSystemService(Context.STATUS_BAR_SERVICE) as StatusBarManager
         statusBarManager.requestAddTileService(
             ComponentName(context, CaptureTileService::class.java),
             "截图识别",
-            Icon.createWithResource(context, R.drawable.ic_launcher_foreground),
+            Icon.createWithResource(context, R.drawable.note),
             {}, {}
         )
     }
@@ -144,50 +174,129 @@ private fun requestAddTile(context: Context) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SubPage(title: String, page: SettingsPage, onBack: () -> Unit) {
+fun SubPage(title: String, page: SettingsPage, performHaptic: () -> Unit, onBack: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(title = { Text(text = title, fontSize = 20.sp, fontWeight = FontWeight.Bold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent))
         when (page) {
-            SettingsPage.Screenshot -> ScreenshotSettingsContent()
-            SettingsPage.Permission -> PermissionSettingsContent()
-            SettingsPage.Preference -> PreferenceSettingsContent()
+            SettingsPage.Screenshot -> ScreenshotSettingsContent(performHaptic)
+            SettingsPage.Permission -> PermissionSettingsContent(performHaptic)
+            SettingsPage.Preference -> PreferenceSettingsContent(performHaptic)
             else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(text = "正在开发中...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) }
         }
     }
 }
 
 @Composable
-fun PreferenceSettingsContent() {
+fun PreferenceSettingsContent(performHaptic: () -> Unit) {
     val context = LocalContext.current; val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
     var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "system") ?: "system") }
     var monetEnabled by remember { mutableStateOf(prefs.getBoolean("monet_enabled", true)) }
+    var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
     var customHue by remember { mutableFloatStateOf(260f) }
     var selectedColorInt by remember { mutableIntStateOf(prefs.getInt("theme_color", Color(0xFF6750A4).toArgb())) }
+    
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(32.dp)) {
-        PreferenceSection(title = "底栏位置") { Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("left" to "靠左", "center" to "居中", "right" to "靠右").forEach { (key, label) -> ChoiceChip(label = label, selected = navAlignment == key, onClick = { navAlignment = key; prefs.edit().putString("nav_alignment", key).apply() }, modifier = Modifier.weight(1f)) } } }
-        PreferenceSection(title = "外观设置") { Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) { PreferenceSwitchItem(title = "莫奈取色 (Dynamic Color)", description = "开启后主题色将跟随系统壁纸自动变化", checked = monetEnabled, onCheckedChange = { monetEnabled = it; prefs.edit().putBoolean("monet_enabled", it).apply() }) } }
-        AnimatedVisibility(visible = !monetEnabled, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { PreferenceSection(title = "自定义主题色") { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("滑动调节色相", style = MaterialTheme.typography.bodySmall); Slider(value = customHue, onValueChange = { customHue = it }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth()); val previewColor = remember(customHue) { Color.hsv(customHue, 0.7f, 0.9f) }; Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(previewColor).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)); Button(onClick = { selectedColorInt = previewColor.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }, shape = RoundedCornerShape(15.dp), modifier = Modifier.weight(1f).height(56.dp)) { Text("应用颜色") } } ; Text("MD3 建议色", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)); val md3Colors = listOf(0xFF6750A4, 0xFF006A60, 0xFF984061, 0xFF005AC1, 0xFF605D62, 0xFF3B6939); Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { md3Colors.forEach { colorLong -> val color = Color(colorLong); Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(color).border(width = if (selectedColorInt == color.toArgb()) 3.dp else 0.dp, color = MaterialTheme.colorScheme.primary, shape = CircleShape).clickable { selectedColorInt = color.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }) } } } } }
-        PreferenceSection(title = "显示模式") { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统").forEach { (key, label) -> Row(modifier = Modifier.fillMaxWidth().clickable { themeMode = key; prefs.edit().putString("theme_mode", key).apply() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = themeMode == key, onClick = null); Spacer(Modifier.width(12.dp)); Text(label, fontSize = 16.sp) } } } }
+        PreferenceSection(title = "底栏位置") { 
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
+                listOf("left" to "靠左", "center" to "居中", "right" to "靠右").forEach { (key, label) -> 
+                    ChoiceChip(label = label, selected = navAlignment == key, onClick = { 
+                        performHaptic(); navAlignment = key; prefs.edit().putString("nav_alignment", key).apply() 
+                    }, modifier = Modifier.weight(1f)) 
+                } 
+            } 
+        }
+        
+        PreferenceSection(title = "交互反馈") {
+            Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) {
+                PreferenceSwitchItem(
+                    title = "震动反馈",
+                    description = "开启后点击按钮、切换分类时会有触感反馈",
+                    checked = hapticEnabled,
+                    onCheckedChange = { 
+                        hapticEnabled = it
+                        prefs.edit().putBoolean("haptic_enabled", it).apply()
+                        performHaptic()
+                    }
+                )
+            }
+        }
+
+        PreferenceSection(title = "外观设置") { 
+            Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) { 
+                PreferenceSwitchItem(
+                    title = "莫奈取色 (Dynamic Color)", 
+                    description = "开启后主题色将跟随系统壁纸自动变化", 
+                    checked = monetEnabled, 
+                    onCheckedChange = { performHaptic(); monetEnabled = it; prefs.edit().putBoolean("monet_enabled", it).apply() }
+                ) 
+            } 
+        }
+
+        AnimatedVisibility(visible = !monetEnabled, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { 
+            PreferenceSection(title = "自定义主题色") { 
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { 
+                    Text("滑动调节色相", style = MaterialTheme.typography.bodySmall)
+                    Slider(value = customHue, onValueChange = { customHue = it }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth())
+                    val previewColor = remember(customHue) { Color.hsv(customHue, 0.7f, 0.9f) }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { 
+                        Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(previewColor).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape))
+                        Button(onClick = { 
+                            performHaptic()
+                            selectedColorInt = previewColor.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() 
+                        }, shape = RoundedCornerShape(15.dp), modifier = Modifier.weight(1f).height(56.dp)) { 
+                            Text("应用颜色") 
+                        } 
+                    } 
+                    Text("MD3 建议色", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+                    val md3Colors = listOf(0xFF6750A4, 0xFF006A60, 0xFF984061, 0xFF005AC1, 0xFF605D62, 0xFF3B6939)
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { 
+                        md3Colors.forEach { colorLong -> 
+                            val color = Color(colorLong)
+                            Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(color).border(width = if (selectedColorInt == color.toArgb()) 3.dp else 0.dp, color = MaterialTheme.colorScheme.primary, shape = CircleShape).clickable { 
+                                performHaptic(); selectedColorInt = color.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() 
+                            }) 
+                        } 
+                    } 
+                } 
+            } 
+        }
+
+        PreferenceSection(title = "显示模式") { 
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { 
+                listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统").forEach { (key, label) -> 
+                    Row(modifier = Modifier.fillMaxWidth().clickable { 
+                        performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply() 
+                    }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { 
+                        RadioButton(selected = themeMode == key, onClick = {
+                            performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply()
+                        })
+                        Spacer(Modifier.width(12.dp))
+                        Text(label, fontSize = 16.sp) 
+                    } 
+                } 
+            } 
+        }
         Spacer(modifier = Modifier.height(48.dp))
     }
 }
 
 @Composable
-fun ScreenshotSettingsContent() {
+fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
     val context = LocalContext.current; val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var captureMode by remember { mutableStateOf(prefs.getString("capture_mode", "media_projection") ?: "media_projection") }
     var shizukuReady by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }; if (!shizukuReady && captureMode == "shizuku") { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() }; delay(1500) } }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Text("选择截图技术方案", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认", selected = captureMode == "media_projection", onClick = { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
-        CaptureModeItem(title = "Shizuku 免授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
+        CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认", selected = captureMode == "media_projection", onClick = { performHaptic(); captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
+        CaptureModeItem(title = "Shizuku 免授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { performHaptic(); captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
     }
 }
 
 @Composable
-fun PermissionSettingsContent() {
+fun PermissionSettingsContent(performHaptic: () -> Unit) {
     val context = LocalContext.current
     var hasNotificationPermission by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
     var hasUsageStatsPermission by remember { mutableStateOf(checkUsageStatsPermission(context)) }
@@ -209,6 +318,7 @@ fun PermissionSettingsContent() {
             isGranted = hasNotificationPermission, 
             actionButton = if (!hasNotificationPermission) { { 
                 Button(onClick = { 
+                    performHaptic()
                     val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply { putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName) }
                     context.startActivity(intent) 
                 }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
@@ -219,12 +329,13 @@ fun PermissionSettingsContent() {
 
         PermissionItem(
             title = "应用使用情况", 
-            description = "此权限能更好的识别当前处在的app是哪个品牌，推荐授权！", 
+            description = "此权限能更好的识别当前处在的app是哪个 brand，推荐授权！",
             isGranted = hasUsageStatsPermission, 
             actionButton = if (!hasUsageStatsPermission) { { 
                 Button(onClick = { 
+                    performHaptic()
                     val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
-                        data = Uri.fromParts("package", context.packageName, null)
+                        data = Uri.parse("package:${context.packageName}")
                     }
                     try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
                 }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
@@ -238,7 +349,7 @@ fun PermissionSettingsContent() {
             description = "该软件用于免授权截图识别的必须条件，如无则无法使用免授权截图", 
             isGranted = shizukuReady, 
             actionButton = if (!shizukuReady) { { 
-                Button(onClick = { if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
+                Button(onClick = { performHaptic(); if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
                     Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("如果Shizuku已运行请点我") 
                 } 
             } } else null
@@ -305,7 +416,7 @@ fun CaptureModeItem(title: String, description: String, selected: Boolean, enabl
                 Text(text = title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(6.dp)); Text(text = description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 18.sp)
             }
-            RadioButton(selected = selected, onClick = onClick, enabled = enabled)
+            RadioButton(selected = selected, onClick = { if (enabled) onClick() }, enabled = enabled)
         }
     }
 }

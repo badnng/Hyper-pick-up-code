@@ -19,5 +19,6 @@ data class OrderEntity(
     val brandName: String? = null,
     val sourceApp: String? = null,
     val sourcePackage: String? = null,
-    val fullText: String? = null
+    val fullText: String? = null,
+    val pickupLocation: String? = null
 )

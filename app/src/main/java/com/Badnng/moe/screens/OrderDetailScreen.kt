@@ -135,7 +135,7 @@ fun OrderDetailScreen(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Icon(
-                                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                                painter = painterResource(id = R.drawable.note),
                                 contentDescription = null,
                                 modifier = Modifier.size(64.dp).alpha(0.2f),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant

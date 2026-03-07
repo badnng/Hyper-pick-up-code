@@ -31,11 +31,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +48,7 @@ import com.Badnng.moe.MainActivity
 import com.Badnng.moe.OrderEntity
 import com.Badnng.moe.OrderViewModel
 import com.Badnng.moe.R
+import com.Badnng.moe.NotificationHelper
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -108,9 +112,21 @@ fun CaptureScreenContent(
     var showMultiDeleteConfirm by remember { mutableStateOf(false) }
     var showClearAllConfirm by remember { mutableStateOf(false) }
 
-    val incompleteListState = rememberLazyListState()
-    val completedListState = rememberLazyListState()
+    var showCategoryFilters by remember { mutableStateOf(false) }
+    var selectedCategories by remember { mutableStateOf(setOf("餐食", "饮品", "快递")) }
+
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
+    val hapticEnabled = remember(prefs) { prefs.getBoolean("haptic_enabled", true) }
+    
+    val performHaptic = {
+        if (hapticEnabled) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+
+    val completedListState = rememberLazyListState()
     val activity = context as? MainActivity
 
     LaunchedEffect(isEditMode) {
@@ -127,17 +143,8 @@ fun CaptureScreenContent(
             if (isOrderCompleted || isOrderIncomplete) {
                 showCompletedOnly = isOrderCompleted
                 highlightOrderId = orderId
-                
-                val orders = if (isOrderCompleted) completedOrders else incompleteOrders
-                val index = orders.indexOfFirst { it.id == orderId }
-                if (index != -1) {
-                    val state = if (isOrderCompleted) completedListState else incompleteListState
-                    state.animateScrollToItem(index)
-                }
-
-                delay(3000)
+                delay(500) 
                 highlightOrderId = null
-                
                 if (intent.getBooleanExtra("show_qr_detail", false) == false) {
                     activity.intentToProcess = null
                 }
@@ -159,12 +166,69 @@ fun CaptureScreenContent(
 
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatusButton(selected = !showCompletedOnly, label = "待取", count = incompleteOrders.size, onClick = { if (!isEditMode) showCompletedOnly = false })
-                    StatusButton(selected = showCompletedOnly, label = "已取", count = completedOrders.size, onClick = { if (!isEditMode) showCompletedOnly = true })
+                    StatusButton(
+                        selected = !showCompletedOnly, 
+                        label = "待取", 
+                        count = incompleteOrders.size, 
+                        onClick = { 
+                            if (!isEditMode) {
+                                performHaptic()
+                                if (!showCompletedOnly) {
+                                    showCategoryFilters = !showCategoryFilters
+                                } else {
+                                    showCompletedOnly = false
+                                }
+                            }
+                        }
+                    )
+                    StatusButton(
+                        selected = showCompletedOnly, 
+                        label = "已取", 
+                        count = completedOrders.size, 
+                        onClick = { 
+                            if (!isEditMode) {
+                                performHaptic()
+                                showCompletedOnly = true
+                                showCategoryFilters = false
+                            }
+                        }
+                    )
                 }
                 
-                IconButton(onClick = { isEditMode = !isEditMode; if (!isEditMode) selectedIds = emptySet() }) {
+                IconButton(onClick = { 
+                    performHaptic()
+                    isEditMode = !isEditMode
+                    if (!isEditMode) selectedIds = emptySet() 
+                }) {
                     Icon(if (isEditMode) Icons.Default.Close else Icons.Default.SettingsSuggest, contentDescription = "管理", tint = if (isEditMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                }
+            }
+
+            AnimatedVisibility(
+                visible = showCategoryFilters && !showCompletedOnly,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("餐食", "饮品", "快递").forEach { category ->
+                        FilterChip(
+                            label = category,
+                            selected = selectedCategories.contains(category),
+                            onClick = {
+                                performHaptic()
+                                selectedCategories = if (selectedCategories.contains(category)) {
+                                    selectedCategories - category
+                                } else {
+                                    selectedCategories + category
+                                }
+                            }
+                        )
+                    }
                 }
             }
 
@@ -176,6 +240,7 @@ fun CaptureScreenContent(
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     val currentOrders = if (showCompletedOnly) completedOrders else incompleteOrders
                     TextButton(onClick = { 
+                        performHaptic()
                         if (selectedIds.size == currentOrders.size) selectedIds = emptySet()
                         else selectedIds = currentOrders.map { it.id }.toSet()
                     }) {
@@ -183,11 +248,11 @@ fun CaptureScreenContent(
                     }
                     Spacer(Modifier.weight(1f))
                     if (selectedIds.isNotEmpty()) {
-                        Button(onClick = { showMultiDeleteConfirm = true }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) {
+                        Button(onClick = { performHaptic(); showMultiDeleteConfirm = true }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) {
                             Text("删除(${selectedIds.size})")
                         }
                     } else if (showCompletedOnly && completedOrders.isNotEmpty()) {
-                        OutlinedButton(onClick = { showClearAllConfirm = true }, shape = RoundedCornerShape(15.dp)) {
+                        OutlinedButton(onClick = { performHaptic(); showClearAllConfirm = true }, shape = RoundedCornerShape(15.dp)) {
                             Text("清空全部")
                         }
                     }
@@ -196,44 +261,68 @@ fun CaptureScreenContent(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Crossfade(targetState = showCompletedOnly, modifier = Modifier.weight(1f).fillMaxWidth(), label = "list") { isCompletedOnly ->
-                val currentOrders = if (isCompletedOnly) completedOrders else incompleteOrders
-                val currentState = if (isCompletedOnly) completedListState else incompleteListState
+            Crossfade(
+                targetState = showCompletedOnly to selectedCategories, 
+                modifier = Modifier.weight(1f).fillMaxWidth(), 
+                label = "listTransition",
+                animationSpec = tween(300)
+            ) { (isCompletedOnly, categories) ->
+                val currentOrders = remember(isCompletedOnly, categories, incompleteOrders, completedOrders) {
+                    val baseList = if (isCompletedOnly) completedOrders else incompleteOrders
+                    if (isCompletedOnly) baseList else baseList.filter { categories.contains(it.orderType) }
+                }
 
-                if (currentOrders.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(text = "暂无数据", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
-                    }
+                val currentState = if (isCompletedOnly) {
+                    completedListState
                 } else {
-                    LazyColumn(state = currentState, modifier = Modifier.fillMaxSize().verticalScrollbar(currentState, 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding + 32.dp, start = 16.dp, end = 16.dp)) {
-                        items(items = currentOrders, key = { it.id }) { order ->
-                            Row(modifier = Modifier.animateItem().animateContentSize(animationSpec = tween(400)), verticalAlignment = Alignment.CenterVertically) {
-                                AnimatedVisibility(
-                                    visible = isEditMode,
-                                    enter = expandHorizontally() + fadeIn(),
-                                    exit = shrinkHorizontally() + fadeOut()
+                    remember(categories) { LazyListState() }
+                }
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (currentOrders.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(text = "暂无数据", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                        }
+                    } else {
+                        LazyColumn(
+                            state = currentState, 
+                            modifier = Modifier.fillMaxSize().verticalScrollbar(currentState, 6.dp), 
+                            verticalArrangement = Arrangement.spacedBy(12.dp), 
+                            contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding + 32.dp, start = 16.dp, end = 16.dp)
+                        ) {
+                            items(items = currentOrders, key = { it.id }) { order ->
+                                Row(
+                                    modifier = Modifier.animateItem(), 
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Checkbox(
-                                        checked = selectedIds.contains(order.id),
-                                        onCheckedChange = { checked ->
-                                            if (checked) selectedIds += order.id
-                                            else selectedIds -= order.id
-                                        },
-                                        modifier = Modifier.padding(end = 8.dp)
+                                    AnimatedVisibility(
+                                        visible = isEditMode,
+                                        enter = expandHorizontally() + fadeIn(),
+                                        exit = shrinkHorizontally() + fadeOut()
+                                    ) {
+                                        Checkbox(
+                                            checked = selectedIds.contains(order.id),
+                                            onCheckedChange = { checked ->
+                                                performHaptic()
+                                                if (checked == true) selectedIds += order.id
+                                                else selectedIds -= order.id
+                                            },
+                                            modifier = Modifier.padding(end = 8.dp)
+                                        )
+                                    }
+
+                                    OrderCard(
+                                        order = order,
+                                        onMarkCompleted = { performHaptic(); onMarkCompleted(order.id) },
+                                        onDelete = { performHaptic(); orderToDelete = order },
+                                        onShowQr = { performHaptic(); selectedOrderForQr = order },
+                                        isCompleted = isCompletedOnly,
+                                        isHighlighted = highlightOrderId == order.id,
+                                        isEditMode = isEditMode,
+                                        onNavigateToDetail = onNavigateToDetail,
+                                        modifier = Modifier.weight(1f)
                                     )
                                 }
-                                
-                                OrderCard(
-                                    order = order,
-                                    onMarkCompleted = { onMarkCompleted(order.id) },
-                                    onDelete = { orderToDelete = order },
-                                    onShowQr = { selectedOrderForQr = order },
-                                    isCompleted = isCompletedOnly,
-                                    isHighlighted = highlightOrderId == order.id,
-                                    isEditMode = isEditMode,
-                                    onNavigateToDetail = onNavigateToDetail,
-                                    modifier = Modifier.weight(1f)
-                                )
                             }
                         }
                     }
@@ -255,6 +344,22 @@ fun CaptureScreenContent(
 
         if (selectedOrderForQr != null) {
             QrCodeDialog(order = selectedOrderForQr!!, onDismiss = { selectedOrderForQr = null })
+        }
+    }
+}
+
+@Composable
+fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+        modifier = Modifier.height(32.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) {
+            Text(text = label, fontSize = 12.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
         }
     }
 }
@@ -320,7 +425,11 @@ fun OrderCard(
             "麦当劳" -> "ic_mcdonalds"; "肯德基", "KFC" -> "ic_kfc"; "瑞幸" -> "ic_luckin"; "喜茶" -> "ic_heytea"; "星巴克" -> "ic_starbucks"; "霸王茶姬" -> "ic_chagee"; "古茗" -> "ic_goodme"; "蜜雪冰城" -> "ic_mixue"; else -> null
         }
         val resId = if (resName != null) context.resources.getIdentifier(resName, "drawable", context.packageName) else 0
-        if (resId != 0) resId else if (order.orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
+        if (resId != 0) resId else when (order.orderType) {
+            "饮品" -> R.drawable.ic_drink
+            "快递" -> R.drawable.ic_package
+            else -> R.drawable.ic_restaurant
+        }
     }
     val highlightColor by animateColorAsState(targetValue = if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else Color.Transparent, animationSpec = tween(1000), label = "highlight")
     
@@ -336,8 +445,22 @@ fun OrderCard(
                     Icon(painter = painterResource(id = brandIcon), contentDescription = null, modifier = Modifier.size(32.dp), tint = Color.Unspecified)
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
-                        Text(text = order.brandName ?: "取餐码", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(text = order.takeoutCode, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                        if (order.orderType == "快递") {
+                            Text(text = "取件码", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(text = order.takeoutCode, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            if (!order.pickupLocation.isNullOrEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.LocationOn, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(text = "取件位置", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                                }
+                                Text(text = order.pickupLocation!!, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        } else {
+                            Text(text = order.brandName ?: "取餐码", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(text = order.takeoutCode, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -352,9 +475,24 @@ fun OrderCard(
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (!isCompleted) { FilledTonalButton(onClick = onMarkCompleted, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) { Text("完成") } }
-                    OutlinedButton(onClick = onDelete, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) { Text("删除") }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (!isCompleted) { FilledTonalButton(onClick = onMarkCompleted, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) { Text("完成") } }
+                        OutlinedButton(onClick = onDelete, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) { Text("删除") }
+                    }
+                    
+                    if (!isCompleted) {
+                        FilledTonalButton(
+                            onClick = { NotificationHelper(context).showPromotedLiveUpdate(order) },
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                            shape = RoundedCornerShape(15.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                        ) {
+                            Icon(Icons.Default.NotificationAdd, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("再次推送实时通知", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }

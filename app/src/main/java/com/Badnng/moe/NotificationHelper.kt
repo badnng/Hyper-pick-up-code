@@ -64,14 +64,16 @@ class NotificationHelper(private val context: Context) {
 
         val brandToUse = detectedBrand ?: order.brandName
         val iconRes = getBrandIcon(brandToUse, order.orderType)
+        val isExpress = order.orderType == "快递"
+        val label = if (isExpress) "取件码" else "取餐码"
 
         val builder = Notification.Builder(context, channelId)
-            .setContentTitle("取餐提醒 - ${brandToUse ?: "新订单"}")
-            .setContentText("取餐码: ${order.takeoutCode}")
+            .setContentTitle(if (isExpress) "快递待取 - ${brandToUse ?: "新包裹"}" else "取餐提醒 - ${brandToUse ?: "新订单"}")
+            .setContentText("$label: ${order.takeoutCode}")
             .setSmallIcon(iconRes)
             .setOngoing(true)
             .setContentIntent(viewPendingIntent)
-            .setStyle(Notification.BigTextStyle().bigText("取餐码: ${order.takeoutCode}"))
+            .setStyle(Notification.BigTextStyle().bigText("$label: ${order.takeoutCode}"))
             .addAction(Notification.Action.Builder(null, "已完成", completePendingIntent).build())
             
         if (!order.qrCodeData.isNullOrEmpty()) {
@@ -84,7 +86,7 @@ class NotificationHelper(private val context: Context) {
             builder.addExtras(extras)
             try {
                 if (Build.VERSION.SDK_INT >= 36) {
-                    builder.setShortCriticalText("${brandToUse ?: "取餐"}: ${order.takeoutCode}")
+                    builder.setShortCriticalText(" ${order.takeoutCode}")
                 }
             } catch (e: Exception) {}
         }
@@ -93,7 +95,6 @@ class NotificationHelper(private val context: Context) {
     }
 
     private fun getBrandIcon(brandName: String?, orderType: String): Int {
-        // 关键修复：直接显式映射 R.drawable，不使用反射以避免混淆失效
         return when (brandName) {
             "麦当劳" -> R.drawable.ic_mcdonalds
             "肯德基", "KFC" -> R.drawable.ic_kfc
@@ -103,7 +104,11 @@ class NotificationHelper(private val context: Context) {
             "霸王茶姬" -> R.drawable.ic_chagee
             "古茗" -> R.drawable.ic_goodme
             "蜜雪冰城" -> R.drawable.ic_mixue
-            else -> if (orderType == "饮品") R.drawable.ic_drink else R.drawable.ic_restaurant
+            else -> when (orderType) {
+                "饮品" -> R.drawable.ic_drink
+                "快递" -> R.drawable.ic_package
+                else -> R.drawable.ic_restaurant
+            }
         }
     }
 

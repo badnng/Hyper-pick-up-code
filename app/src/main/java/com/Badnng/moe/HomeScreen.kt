@@ -7,7 +7,9 @@ import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
+import android.os.Process
 import android.provider.MediaStore
+import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -18,7 +20,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -33,7 +34,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,6 +73,7 @@ fun HomeScreen(
     val sheetState = rememberModalBottomSheetState()
     val viewModel: OrderViewModel = viewModel()
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val orders by viewModel.orders.collectAsState()
     var selectedOrderForQr by remember { mutableStateOf<OrderEntity?>(null) }
     var detailOrder by remember { mutableStateOf<OrderEntity?>(null) }
@@ -78,7 +82,30 @@ fun HomeScreen(
     var isManaging by remember { mutableStateOf(false) }
 
     var backProgress by remember { mutableFloatStateOf(0f) }
+    var backSwipeEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
     var isPredictiveBackInProgress by remember { mutableStateOf(false) }
+
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
+    var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
+    
+    // 实时监听配置变化
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            when (key) {
+                "nav_alignment" -> navAlignment = p.getString(key, "center") ?: "center"
+                "haptic_enabled" -> hapticEnabled = p.getBoolean(key, true)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    
+    val performHaptic = {
+        if (hapticEnabled) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
 
     LaunchedEffect(detailOrder) {
         if (detailOrder != null) previousDetailOrder = detailOrder
@@ -87,7 +114,10 @@ fun HomeScreen(
     PredictiveBackHandler(enabled = detailOrder != null) { backEvent: Flow<androidx.activity.BackEventCompat> ->
         isPredictiveBackInProgress = true
         try {
-            backEvent.collect { event -> backProgress = event.progress }
+            backEvent.collect { event -> 
+                backProgress = event.progress
+                backSwipeEdge = event.swipeEdge
+            }
             detailOrder = null
         } catch (e: CancellationException) {
             detailOrder = previousDetailOrder
@@ -98,19 +128,11 @@ fun HomeScreen(
     }
 
     val currentScale = if (isPredictiveBackInProgress) 1f - (backProgress * 0.08f) else 1f
-    val currentTranslationX = if (isPredictiveBackInProgress) backProgress * 100f else 0f
+    val currentTranslationX = if (isPredictiveBackInProgress) {
+        val multiplier = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
+        backProgress * 100f * multiplier
+    } else 0f
     val currentCornerRadius = if (isPredictiveBackInProgress) (backProgress * 32).dp else 0.dp
-
-    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
-    
-    DisposableEffect(prefs) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-            if (key == "nav_alignment") navAlignment = p.getString(key, "center") ?: "center"
-        }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
-    }
 
     val activity = context as? MainActivity
     
@@ -123,6 +145,10 @@ fun HomeScreen(
                 isFromNotification = intentToProcess.getBooleanExtra("from_notification", false)
                 activity?.intentToProcess = null 
             }
+        }
+        if (intentToProcess?.hasExtra("highlight_order_id") == true) {
+            detailOrder = null // 自动关闭详情页回到列表
+            coroutineScope.launch { pagerState.animateScrollToPage(0) }
         }
     }
 
@@ -177,15 +203,15 @@ fun HomeScreen(
                         NavigationBar(containerColor = Color.Transparent, modifier = Modifier.fillMaxSize(), windowInsets = WindowInsets(0, 0, 0, 0)) {
                             val isHomeSelected = pagerState.currentPage == 0
                             val homeIconSize by animateDpAsState(if (isHomeSelected) 28.dp else 24.dp, label = "hSize")
-                            NavigationBarItem(icon = { Icon(Icons.Default.Home, null, Modifier.size(homeIconSize)) }, label = { Text("主页", fontSize = 12.sp) }, selected = isHomeSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                            NavigationBarItem(icon = { Icon(Icons.Default.Home, null, Modifier.size(homeIconSize)) }, label = { Text("主页", fontSize = 12.sp) }, selected = isHomeSelected, onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
                             
                             val isLogSelected = pagerState.currentPage == 1
                             val logIconSize by animateDpAsState(if (isLogSelected) 28.dp else 24.dp, label = "lSize")
-                            NavigationBarItem(icon = { Icon(Icons.Default.List, null, Modifier.size(logIconSize)) }, label = { Text("日志", fontSize = 12.sp) }, selected = isLogSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(1) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                            NavigationBarItem(icon = { Icon(Icons.Default.List, null, Modifier.size(logIconSize)) }, label = { Text("日志", fontSize = 12.sp) }, selected = isLogSelected, onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
                             
                             val isSettingsSelected = pagerState.currentPage == 2
                             val settingsIconSize by animateDpAsState(if (isSettingsSelected) 28.dp else 24.dp, label = "sSize")
-                            NavigationBarItem(icon = { Icon(Icons.Default.Settings, null, Modifier.size(settingsIconSize)) }, label = { Text("设置", fontSize = 12.sp) }, selected = isSettingsSelected, onClick = { coroutineScope.launch { pagerState.animateScrollToPage(2) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                            NavigationBarItem(icon = { Icon(Icons.Default.Settings, null, Modifier.size(settingsIconSize)) }, label = { Text("设置", fontSize = 12.sp) }, selected = isSettingsSelected, onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
                         }
                     }
                 }
@@ -197,7 +223,7 @@ fun HomeScreen(
                     exit = scaleOut() + fadeOut()
                 ) {
                     FloatingActionButton(
-                        onClick = { showBottomSheet = true },
+                        onClick = { performHaptic(); showBottomSheet = true },
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = Color.White,
                         shape = RoundedCornerShape(15.dp),
@@ -254,9 +280,28 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
     var detectedQrData by remember { mutableStateOf<String?>(null) }
     var orderType by remember { mutableStateOf("餐食") }
     var brandName by remember { mutableStateOf<String?>(null) }
+    var pickupLocation by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
-    val options = listOf("餐食", "饮品")
+    val options = listOf("餐食", "饮品", "快递")
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    
+    var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "haptic_enabled") hapticEnabled = p.getBoolean(key, true)
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    
+    val performHaptic = {
+        if (hapticEnabled) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+    
     val coroutineScope = rememberCoroutineScope()
     
     val photoPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -272,11 +317,11 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
                 val helper = TextRecognitionHelper()
                 val result = helper.recognizeAll(bitmap)
                 
-                // 强制全量替换
                 text = result.code ?: ""
                 detectedQrData = result.qr
                 orderType = result.type
                 brandName = result.brand
+                pickupLocation = result.pickupLocation
                 
                 helper.close()
             }
@@ -290,11 +335,11 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
             OutlinedTextField(
                 value = text, 
                 onValueChange = { text = it }, 
-                label = { Text("输入取餐码") }, 
+                label = { Text("输入取餐码/取件码") }, 
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 trailingIcon = { 
-                    IconButton(onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { 
+                    IconButton(onClick = { performHaptic(); photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { 
                         Icon(if (detectedQrData != null) Icons.Default.QrCodeScanner else Icons.Default.PhotoLibrary, contentDescription = "选择图片识别", tint = if (detectedQrData != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) 
                     } 
                 }
@@ -305,13 +350,13 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
                     value = orderType, 
                     onValueChange = {}, 
                     readOnly = true, 
-                    label = { Text("餐品类别") }, 
+                    label = { Text("类别") }, 
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }, 
                     modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     options.forEach { selectionOption ->
-                        DropdownMenuItem(text = { Text(selectionOption) }, onClick = { orderType = selectionOption; expanded = false })
+                        DropdownMenuItem(text = { Text(selectionOption) }, onClick = { performHaptic(); orderType = selectionOption; expanded = false })
                     }
                 }
             }
@@ -321,11 +366,20 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
             }
 
             Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) {
+                OutlinedButton(onClick = { performHaptic(); onDismiss() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) {
                     Text("取消")
                 }
                 Button(onClick = { 
-                    viewModel.addOrder(OrderEntity(takeoutCode = text, qrCodeData = detectedQrData, screenshotPath = "", recognizedText = "手动输入", orderType = orderType, brandName = brandName))
+                    performHaptic()
+                    viewModel.addOrder(OrderEntity(
+                        takeoutCode = text, 
+                        qrCodeData = detectedQrData, 
+                        screenshotPath = "", 
+                        recognizedText = "手动输入", 
+                        orderType = orderType, 
+                        brandName = brandName,
+                        pickupLocation = pickupLocation
+                    ))
                     onDismiss()
                 }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) {
                     Text("添加")

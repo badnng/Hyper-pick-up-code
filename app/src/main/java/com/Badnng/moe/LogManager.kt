@@ -28,8 +28,16 @@ object LogManager {
                 val process = Runtime.getRuntime().exec("logcat -v time")
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
                 var line: String?
+                val MAX_LOGS = 700
                 while (reader.readLine().also { line = it } != null) {
-                    parseLine(line!!)?.let { logs.add(it) }
+                    parseLine(line!!)?.let { entry ->
+                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            logs.add(entry)
+                            if (logs.size > MAX_LOGS) {
+                                logs.removeAt(0)
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
