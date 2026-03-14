@@ -51,7 +51,7 @@
 
         <activity
             android:name=".ProcessTextActivity"
-            android:label="识别取件码"
+            android:label="澎湃记-划词识别"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:excludeFromRecents="true"
             android:noHistory="true"
