@@ -26,11 +26,11 @@ fun LogScreen(modifier: Modifier = Modifier) {
     var showRecognitionMonitor by remember { mutableStateOf(true) }
 
     val filteredLogs = LogManager.logs.filter {
-        if (it.tag == "RecognitionMonitor") {
-            showRecognitionMonitor
-        } else {
-            it.level in selectedLevels
-        }
+        // 过滤掉系统噪音日志
+        val isNoise = it.tag == "InsetsSource" || it.tag == "MIUIInput"
+        if (isNoise) false
+        else if (it.tag == "RecognitionMonitor") showRecognitionMonitor
+        else it.level in selectedLevels
     }
 
     val listState = rememberLazyListState()

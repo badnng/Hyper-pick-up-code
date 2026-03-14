@@ -54,7 +54,15 @@ object LogManager {
             val tag = if (tagEnd != -1) rest.substring(0, tagEnd).trim() else "Unknown"
             val messageStart = rest.indexOf("): ")
             val message = if (messageStart != -1) rest.substring(messageStart + 3) else rest
-            val blockedTags = setOf("LegacyMessageQueue", "LB")
+            val blockedTags = setOf(
+                "LegacyMessageQueue", "LB",
+                "MIUIInput", "InsetsSource",
+                "DecorViewStubImpl",
+                "BufferQueueConsumer", "BufferQueueProducer",
+                "HWUI", "WindowOnBackDispatcher"
+            )
+            // 过滤以 VRI[ 开头的标签 (ViewRootImpl 相关)
+            if (tag.startsWith("VRI[")) return null
             if (tag in blockedTags) return null
 
             val level = when (levelChar) {
