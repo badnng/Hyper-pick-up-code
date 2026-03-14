@@ -321,7 +321,9 @@ class TextRecognitionHelper {
             .replace("前住", "前往")
             .replace("取養号", "取餐号")
             .replace("靖凭", "请凭") // OCR错误纠正
+            .replace("冰域", "冰城")
     }
+
     private fun truncateLocation(location: String): String {
         val stopKeywords = listOf("请凭", "靖凭", "取件", "领取", "复制", "查看", "日已接收", "已接收", "日已签收", "日已到", "点击", "联系", "如有", "如有疑问", "取您的")
         var result = location
@@ -333,6 +335,122 @@ class TextRecognitionHelper {
             if (index != -1) result = result.substring(0, index)
         }
         return result.replace("[,，。！!?;？;|\\s]+$".toRegex(), "")
+    }
+
+    // ─────────── 纯文字识别（用于划选文字处理） ───────────
+    fun recognizeFromText(text: String): RecognitionResult {
+        val mergedText = cleanChineseText(text)
+
+        // 品牌识别
+        var detectedBrand: String? = null
+        val brandHits = mutableMapOf<String, Int>()
+        if (mergedText.contains("熊猫币") || mergedText.contains("葫芦")) brandHits["古茗"] = 15
+        if (mergedText.contains("喜茶GO")) brandHits["喜茶"] = 15
+        for (brand in drinkBrands + foodBrands) {
+            if (mergedText.contains(brand, ignoreCase = true)) {
+                val score = if (Regex("$brand[:：]\\d").containsMatchIn(mergedText)) 1 else 4
+                brandHits[brand] = (brandHits[brand] ?: 0) + score
+            }
+        }
+        detectedBrand = brandHits.maxByOrNull { it.value }?.key
+        if (detectedBrand == "KFC") detectedBrand = "肯德基"
+
+
+        // 类型判断
+        var category = "餐食"
+        if (drinkBrands.contains(detectedBrand) || mergedText.contains("奶茶") || mergedText.contains("咖啡")) {
+            category = "饮品"
+        } else if (mergedText.contains("取件") || mergedText.contains("取性") || mergedText.contains("快递") ||
+            mergedText.contains("包裹") || mergedText.contains("待取件") || mergedText.contains("丰巢")) {
+            category = "快递"
+        }
+
+        // 提取取件码
+        val takeoutCode = if (category == "快递") {
+            extractExpressCodeFromText(mergedText)
+        } else {
+            extractFoodCodeFromText(mergedText, detectedBrand)
+        }
+
+        // 提取取货地点
+        val pickupLocation = findPickupLocation(mergedText, emptyList())
+
+        Log.d("ProcessTextRecognition", "------------------------------------")
+        Log.d("ProcessTextRecognition", "Input Text: $mergedText")
+        Log.d("ProcessTextRecognition", "Extracted Code: $takeoutCode")
+        Log.d("ProcessTextRecognition", "Category: $category")
+        Log.d("ProcessTextRecognition", "Brand: $detectedBrand")
+        Log.d("ProcessTextRecognition", "Pickup Location: $pickupLocation")
+        Log.d("ProcessTextRecognition", "------------------------------------")
+
+        return RecognitionResult(takeoutCode, null, category, detectedBrand, text, pickupLocation)
+    }
+
+    private fun extractExpressCodeFromText(mergedText: String): String? {
+        val expressKeywords = listOf("取件码", "取性码", "请凭", "靖凭", "凭")
+        val hasExpressKeyword = mergedText.contains("取件码") || mergedText.contains("取性码") ||
+                mergedText.contains("请凭") || mergedText.contains("靖凭")
+
+        // 第一步：精确从关键词后截取
+        val matchedKeyword = expressKeywords.firstOrNull { mergedText.contains(it) }
+        if (matchedKeyword != null) {
+            val afterKeyword = mergedText.substringAfter(matchedKeyword).trimStart(':', '：', ' ')
+            val dashMatch = Regex("([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)").find(afterKeyword)
+            val numMatch = Regex("(?<![0-9])([0-9]{4,8})(?![0-9])").find(afterKeyword)
+            val alphaMatch = Regex("[A-Z0-9-]{3,12}").find(afterKeyword)
+            val match = dashMatch ?: numMatch ?: alphaMatch
+            if (match != null && !isInvalidExpressCode(match.value)) {
+                return match.value
+            }
+        }
+
+        // 第二步：兜底——按权重筛选
+        if (!hasExpressKeyword) return null
+        val pattern = Regex("(?<![a-zA-Z0-9-])([0-9]{4,8}|[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+|[A-Z0-9][A-Z0-9-]{2,11})(?![a-zA-Z0-9-])")
+        val candidates = pattern.findAll(mergedText).mapNotNull { match ->
+            val value = match.value
+            if (isInvalidExpressCode(value)) return@mapNotNull null
+            var weight = value.length
+            if (value.contains("-")) weight *= 20
+            value to weight
+        }.sortedByDescending { it.second }
+        return candidates.firstOrNull()?.first
+    }
+
+    private fun extractFoodCodeFromText(mergedText: String, detectedBrand: String?): String? {
+        val foodKeywords = listOf("取餐号", "取餐码", "取茶号", "券码", "订单号", "取性码", "取養号")
+        val hasFoodKeywords = mergedText.contains("取餐") || mergedText.contains("取茶") ||
+                mergedText.contains("验证码") || mergedText.contains("券码") ||
+                mergedText.contains("订单") || mergedText.contains("准备完毕") ||
+                mergedText.contains("领取") || mergedText.contains("取養")
+
+        // 第一步：精确从关键词后截取
+        val matchedKeyword = foodKeywords.firstOrNull { mergedText.contains(it) }
+        if (matchedKeyword != null) {
+            val afterKeyword = mergedText.substringAfter(matchedKeyword).trimStart(':', '：', ' ')
+            val match = Regex("[A-Z0-9]{3,10}").find(afterKeyword)
+            if (match != null && !foodKeywords.any { it.contains(match.value) || match.value.contains(it) }) {
+                if (!isInvalidFoodCode(match.value, afterKeyword, detectedBrand)) {
+                    return match.value
+                }
+            }
+        }
+
+        // 第二步：全文兜底按权重搜索
+        if (!hasFoodKeywords) return null
+        val pattern = Regex("(?<![a-zA-Z0-9])([A-Z0-9]{3,10})(?![a-zA-Z0-9])")
+        val candidates = pattern.findAll(mergedText).mapNotNull { match ->
+            val value = match.value
+            if (isInvalidFoodCode(value, mergedText, detectedBrand)) return@mapNotNull null
+            var weight = value.length
+            if (detectedBrand == "肯德基" || detectedBrand == "麦当劳") {
+                if (value.length >= 4 && value.any { it.isLetter() }) weight *= 20
+                if (value.length == 5 && value.all { it.isDigit() }) weight *= 5
+            }
+            if (detectedBrand == "喜茶" && value.length == 4 && value.all { it.isDigit() }) weight *= 5
+            value to weight
+        }.sortedByDescending { it.second }
+        return candidates.firstOrNull()?.first
     }
 
     fun close() {
