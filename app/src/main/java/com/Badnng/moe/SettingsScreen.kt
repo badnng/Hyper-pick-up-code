@@ -2,6 +2,7 @@ package com.Badnng.moe.screens
 
 import android.app.AppOpsManager
 import android.app.StatusBarManager
+import android.app.usage.StorageStatsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -10,11 +11,15 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Process
+import android.os.UserHandle
+import android.os.storage.StorageManager
 import android.provider.Settings
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,12 +38,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
@@ -50,9 +61,10 @@ import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import com.Badnng.moe.CaptureTileService
 import com.Badnng.moe.R
+import java.io.File
 
 enum class SettingsPage {
-    Main, Preference, Permission, Screenshot, About
+    Main, Preference, Permission, Screenshot, Storage, About
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,7 +82,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    
+
     val performHaptic = {
         if (prefs.getBoolean("haptic_enabled", true)) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -85,7 +97,7 @@ fun SettingsScreen(
     PredictiveBackHandler(enabled = currentPage != SettingsPage.Main) { backEvent: Flow<androidx.activity.BackEventCompat> ->
         isPredictiveBackInProgress = true
         try {
-            backEvent.collect { event -> 
+            backEvent.collect { event ->
                 backProgress = event.progress
                 backSwipeEdge = event.swipeEdge
             }
@@ -119,6 +131,7 @@ fun SettingsScreen(
                 SettingsPage.Preference -> "偏好设置"
                 SettingsPage.Permission -> "权限设置"
                 SettingsPage.Screenshot -> "截图方式"
+                SettingsPage.Storage -> "清理空间"
                 SettingsPage.About -> "关于"
                 else -> ""
             }
@@ -140,7 +153,7 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+    Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Top)).padding(horizontal = 16.dp).verticalScroll(rememberScrollState()).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))) {
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "设置", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(modifier = Modifier.height(24.dp))
@@ -149,19 +162,19 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
         SettingsListItem(title = "截图方式", description = "管理App截图的方式", onClick = { onNavigate(SettingsPage.Screenshot) })
 
         SettingsListItem(
-            title = "添加到控制中心", 
+            title = "添加到控制中心",
             description = "将“截图识别”磁贴添加到控制中心快捷栏",
             onClick = { performHaptic(); requestAddTile(context) }
         )
-        
-        SettingsListItem(title = "关于", description = null, onClick = { onNavigate(SettingsPage.About) })
+
+        SettingsListItem(title = "清理空间", description = "管理App占用的缓存与截图空间", onClick = { onNavigate(SettingsPage.Storage) })
+        SettingsListItem(title = "关于", description = "应用信息与开源许可", onClick = { onNavigate(SettingsPage.About) })
         Spacer(modifier = Modifier.height(100.dp))
     }
 }
 
 private fun requestAddTile(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        @Suppress("WrongConstant")
         val statusBarManager = context.getSystemService(Context.STATUS_BAR_SERVICE) as StatusBarManager
         statusBarManager.requestAddTileService(
             ComponentName(context, CaptureTileService::class.java),
@@ -181,9 +194,350 @@ fun SubPage(title: String, page: SettingsPage, performHaptic: () -> Unit, onBack
             SettingsPage.Screenshot -> ScreenshotSettingsContent(performHaptic)
             SettingsPage.Permission -> PermissionSettingsContent(performHaptic)
             SettingsPage.Preference -> PreferenceSettingsContent(performHaptic)
+            SettingsPage.Storage -> StorageSettingsContent(performHaptic)
+            SettingsPage.About -> AboutSettingsContent(performHaptic)
             else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(text = "正在开发中...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) }
         }
     }
+}
+
+@Composable
+fun AboutSettingsContent(performHaptic: () -> Unit) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val versionName = remember { getVersionName(context) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(32.dp))
+
+        Surface(
+            modifier = Modifier.size(86.dp),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shadowElevation = 4.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                val context = LocalContext.current
+                val bitmap = remember {
+                    android.graphics.BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher_foreground)
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Logo",
+                        modifier = Modifier.size(90.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Text(text = "澎湃记", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+        Text(text = "版本 $versionName", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+
+        Spacer(Modifier.height(48.dp))
+
+        PreferenceSection(title = "致谢与开源项目") {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OssItem("Jetpack Compose", "现代化声明式 UI 框架", "https://developer.android.com/jetpack/compose", performHaptic)
+                OssItem("Material Design 3", "Google 现代设计语言规范", "https://m3.material.io", performHaptic)
+                OssItem("ML Kit", "Google 强大的设备端机器学习 SDK", "https://developers.google.com/ml-kit", performHaptic)
+                OssItem("Shizuku", "利用系统 API 实现高级权限调用", "https://shizuku.rikka.app", performHaptic)
+                OssItem("ZXing Core", "高效的二维码生成与处理库", "https://github.com/zxing/zxing", performHaptic)
+                OssItem("Room", "官方高性能 SQLite 数据库封装", "https://developer.android.com/training/data-storage/room", performHaptic)
+                OssItem("Coil", "现代化的 Android 图片加载库", "https://coil-kt.github.io/coil/", performHaptic)
+                OssItem("Kyant Backdrop", "优雅的毛玻璃与层级模糊效果实现", "https://github.com/Kyant0/AndroidLiquidGlass", performHaptic)
+            }
+        }
+
+        Spacer(Modifier.height(64.dp))
+        Text(
+            text = "Made with ❤️ by Badnng and Vibe Codding\n© 2026 澎湃记",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            textAlign = TextAlign.Center,
+            lineHeight = 20.sp
+        )
+        Spacer(Modifier.height(32.dp))
+    }
+}
+
+@Composable
+fun OssItem(name: String, desc: String, url: String, performHaptic: () -> Unit) {
+    val uriHandler = LocalUriHandler.current
+    Surface(
+        onClick = {
+            performHaptic()
+            uriHandler.openUri(url)
+        },
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(2.dp))
+                Text(text = desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+            }
+            Icon(
+                imageVector = Icons.Default.OpenInNew,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            )
+        }
+    }
+}
+
+private fun getVersionName(context: Context): String {
+    return try {
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        packageInfo.versionName ?: "1.0.0"
+    } catch (e: Exception) {
+        "1.0.0"
+    }
+}
+
+@Composable
+fun StorageSettingsContent(performHaptic: () -> Unit) {
+    val context = LocalContext.current
+    var appSize by remember { mutableLongStateOf(0L) }       // App 本身（APK + 代码）
+    var totalSize by remember { mutableLongStateOf(0L) }     // 总占用
+    var cacheSize by remember { mutableLongStateOf(0L) }     // 缓存
+    var screenshotSize by remember { mutableLongStateOf(0L) } // 截图数据
+
+    fun refreshSizes() {
+        // 使用 StorageStatsManager 获取完整存储统计
+        try {
+            val storageStatsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as StorageStatsManager
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            val appInfo = packageInfo.applicationInfo ?: throw NullPointerException("ApplicationInfo is null")
+            // 使用反射获取 myUserHandle（系统 API）
+            val userHandle = UserHandle::class.java.getDeclaredMethod("myUserHandle").invoke(null) as UserHandle
+            val storageStats = storageStatsManager.queryStatsForPackage(
+                appInfo.storageUuid,
+                context.packageName,
+                userHandle
+            )
+            appSize = storageStats.appBytes  // APK + native libs
+            totalSize = storageStats.appBytes + storageStats.dataBytes  // 总占用
+            cacheSize = storageStats.cacheBytes
+        } catch (e: Exception) {
+            // 降级方案：手动计算各部分大小
+            // APK 大小
+            val appInfo = context.packageManager.getApplicationInfo(context.packageName, 0)
+            val apkFile = File(appInfo.sourceDir)
+            appSize = if (apkFile.exists()) apkFile.length() else 0L
+            
+            // 数据目录大小
+            val dataDir = context.filesDir.parentFile
+            totalSize = appSize + getFolderSize(dataDir)
+            
+            // 缓存大小
+            cacheSize = getFolderSize(context.cacheDir)
+        }
+        screenshotSize = getFolderSize(File(context.filesDir, "screenshots"))
+    }
+
+    LaunchedEffect(Unit) { refreshSizes() }
+
+    // 计算各部分比例：App本身、截图、缓存、其他
+    val otherSize = (totalSize - appSize - screenshotSize - cacheSize).coerceAtLeast(0L)
+    val appRatio = if (totalSize > 0) appSize.toFloat() / totalSize else 0f
+    val screenshotRatio = if (totalSize > 0) screenshotSize.toFloat() / totalSize else 0f
+    val cacheRatio = if (totalSize > 0) cacheSize.toFloat() / totalSize else 0f
+
+    // 使用同色系渐变色彩 - 更和谐
+    val appColor = Color(0xFF6750A4)       // 深紫 - 应用
+    val screenshotColor = Color(0xFF9A82DB) // 中紫 - 截图
+    val cacheColor = Color(0xFFE8DEF8)      // 浅紫 - 缓存
+    val otherColor = Color(0xFF79747E)      // 灰色 - 其他
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(16.dp))
+
+        // 圆形进度条
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(220.dp)) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 32.dp.toPx()
+                val gap = 2f  // 分段间隙
+                var startAngle = -90f
+
+                // 绘制各分段（按顺序：应用、截图、缓存、其他）
+                val segments = listOf(
+                    appRatio to appColor,
+                    screenshotRatio to screenshotColor,
+                    cacheRatio to cacheColor,
+                    (1f - appRatio - screenshotRatio - cacheRatio) to otherColor
+                )
+
+                segments.forEach { (ratio, color) ->
+                    if (ratio > 0.001f) {
+                        val sweep = 360f * ratio - gap
+                        drawArc(
+                            color = color,
+                            startAngle = startAngle,
+                            sweepAngle = sweep,
+                            useCenter = false,
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
+                        )
+                        startAngle += 360f * ratio
+                    }
+                }
+            }
+
+            // 中心内容
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = formatFileSize(totalSize),
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "总占用",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(Modifier.height(28.dp))
+
+        // 卡片式图例
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                StorageLegendRow(
+                    color = appColor,
+                    label = "应用",
+                    size = formatFileSize(appSize),
+                    description = "APK 安装包"
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                StorageLegendRow(
+                    color = screenshotColor,
+                    label = "截图",
+                    size = formatFileSize(screenshotSize),
+                    description = "识别截图"
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                StorageLegendRow(
+                    color = cacheColor,
+                    label = "缓存",
+                    size = formatFileSize(cacheSize),
+                    description = "临时文件"
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                StorageLegendRow(
+                    color = otherColor,
+                    label = "其他",
+                    size = formatFileSize(otherSize),
+                    description = "数据库等"
+                )
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        PreferenceSection(title = "清理操作") {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                StorageActionCard(title = "清理系统缓存", description = "删除 App 运行产生的临时文件", size = formatFileSize(cacheSize), onClear = { performHaptic(); deleteFolderContents(context.cacheDir); refreshSizes() })
+                StorageActionCard(title = "清理识别截图", description = "删除保存在本地的识别原始截图 (不影响已生成的记录)", size = formatFileSize(screenshotSize), onClear = { performHaptic(); deleteFolderContents(File(context.filesDir, "screenshots")); refreshSizes() })
+            }
+        }
+    }
+}
+
+@Composable
+fun StorageLegendRow(color: Color, label: String, size: String, description: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(color)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(text = label, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    text = description,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+        }
+        Text(
+            text = size,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+fun StorageActionCard(title: String, description: String, size: String, onClear: () -> Unit) {
+    Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(text = description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = "占用: $size", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp))
+            }
+            Button(onClick = onClear, shape = RoundedCornerShape(12.dp)) { Text("立即清理") }
+        }
+    }
+}
+
+private fun getFolderSize(file: File?): Long {
+    if (file == null || !file.exists()) return 0L
+    if (file.isFile) return file.length()
+    var size = 0L
+    file.listFiles()?.forEach { size += getFolderSize(it) }
+    return size
+}
+
+private fun deleteFolderContents(file: File) {
+    file.listFiles()?.forEach {
+        if (it.isDirectory) deleteFolderContents(it)
+        it.delete()
+    }
+}
+
+private fun formatFileSize(size: Long): String {
+    if (size <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
+    return String.format("%.1f %s", size / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
 }
 
 @Composable
@@ -195,25 +549,24 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
     var customHue by remember { mutableFloatStateOf(260f) }
     var selectedColorInt by remember { mutableIntStateOf(prefs.getInt("theme_color", Color(0xFF6750A4).toArgb())) }
-    
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(32.dp)) {
-        PreferenceSection(title = "底栏位置") { 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
-                listOf("left" to "靠左", "center" to "居中", "right" to "靠右").forEach { (key, label) -> 
-                    ChoiceChip(label = label, selected = navAlignment == key, onClick = { 
-                        performHaptic(); navAlignment = key; prefs.edit().putString("nav_alignment", key).apply() 
-                    }, modifier = Modifier.weight(1f)) 
-                } 
-            } 
-        }
-        
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(32.dp)
+    ) {
+        PreferenceSection(title = "底栏位置") { Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("left" to "靠左", "center" to "居中", "right" to "靠右").forEach { (key, label) -> ChoiceChip(label = label, selected = navAlignment == key, onClick = { performHaptic(); navAlignment = key; prefs.edit().putString("nav_alignment", key).apply() }, modifier = Modifier.weight(1f)) } } }
+
         PreferenceSection(title = "交互反馈") {
             Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) {
                 PreferenceSwitchItem(
                     title = "震动反馈",
                     description = "开启后点击按钮、切换分类时会有触感反馈",
                     checked = hapticEnabled,
-                    onCheckedChange = { 
+                    onCheckedChange = {
                         hapticEnabled = it
                         prefs.edit().putBoolean("haptic_enabled", it).apply()
                         performHaptic()
@@ -222,61 +575,9 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
             }
         }
 
-        PreferenceSection(title = "外观设置") { 
-            Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) { 
-                PreferenceSwitchItem(
-                    title = "莫奈取色 (Dynamic Color)", 
-                    description = "开启后主题色将跟随系统壁纸自动变化", 
-                    checked = monetEnabled, 
-                    onCheckedChange = { performHaptic(); monetEnabled = it; prefs.edit().putBoolean("monet_enabled", it).apply() }
-                ) 
-            } 
-        }
-
-        AnimatedVisibility(visible = !monetEnabled, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { 
-            PreferenceSection(title = "自定义主题色") { 
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { 
-                    Text("滑动调节色相", style = MaterialTheme.typography.bodySmall)
-                    Slider(value = customHue, onValueChange = { customHue = it }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth())
-                    val previewColor = remember(customHue) { Color.hsv(customHue, 0.7f, 0.9f) }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { 
-                        Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(previewColor).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape))
-                        Button(onClick = { 
-                            performHaptic()
-                            selectedColorInt = previewColor.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() 
-                        }, shape = RoundedCornerShape(15.dp), modifier = Modifier.weight(1f).height(56.dp)) { 
-                            Text("应用颜色") 
-                        } 
-                    } 
-                    Text("MD3 建议色", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
-                    val md3Colors = listOf(0xFF6750A4, 0xFF006A60, 0xFF984061, 0xFF005AC1, 0xFF605D62, 0xFF3B6939)
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { 
-                        md3Colors.forEach { colorLong -> 
-                            val color = Color(colorLong)
-                            Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(color).border(width = if (selectedColorInt == color.toArgb()) 3.dp else 0.dp, color = MaterialTheme.colorScheme.primary, shape = CircleShape).clickable { 
-                                performHaptic(); selectedColorInt = color.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() 
-                            }) 
-                        } 
-                    } 
-                } 
-            } 
-        }
-
-        PreferenceSection(title = "显示模式") { 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { 
-                listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统").forEach { (key, label) -> 
-                    Row(modifier = Modifier.fillMaxWidth().clickable { 
-                        performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply() 
-                    }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { 
-                        RadioButton(selected = themeMode == key, onClick = {
-                            performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply()
-                        })
-                        Spacer(Modifier.width(12.dp))
-                        Text(label, fontSize = 16.sp) 
-                    } 
-                } 
-            } 
-        }
+        PreferenceSection(title = "外观设置") { Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) { PreferenceSwitchItem(title = "莫奈取色 (Dynamic Color)", description = "开启后主题色将跟随系统壁纸自动变化", checked = monetEnabled, onCheckedChange = { performHaptic(); monetEnabled = it; prefs.edit().putBoolean("monet_enabled", it).apply() }) } }
+        AnimatedVisibility(visible = !monetEnabled, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { PreferenceSection(title = "自定义主题色") { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("滑动调节色相", style = MaterialTheme.typography.bodySmall); Slider(value = customHue, onValueChange = { customHue = it }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth()); val previewColor = remember(customHue) { Color.hsv(customHue, 0.7f, 0.9f) }; Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(previewColor).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)); Button(onClick = { performHaptic(); selectedColorInt = previewColor.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }, shape = RoundedCornerShape(15.dp), modifier = Modifier.weight(1f).height(56.dp)) { Text("应用颜色") } } ; Text("MD3 建议色", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)); val md3Colors = listOf(0xFF6750A4, 0xFF006A60, 0xFF984061, 0xFF005AC1, 0xFF605D62, 0xFF3B6939); Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { md3Colors.forEach { colorLong -> val color = Color(colorLong); Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(color).border(width = if (selectedColorInt == color.toArgb()) 3.dp else 0.dp, color = MaterialTheme.colorScheme.primary, shape = CircleShape).clickable { performHaptic(); selectedColorInt = color.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }) } } } } }
+        PreferenceSection(title = "显示模式") { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统").forEach { (key, label) -> Row(modifier = Modifier.fillMaxWidth().clickable { performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = themeMode == key, onClick = { performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply() }); Spacer(Modifier.width(12.dp)); Text(label, fontSize = 16.sp) } } } }
         Spacer(modifier = Modifier.height(48.dp))
     }
 }
@@ -287,8 +588,13 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
     var captureMode by remember { mutableStateOf(prefs.getString("capture_mode", "media_projection") ?: "media_projection") }
     var shizukuReady by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }; if (!shizukuReady && captureMode == "shizuku") { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() }; delay(1500) } }
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
         Text("选择截图技术方案", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认", selected = captureMode == "media_projection", onClick = { performHaptic(); captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
         CaptureModeItem(title = "Shizuku 免授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { performHaptic(); captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
@@ -301,57 +607,64 @@ fun PermissionSettingsContent(performHaptic: () -> Unit) {
     var hasNotificationPermission by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
     var hasUsageStatsPermission by remember { mutableStateOf(checkUsageStatsPermission(context)) }
     var shizukuReady by remember { mutableStateOf(false) }
-    
-    LaunchedEffect(Unit) { 
-        while (true) { 
+
+    LaunchedEffect(Unit) {
+        while (true) {
             hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled()
             hasUsageStatsPermission = checkUsageStatsPermission(context)
             shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }
-            delay(1500) 
-        } 
+            delay(1500)
+        }
     }
-    
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
         PermissionItem(
-            title = "通知权限", 
-            description = "请授予该权限，该权限用于收取取餐码通知，如关闭/拒绝该权限将会无法收到此通知", 
-            isGranted = hasNotificationPermission, 
-            actionButton = if (!hasNotificationPermission) { { 
-                Button(onClick = { 
+            title = "通知权限",
+            description = "请授予该权限，该权限用于收取取餐码通知，如关闭/拒绝该权限将会无法收到此通知",
+            isGranted = hasNotificationPermission,
+            actionButton = if (!hasNotificationPermission) { {
+                Button(onClick = {
                     performHaptic()
                     val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply { putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName) }
-                    context.startActivity(intent) 
-                }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
-                    Icon(Icons.Default.Build, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去修复") 
-                } 
+                    context.startActivity(intent)
+                }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    Icon(Icons.Default.Build, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去修复")
+                }
             } } else null
         )
 
         PermissionItem(
-            title = "应用使用情况", 
+            title = "应用使用情况",
             description = "此权限能更好的识别当前处在的app是哪个 brand，推荐授权！",
-            isGranted = hasUsageStatsPermission, 
-            actionButton = if (!hasUsageStatsPermission) { { 
-                Button(onClick = { 
+            isGranted = hasUsageStatsPermission,
+            actionButton = if (!hasUsageStatsPermission) { {
+                Button(onClick = {
                     performHaptic()
                     val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
                         data = Uri.parse("package:${context.packageName}")
                     }
                     try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
-                }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
-                    Icon(Icons.Default.Security, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去授权") 
-                } 
+                }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    Icon(Icons.Default.Security, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去授权")
+                }
             } } else null
         )
 
         PermissionItem(
-            title = "Shizuku 运行状态", 
-            description = "该软件用于免授权截图识别的必须条件，如无则无法使用免授权截图", 
-            isGranted = shizukuReady, 
-            actionButton = if (!shizukuReady) { { 
-                Button(onClick = { performHaptic(); if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary), modifier = Modifier.fillMaxWidth().height(56.dp)) { 
-                    Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("如果Shizuku已运行请点我") 
-                } 
+            title = "Shizuku 运行状态",
+            description = "该软件用于免授权截图识别的必须条件，如无则无法使用免授权截图",
+            isGranted = shizukuReady,
+            actionButton = if (!shizukuReady) { {
+                Button(onClick = { performHaptic(); if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary), modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("如果Shizuku已运行请点我")
+                }
             } } else null
         )
     }

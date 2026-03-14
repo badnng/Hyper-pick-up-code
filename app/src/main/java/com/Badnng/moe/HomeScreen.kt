@@ -87,9 +87,9 @@ fun HomeScreen(
 
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
+    // 关键修复：hapticEnabled 现在是实时响应的状态
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
-    
-    // 实时监听配置变化
+
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             when (key) {
@@ -100,7 +100,7 @@ fun HomeScreen(
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    
+
     val performHaptic = {
         if (hapticEnabled) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -114,7 +114,7 @@ fun HomeScreen(
     PredictiveBackHandler(enabled = detailOrder != null) { backEvent: Flow<androidx.activity.BackEventCompat> ->
         isPredictiveBackInProgress = true
         try {
-            backEvent.collect { event -> 
+            backEvent.collect { event ->
                 backProgress = event.progress
                 backSwipeEdge = event.swipeEdge
             }
@@ -135,7 +135,7 @@ fun HomeScreen(
     val currentCornerRadius = if (isPredictiveBackInProgress) (backProgress * 32).dp else 0.dp
 
     val activity = context as? MainActivity
-    
+
     LaunchedEffect(intentToProcess, orders) {
         if (intentToProcess?.getBooleanExtra("show_qr_detail", false) == true) {
             val orderId = intentToProcess.getStringExtra("order_id")
@@ -143,7 +143,7 @@ fun HomeScreen(
             if (order != null) {
                 selectedOrderForQr = order
                 isFromNotification = intentToProcess.getBooleanExtra("from_notification", false)
-                activity?.intentToProcess = null 
+                activity?.intentToProcess = null
             }
         }
         if (intentToProcess?.hasExtra("highlight_order_id") == true) {
@@ -160,11 +160,6 @@ fun HomeScreen(
 
     var isSettingsSubPageOpen by remember { mutableStateOf(false) }
     val isUiHidden = isSettingsSubPageOpen || isManaging
-    
-    val uiAlpha by animateFloatAsState(
-        targetValue = if (isUiHidden) 0f else 1f,
-        label = "uiAlpha"
-    )
 
     Box(modifier = modifier.fillMaxSize().background(backgroundColor)) {
         Scaffold(
@@ -178,47 +173,63 @@ fun HomeScreen(
                     else -> Alignment.BottomCenter
                 }
                 val barWidth = if (navAlignment == "center") 275.dp else 250.dp
-                
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .alpha(uiAlpha)
-                        .navigationBarsPadding()
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
-                    contentAlignment = alignment
+
+                // 核心修复：使用 AnimatedVisibility 彻底移除隐藏时的底栏，防止点击穿透
+                AnimatedVisibility(
+                    visible = !isUiHidden,
+                    enter = fadeIn() + slideInVertically { it / 2 },
+                    exit = fadeOut() + slideOutVertically { it / 2 }
                 ) {
                     Box(
                         modifier = Modifier
-                            .width(barWidth)
-                            .height(64.dp)
-                            .border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
-                            .drawBackdrop(
-                                backdrop = backdrop,
-                                shape = { RoundedCornerShape(20.dp) },
-                                effects = { vibrancy(); blur(16.dp.toPx()); lens(20.dp.toPx(), 40.dp.toPx()) },
-                                onDrawSurface = { drawRect(Color.White.copy(alpha = 0.1f)) }
-                            ),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        contentAlignment = alignment
                     ) {
-                        NavigationBar(containerColor = Color.Transparent, modifier = Modifier.fillMaxSize(), windowInsets = WindowInsets(0, 0, 0, 0)) {
-                            val isHomeSelected = pagerState.currentPage == 0
-                            val homeIconSize by animateDpAsState(if (isHomeSelected) 28.dp else 24.dp, label = "hSize")
-                            NavigationBarItem(icon = { Icon(Icons.Default.Home, null, Modifier.size(homeIconSize)) }, label = { Text("主页", fontSize = 12.sp) }, selected = isHomeSelected, onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
-                            
-                            val isLogSelected = pagerState.currentPage == 1
-                            val logIconSize by animateDpAsState(if (isLogSelected) 28.dp else 24.dp, label = "lSize")
-                            NavigationBarItem(icon = { Icon(Icons.Default.List, null, Modifier.size(logIconSize)) }, label = { Text("日志", fontSize = 12.sp) }, selected = isLogSelected, onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
-                            
-                            val isSettingsSelected = pagerState.currentPage == 2
-                            val settingsIconSize by animateDpAsState(if (isSettingsSelected) 28.dp else 24.dp, label = "sSize")
-                            NavigationBarItem(icon = { Icon(Icons.Default.Settings, null, Modifier.size(settingsIconSize)) }, label = { Text("设置", fontSize = 12.sp) }, selected = isSettingsSelected, onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                        Box(
+                            modifier = Modifier
+                                .width(barWidth)
+                                .height(64.dp)
+                                .border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
+                                .drawBackdrop(
+                                    backdrop = backdrop,
+                                    shape = { RoundedCornerShape(20.dp) },
+                                    effects = { vibrancy(); blur(16.dp.toPx()); lens(20.dp.toPx(), 40.dp.toPx()) },
+                                    onDrawSurface = { drawRect(Color.White.copy(alpha = 0.1f)) }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            NavigationBar(containerColor = Color.Transparent, modifier = Modifier.fillMaxSize(), windowInsets = WindowInsets(0, 0, 0, 0)) {
+                                NavigationBarItem(
+                                    icon = { val s by animateDpAsState(if (pagerState.currentPage == 0) 28.dp else 24.dp); Icon(Icons.Default.Home, null, Modifier.size(s)) },
+                                    label = { Text("主页", fontSize = 12.sp) },
+                                    selected = pagerState.currentPage == 0,
+                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
+                                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                )
+                                NavigationBarItem(
+                                    icon = { val s by animateDpAsState(if (pagerState.currentPage == 1) 28.dp else 24.dp); Icon(Icons.Default.List, null, Modifier.size(s)) },
+                                    label = { Text("日志", fontSize = 12.sp) },
+                                    selected = pagerState.currentPage == 1,
+                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
+                                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                )
+                                NavigationBarItem(
+                                    icon = { val s by animateDpAsState(if (pagerState.currentPage == 2) 28.dp else 24.dp); Icon(Icons.Default.Settings, null, Modifier.size(s)) },
+                                    label = { Text("设置", fontSize = 12.sp) },
+                                    selected = pagerState.currentPage == 2,
+                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
+                                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                )
+                            }
                         }
                     }
                 }
             },
             floatingActionButton = {
                 AnimatedVisibility(
-                    visible = pagerState.currentPage == 0 && !isManaging && !isSettingsSubPageOpen,
+                    visible = pagerState.currentPage == 0 && !isUiHidden,
                     enter = scaleIn() + fadeIn(),
                     exit = scaleOut() + fadeOut()
                 ) {
@@ -227,7 +238,7 @@ fun HomeScreen(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = Color.White,
                         shape = RoundedCornerShape(15.dp),
-                        modifier = Modifier.navigationBarsPadding().padding(bottom = 8.dp, end = 24.dp)
+                        modifier = Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)).padding(bottom = 8.dp, end = 24.dp)
                     ) {
                         Icon(Icons.Default.Add, "添加", Modifier.size(32.dp))
                     }
@@ -265,7 +276,7 @@ fun HomeScreen(
         }
 
         if (selectedOrderForQr != null) {
-            QrCodeDialog(order = selectedOrderForQr!!, onDismiss = { 
+            QrCodeDialog(order = selectedOrderForQr!!, onDismiss = {
                 selectedOrderForQr = null
                 if (isFromNotification) { activity?.handleBackToPrevious(); isFromNotification = false }
             })
@@ -286,7 +297,7 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    
+
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
@@ -295,15 +306,15 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    
+
     val performHaptic = {
         if (hapticEnabled) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
-    
+
     val coroutineScope = rememberCoroutineScope()
-    
+
     val photoPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             coroutineScope.launch {
@@ -313,45 +324,45 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
                     @Suppress("DEPRECATION")
                     MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
                 }
-                
+
                 val helper = TextRecognitionHelper()
                 val result = helper.recognizeAll(bitmap)
-                
+
                 text = result.code ?: ""
                 detectedQrData = result.qr
                 orderType = result.type
                 brandName = result.brand
                 pickupLocation = result.pickupLocation
-                
+
                 helper.close()
             }
         }
     }
 
-    Column(modifier = Modifier.fillMaxWidth().wrapContentHeight().padding(horizontal = 24.dp).padding(bottom = 32.dp).navigationBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier = Modifier.fillMaxWidth().wrapContentHeight().padding(horizontal = 24.dp).padding(bottom = 32.dp).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("添加记录", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 24.dp))
-        
+
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             OutlinedTextField(
-                value = text, 
-                onValueChange = { text = it }, 
-                label = { Text("输入取餐码/取件码") }, 
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("输入取餐码/取件码") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                trailingIcon = { 
-                    IconButton(onClick = { performHaptic(); photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { 
-                        Icon(if (detectedQrData != null) Icons.Default.QrCodeScanner else Icons.Default.PhotoLibrary, contentDescription = "选择图片识别", tint = if (detectedQrData != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) 
-                    } 
+                trailingIcon = {
+                    IconButton(onClick = { performHaptic(); photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                        Icon(if (detectedQrData != null) Icons.Default.QrCodeScanner else Icons.Default.PhotoLibrary, contentDescription = "选择图片识别", tint = if (detectedQrData != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             )
-            
+
             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                 OutlinedTextField(
-                    value = orderType, 
-                    onValueChange = {}, 
-                    readOnly = true, 
-                    label = { Text("类别") }, 
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }, 
+                    value = orderType,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("类别") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                     modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -360,23 +371,23 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
                     }
                 }
             }
-            
-            if (detectedQrData != null) { 
-                Text(text = "已识别到二维码信息", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp)) 
+
+            if (detectedQrData != null) {
+                Text(text = "已识别到二维码信息", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp))
             }
 
             Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = { performHaptic(); onDismiss() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) {
                     Text("取消")
                 }
-                Button(onClick = { 
+                Button(onClick = {
                     performHaptic()
                     viewModel.addOrder(OrderEntity(
-                        takeoutCode = text, 
-                        qrCodeData = detectedQrData, 
-                        screenshotPath = "", 
-                        recognizedText = "手动输入", 
-                        orderType = orderType, 
+                        takeoutCode = text,
+                        qrCodeData = detectedQrData,
+                        screenshotPath = "",
+                        recognizedText = "手动输入",
+                        orderType = orderType,
                         brandName = brandName,
                         pickupLocation = pickupLocation
                     ))

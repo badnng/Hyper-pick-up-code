@@ -72,9 +72,12 @@ fun CaptureScreen(
         incompleteOrders = incompleteOrders,
         completedOrders = completedOrders,
         onMarkCompleted = { viewModel.markAsCompleted(it) },
+        onMarkMultipleCompleted = { ids ->
+            ids.forEach { viewModel.markAsCompleted(it) }
+        },
         onDeleteOrder = { viewModel.deleteOrder(it) },
-        onDeleteMultiple = { ids -> 
-            ids.forEach { id -> 
+        onDeleteMultiple = { ids ->
+            ids.forEach { id ->
                 val order = (incompleteOrders + completedOrders).find { it.id == id }
                 order?.let { viewModel.deleteOrder(it) }
             }
@@ -93,6 +96,7 @@ fun CaptureScreenContent(
     incompleteOrders: List<OrderEntity>,
     completedOrders: List<OrderEntity>,
     onMarkCompleted: (String) -> Unit,
+    onMarkMultipleCompleted: (Set<String>) -> Unit,
     onDeleteOrder: (OrderEntity) -> Unit,
     onDeleteMultiple: (Set<String>) -> Unit,
     onClearAllCompleted: () -> Unit,
@@ -106,7 +110,7 @@ fun CaptureScreenContent(
     var orderToDelete by remember { mutableStateOf<OrderEntity?>(null) }
     var selectedOrderForQr by remember { mutableStateOf<OrderEntity?>(null) }
     var highlightOrderId by remember { mutableStateOf<String?>(null) }
-    
+
     var isEditMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var showMultiDeleteConfirm by remember { mutableStateOf(false) }
@@ -119,7 +123,7 @@ fun CaptureScreenContent(
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
     val hapticEnabled = remember(prefs) { prefs.getBoolean("haptic_enabled", true) }
-    
+
     val performHaptic = {
         if (hapticEnabled) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -143,7 +147,7 @@ fun CaptureScreenContent(
             if (isOrderCompleted || isOrderIncomplete) {
                 showCompletedOnly = isOrderCompleted
                 highlightOrderId = orderId
-                delay(500) 
+                delay(500)
                 highlightOrderId = null
                 if (intent.getBooleanExtra("show_qr_detail", false) == false) {
                     activity.intentToProcess = null
@@ -157,7 +161,7 @@ fun CaptureScreenContent(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding()
+                .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Top))
         ) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = "澎湃记", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 16.dp))
@@ -167,10 +171,10 @@ fun CaptureScreenContent(
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusButton(
-                        selected = !showCompletedOnly, 
-                        label = "待取", 
-                        count = incompleteOrders.size, 
-                        onClick = { 
+                        selected = !showCompletedOnly,
+                        label = "待取",
+                        count = incompleteOrders.size,
+                        onClick = {
                             if (!isEditMode) {
                                 performHaptic()
                                 if (!showCompletedOnly) {
@@ -182,10 +186,10 @@ fun CaptureScreenContent(
                         }
                     )
                     StatusButton(
-                        selected = showCompletedOnly, 
-                        label = "已取", 
-                        count = completedOrders.size, 
-                        onClick = { 
+                        selected = showCompletedOnly,
+                        label = "已取",
+                        count = completedOrders.size,
+                        onClick = {
                             if (!isEditMode) {
                                 performHaptic()
                                 showCompletedOnly = true
@@ -194,11 +198,11 @@ fun CaptureScreenContent(
                         }
                     )
                 }
-                
-                IconButton(onClick = { 
+
+                IconButton(onClick = {
                     performHaptic()
                     isEditMode = !isEditMode
-                    if (!isEditMode) selectedIds = emptySet() 
+                    if (!isEditMode) selectedIds = emptySet()
                 }) {
                     Icon(if (isEditMode) Icons.Default.Close else Icons.Default.SettingsSuggest, contentDescription = "管理", tint = if (isEditMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                 }
@@ -239,7 +243,7 @@ fun CaptureScreenContent(
             ) {
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     val currentOrders = if (showCompletedOnly) completedOrders else incompleteOrders
-                    TextButton(onClick = { 
+                    TextButton(onClick = {
                         performHaptic()
                         if (selectedIds.size == currentOrders.size) selectedIds = emptySet()
                         else selectedIds = currentOrders.map { it.id }.toSet()
@@ -247,9 +251,32 @@ fun CaptureScreenContent(
                         Text(if (selectedIds.size == currentOrders.size) "取消全选" else "全选")
                     }
                     Spacer(Modifier.weight(1f))
+
                     if (selectedIds.isNotEmpty()) {
-                        Button(onClick = { performHaptic(); showMultiDeleteConfirm = true }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) {
-                            Text("删除(${selectedIds.size})")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // 新增按钮：选中未完成为已完成
+                            if (!showCompletedOnly) {
+                                Button(
+                                    onClick = {
+                                        performHaptic()
+                                        onMarkMultipleCompleted(selectedIds)
+                                        selectedIds = emptySet()
+                                        isEditMode = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                    shape = RoundedCornerShape(15.dp)
+                                ) {
+                                    Text("选中未完成为已完成")
+                                }
+                            }
+
+                            Button(
+                                onClick = { performHaptic(); showMultiDeleteConfirm = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                shape = RoundedCornerShape(15.dp)
+                            ) {
+                                Text("删除(${selectedIds.size})")
+                            }
                         }
                     } else if (showCompletedOnly && completedOrders.isNotEmpty()) {
                         OutlinedButton(onClick = { performHaptic(); showClearAllConfirm = true }, shape = RoundedCornerShape(15.dp)) {
@@ -262,8 +289,8 @@ fun CaptureScreenContent(
             Spacer(modifier = Modifier.height(8.dp))
 
             Crossfade(
-                targetState = showCompletedOnly to selectedCategories, 
-                modifier = Modifier.weight(1f).fillMaxWidth(), 
+                targetState = showCompletedOnly to selectedCategories,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 label = "listTransition",
                 animationSpec = tween(300)
             ) { (isCompletedOnly, categories) ->
@@ -285,14 +312,14 @@ fun CaptureScreenContent(
                         }
                     } else {
                         LazyColumn(
-                            state = currentState, 
-                            modifier = Modifier.fillMaxSize().verticalScrollbar(currentState, 6.dp), 
-                            verticalArrangement = Arrangement.spacedBy(12.dp), 
+                            state = currentState,
+                            modifier = Modifier.fillMaxSize().verticalScrollbar(currentState, 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                             contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding + 32.dp, start = 16.dp, end = 16.dp)
                         ) {
                             items(items = currentOrders, key = { it.id }) { order ->
                                 Row(
-                                    modifier = Modifier.animateItem(), 
+                                    modifier = Modifier.animateItem(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     AnimatedVisibility(
@@ -432,7 +459,7 @@ fun OrderCard(
         }
     }
     val highlightColor by animateColorAsState(targetValue = if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else Color.Transparent, animationSpec = tween(1000), label = "highlight")
-    
+
     Card(
         modifier = modifier.fillMaxWidth().clickable { onNavigateToDetail(order) },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
@@ -469,7 +496,7 @@ fun OrderCard(
                 }
             }
             Text(text = "时间: $timeStr", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) )
-            
+
             AnimatedVisibility(
                 visible = !isEditMode,
                 enter = expandVertically() + fadeIn(),
@@ -480,7 +507,7 @@ fun OrderCard(
                         if (!isCompleted) { FilledTonalButton(onClick = onMarkCompleted, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) { Text("完成") } }
                         OutlinedButton(onClick = onDelete, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) { Text("删除") }
                     }
-                    
+
                     if (!isCompleted) {
                         FilledTonalButton(
                             onClick = { NotificationHelper(context).showPromotedLiveUpdate(order) },
@@ -510,7 +537,7 @@ fun StatusButton(selected: Boolean, label: String, count: Int, onClick: () -> Un
 fun DeleteConfirmDialog(title: String = "确认删除？", description: String = "删除后将无法找回此条记录，确定要继续吗？", onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { 
+        title = {
             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(text = title, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
             }

@@ -54,7 +54,9 @@ object LogManager {
             val tag = if (tagEnd != -1) rest.substring(0, tagEnd).trim() else "Unknown"
             val messageStart = rest.indexOf("): ")
             val message = if (messageStart != -1) rest.substring(messageStart + 3) else rest
-            
+            val blockedTags = setOf("LegacyMessageQueue", "LB")
+            if (tag in blockedTags) return null
+
             val level = when (levelChar) {
                 "D" -> "DEBUG"
                 "I" -> "INFO"
