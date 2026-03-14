@@ -244,13 +244,13 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
 
         Spacer(Modifier.height(48.dp))
 
-        PreferenceSection(title = "致谢与开源项目") {
+        PreferenceSection(title = "致谢") {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OssItem("Jetpack Compose", "现代化声明式 UI 框架", "https://developer.android.com/jetpack/compose", performHaptic)
                 OssItem("Material Design 3", "Google 现代设计语言规范", "https://m3.material.io", performHaptic)
                 OssItem("ML Kit", "Google 强大的设备端机器学习 SDK", "https://developers.google.com/ml-kit", performHaptic)
                 OssItem("Shizuku", "利用系统 API 实现高级权限调用", "https://shizuku.rikka.app", performHaptic)
-                OssItem("ZXing Core", "高效的二维码生成与处理库", "https://github.com/zxing/zxing", performHaptic)
+                OssItem("ZXing", "高效的二维码生成与处理库", "https://github.com/zxing/zxing", performHaptic)
                 OssItem("Room", "官方高性能 SQLite 数据库封装", "https://developer.android.com/training/data-storage/room", performHaptic)
                 OssItem("Coil", "现代化的 Android 图片加载库", "https://coil-kt.github.io/coil/", performHaptic)
                 OssItem("Kyant Backdrop", "优雅的毛玻璃与层级模糊效果实现", "https://github.com/Kyant0/AndroidLiquidGlass", performHaptic)
@@ -258,8 +258,9 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
         }
 
         Spacer(Modifier.height(64.dp))
+        val currentYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
         Text(
-            text = "Made with ❤️ by Badnng and Vibe Codding\n© 2026 澎湃记",
+            text = "Made with ❤️ by Badnng and Vibe Codding\n© $currentYear 澎湃记",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
             textAlign = TextAlign.Center,
