@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+/app/src/test/java/com/Badnng/moe/ExampleUnitTest.kt
+/app/src/androidTest/java/com/Badnng/moe/ExampleInstrumentedTest.kt

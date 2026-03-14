@@ -238,7 +238,7 @@ fun HomeScreen(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = Color.White,
                         shape = RoundedCornerShape(15.dp),
-                        modifier = Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)).padding(bottom = 8.dp, end = 24.dp)
+                        modifier = Modifier.padding(bottom = 8.dp, end = 24.dp)
                     ) {
                         Icon(Icons.Default.Add, "添加", Modifier.size(32.dp))
                     }
