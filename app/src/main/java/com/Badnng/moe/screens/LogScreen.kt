@@ -24,12 +24,14 @@ fun LogScreen(modifier: Modifier = Modifier) {
     var showFilter by remember { mutableStateOf(false) }
     var selectedLevels by remember { mutableStateOf(setOf("DEBUG", "INFO", "WARN", "ERROR")) }
     var showRecognitionMonitor by remember { mutableStateOf(true) }
+    var showProcessTextRecognition by remember { mutableStateOf(true) }
 
     val filteredLogs = LogManager.logs.filter {
         // 过滤掉系统噪音日志
         val isNoise = it.tag == "InsetsSource" || it.tag == "MIUIInput"
         if (isNoise) false
         else if (it.tag == "RecognitionMonitor") showRecognitionMonitor
+        else if (it.tag == "ProcessTextRecognition") showProcessTextRecognition
         else it.level in selectedLevels
     }
 
@@ -97,6 +99,13 @@ fun LogScreen(modifier: Modifier = Modifier) {
                                     onCheckedChange = { showRecognitionMonitor = it }
                                 )
                                 Text("RecognitionMonitor")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = showProcessTextRecognition,
+                                    onCheckedChange = { showProcessTextRecognition = it }
+                                )
+                                Text("ProcessTextRecognition")
                             }
                         }
                     },

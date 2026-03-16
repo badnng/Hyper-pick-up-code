@@ -59,7 +59,8 @@ object LogManager {
                 "MIUIInput", "InsetsSource",
                 "DecorViewStubImpl",
                 "BufferQueueConsumer", "BufferQueueProducer",
-                "HWUI", "WindowOnBackDispatcher"
+                "HWUI", "WindowOnBackDispatcher",
+                "Predictor"
             )
             // 过滤以 VRI[ 开头的标签 (ViewRootImpl 相关)
             if (tag.startsWith("VRI[")) return null
