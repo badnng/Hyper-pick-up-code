@@ -28,12 +28,10 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    
-    private val recognitionHelper: TextRecognitionHelper by lazy { TextRecognitionHelper() }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val useShizuku = intent?.getBooleanExtra("use_shizuku", false) ?: false
-        
+
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val type = if (useShizuku) {
@@ -78,14 +76,15 @@ class ScreenCaptureService : Service() {
 
     private fun startShizukuCaptureSingleTry() {
         scope.launch {
+            delay(800)
             val pkg = getForegroundPackageName(applicationContext)
             val appName = pkg?.let { getAppName(applicationContext, it) }
-            delay(1500)
             try {
                 val bitmap = captureShizukuScreenshot()
                 if (bitmap != null) {
                     val cropped = cropStatusBar(bitmap)
-                    if (!processRecognize(cropped, appName, pkg)) stopSelf()
+                    // 识别完成后再停止服务
+                    recognizeAndStop(cropped, appName, pkg)
                 } else {
                     stopSelf()
                 }
@@ -134,7 +133,7 @@ class ScreenCaptureService : Service() {
     private fun startMediaProjectionCaptureSingleTry() {
         val metrics = resources.displayMetrics
         imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-        
+
         try {
             virtualDisplay = mediaProjection?.createVirtualDisplay(
                 "ScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
@@ -147,27 +146,32 @@ class ScreenCaptureService : Service() {
         }
 
         scope.launch {
+            delay(800)
             val pkg = getForegroundPackageName(applicationContext)
             val appName = pkg?.let { getAppName(applicationContext, it) }
-            delay(1500)
-            val image = imageReader?.acquireLatestImage()
-            if (image == null) {
+            try {
+                val image = imageReader?.acquireLatestImage()
+                if (image == null) {
+                    stopSelf()
+                    return@launch
+                }
+
+                val planes = image.planes
+                val buffer = planes[0].buffer
+                val pixelStride = planes[0].pixelStride
+                val rowStride = planes[0].rowStride
+                val rowPadding = rowStride - pixelStride * image.width
+                val bitmap = Bitmap.createBitmap(image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888)
+                bitmap.copyPixelsFromBuffer(buffer)
+                val cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
+                image.close()
+
+                val cropped = cropStatusBar(cleanBitmap)
+                // 识别完成后再停止服务
+                recognizeAndStop(cropped, appName, pkg)
+            } catch (e: Exception) {
                 stopSelf()
-                return@launch
             }
-            
-            val planes = image.planes
-            val buffer = planes[0].buffer
-            val pixelStride = planes[0].pixelStride
-            val rowStride = planes[0].rowStride
-            val rowPadding = rowStride - pixelStride * image.width
-            val bitmap = Bitmap.createBitmap(image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888)
-            bitmap.copyPixelsFromBuffer(buffer)
-            val cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
-            image.close()
-            
-            val cropped = cropStatusBar(cleanBitmap)
-            if (!processRecognize(cropped, appName, pkg)) stopSelf()
         }
     }
 
@@ -189,33 +193,46 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private suspend fun processRecognize(bitmap: Bitmap, sourceApp: String?, sourcePkg: String?): Boolean {
-        return try {
-            val result = recognitionHelper.recognizeAll(bitmap, sourceApp, sourcePkg)
-            if (result.code != null) {
-                val order = OrderEntity(
-                    takeoutCode = result.code,
-                    qrCodeData = result.qr,
-                    screenshotPath = ScreenshotHelper(applicationContext).saveBitmap(bitmap),
-                    recognizedText = "自动识别",
-                    orderType = result.type,
-                    brandName = result.brand,
-                    fullText = result.fullText,
-                    sourceApp = sourceApp,
-                    sourcePackage = sourcePkg,
-                    pickupLocation = result.pickupLocation
-                )
-                OrderDatabase.getDatabase(applicationContext).orderDao().insert(order)
-                withContext(Dispatchers.Main) {
-                    NotificationHelper(applicationContext).showPromotedLiveUpdate(order, result.brand)
-                    Toast.makeText(applicationContext, "识别成功：${result.code}", Toast.LENGTH_SHORT).show()
+    private fun recognizeAndStop(bitmap: Bitmap, sourceApp: String?, sourcePkg: String?) {
+        scope.launch {
+            try {
+                Log.d("CaptureLog", "开始识别...")
+                val helper = TextRecognitionHelper(applicationContext)
+                val result = helper.recognizeAll(bitmap, sourceApp, sourcePkg)
+                helper.close()
+
+                if (result.code != null) {
+                    val screenshotFile = File(filesDir, "screenshots/${System.currentTimeMillis()}.png")
+                    screenshotFile.parentFile?.mkdirs()
+                    FileOutputStream(screenshotFile).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+
+                    val order = OrderEntity(
+                        takeoutCode = result.code,
+                        qrCodeData = result.qr,
+                        screenshotPath = screenshotFile.absolutePath,
+                        recognizedText = "自动识别",
+                        orderType = result.type,
+                        brandName = result.brand,
+                        fullText = result.fullText,
+                        sourceApp = sourceApp,
+                        sourcePackage = sourcePkg,
+                        pickupLocation = result.pickupLocation
+                    )
+                    OrderDatabase.getDatabase(applicationContext).orderDao().insert(order)
+                    withContext(Dispatchers.Main) {
+                        NotificationHelper(applicationContext).showPromotedLiveUpdate(order, result.brand)
+                        Toast.makeText(applicationContext, "识别成功：${result.code}", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Log.d("CaptureLog", "未识别到取件码")
                 }
+            } catch (e: Exception) {
+                Log.e("CaptureLog", "识别异常", e)
+            } finally {
+                bitmap.recycle()
+                // 识别完成后停止服务
                 stopSelf()
-                true
-            } else false
-        } catch (e: Exception) {
-            Log.e("CaptureLog", "识别逻辑异常", e)
-            false
+            }
         }
     }
 

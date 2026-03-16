@@ -12,19 +12,15 @@ android {
         applicationId = "com.Badnng.moe"
         minSdk = 35
         targetSdk = 36
-        versionCode = 20260315_01
-        versionName = "26.3.15.C01"
+        versionCode = 20260316_01
+        versionName = "26.3.16.C01"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters.add("arm64-v8a")
         }
-        externalNativeBuild {
-            cmake {
-                arguments("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
-            }
-        }
     }
+
 
     buildTypes {
         release {
@@ -86,8 +82,9 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-    implementation(libs.mlkit.text.recognition)
-    implementation(libs.mlkit.text.recognition.chinese)
+    // PaddleOCR (替换 ML Kit 文字识别)
+    implementation("com.github.equationl.paddleocr4android:ncnnandroidppocr:v1.3.0")
+    // 保留 ML Kit 条码扫描
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.zxing.core)
     implementation(libs.coil.compose)

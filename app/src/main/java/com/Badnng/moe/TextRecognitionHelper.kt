@@ -1,28 +1,63 @@
 package com.Badnng.moe
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
-class TextRecognitionHelper {
-    private val textRecognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+class TextRecognitionHelper(private val context: Context) {
+    // 保留 ML Kit 条码扫描
     private val barcodeScanner = BarcodeScanning.getClient()
+
+    // PaddleOCR 文字识别
+    private val paddleOcr = PaddleOcrHelper.getInstance(context)
 
     private val drinkBrands = listOf("星巴克", "瑞幸", "喜茶", "奈雪", "霸王茶姬", "茶百道", "蜜雪冰城", "一点点", "古茗", "Manner", "山楂奶绿", "取茶", "奶茶", "茶颜悦色")
     private val foodBrands = listOf("麦当劳", "肯德基", "KFC", "汉堡王", "塔斯汀", "老乡鸡", "华莱士")
     private val homePageKeywords = listOf("我的", "首页", "会员码", "到店取餐", "点单", "会员", "我的订单")
 
-    suspend fun recognizeAll(bitmap: Bitmap, sourceApp: String? = null, sourcePkg: String? = null): RecognitionResult {
-        val image = InputImage.fromBitmap(bitmap, 0)
-        val textResult = try { textRecognizer.process(image).await() } catch (e: Exception) { null }
-        val barcodeResult = try { barcodeScanner.process(image).await() } catch (e: Exception) { null }
+    /**
+     * 初始化 OCR 引擎（需要在应用启动时调用）
+     */
+    fun initOcr(): Boolean {
+        return paddleOcr.init()
+    }
 
-        val rawFullText = textResult?.text ?: ""
+    suspend fun recognizeAll(bitmap: Bitmap, sourceApp: String? = null, sourcePkg: String? = null): RecognitionResult {
+        Log.d("RecognitionMonitor", "=== recognizeAll 开始 ===")
+
+        // 确保 OCR 已初始化（最多等待 3 秒）
+        var waitCount = 0
+        while (!paddleOcr.isInitialized && waitCount < 30) {
+            kotlinx.coroutines.delay(100)
+            waitCount++
+        }
+        if (!paddleOcr.isInitialized) {
+            Log.e("RecognitionMonitor", "OCR 未初始化，尝试同步初始化")
+            paddleOcr.init()
+        }
+
+        // 使用 PaddleOCR 进行文字识别
+        val ocrResult = paddleOcr.recognize(bitmap)
+        Log.d("RecognitionMonitor", "OCR result: ${if (ocrResult != null) "not null, blocks=${ocrResult.textBlocks.size}" else "NULL"}")
+        val rawFullText = ocrResult?.fullText ?: ""
+        val textBlocks = ocrResult?.textBlocks ?: emptyList()
+
+        // 保留 ML Kit 条码扫描
+        val image = InputImage.fromBitmap(bitmap, 0)
+        val barcodeResult = try {
+            withContext(Dispatchers.Main) {
+                barcodeScanner.process(image).await()
+            }
+        } catch (e: Exception) { null }
+
         val mergedText = cleanChineseText(rawFullText)
+        Log.d("RecognitionMonitor", "rawFullText length=${rawFullText.length}, mergedText length=${mergedText.length}")
+        Log.d("RecognitionMonitor", "mergedText preview=${mergedText.take(100)}")
 
         val hasTakeoutKeywords = mergedText.contains("取餐") || mergedText.contains("取茶") ||
                 mergedText.contains("取件") || mergedText.contains("取性") ||
@@ -43,7 +78,6 @@ class TextRecognitionHelper {
 
         var takeoutCode: String? = null
         var pickupLocation: String? = null
-        val blocks = textResult?.textBlocks ?: emptyList()
 
         var detectedBrand: String? = when (sourcePkg) {
             "com.mcdonalds.gma.cn" -> "麦当劳"
@@ -55,7 +89,10 @@ class TextRecognitionHelper {
             else -> null
         }
 
-        if (detectedBrand == null) {
+        // 检测到啡快口令，品牌直接设为星巴克
+        if (mergedText.contains("啡快口令")) {
+            detectedBrand = "星巴克"
+        } else if (detectedBrand == null) {
             val brandHits = mutableMapOf<String, Int>()
             if (mergedText.contains("熊猫币") || mergedText.contains("葫芦")) brandHits["古茗"] = 15
             if (mergedText.contains("喜茶GO")) brandHits["喜茶"] = 15
@@ -80,9 +117,9 @@ class TextRecognitionHelper {
 
         if (!isLikelyHomePage || category == "快递") {
             takeoutCode = if (category == "快递") {
-                extractExpressCode(blocks, mergedText)
+                extractExpressCode(textBlocks, mergedText)
             } else {
-                extractFoodCode(blocks, mergedText, detectedBrand, qrCode)
+                extractFoodCode(textBlocks, mergedText, detectedBrand, qrCode)
             }
         }
 
@@ -90,7 +127,7 @@ class TextRecognitionHelper {
             takeoutCode = null
         }
 
-        pickupLocation = findPickupLocation(mergedText, blocks)
+        pickupLocation = findPickupLocation(mergedText, textBlocks)
 
         Log.d("RecognitionMonitor", "------------------------------------")
         Log.d("RecognitionMonitor", "Source App: $sourceApp")
@@ -108,7 +145,7 @@ class TextRecognitionHelper {
 
     // ─────────── 快递取件码识别 ───────────
     private fun extractExpressCode(
-        blocks: List<com.google.mlkit.vision.text.Text.TextBlock>,
+        blocks: List<PaddleOcrHelper.TextBlock>,
         mergedText: String
     ): String? {
         // 扩展关键词：支持"取件码"、"请凭"、"靖凭"(OCR错误)等
@@ -164,11 +201,23 @@ class TextRecognitionHelper {
 
     // ─────────── 餐食/饮品取餐码识别 ───────────
     private fun extractFoodCode(
-        blocks: List<com.google.mlkit.vision.text.Text.TextBlock>,
+        blocks: List<PaddleOcrHelper.TextBlock>,
         mergedText: String,
         detectedBrand: String?,
         qrCode: String?
     ): String? {
+        // 星巴克啡快口令识别：格式为 "数字.文字" 如 "17.超常发挥"
+        if (detectedBrand == "星巴克" || mergedText.contains("啡快口令")) {
+            for (block in blocks) {
+                val text = block.text.replace(" ", "").replace("\n", "")
+                // 匹配 "数字.文字" 或 "数字．文字" 格式
+                val starbucksMatch = Regex("(\\d{1,3}[.．][\\u4e00-\\u9fa5]{2,10})").find(text)
+                if (starbucksMatch != null) {
+                    return starbucksMatch.value
+                }
+            }
+        }
+
         val foodKeywords = listOf("取餐号", "取餐码", "取茶号", "券码", "订单号", "取性码", "取養号")
         val hasFoodKeywords = mergedText.contains("取餐") || mergedText.contains("取茶") ||
                 mergedText.contains("验证码") || mergedText.contains("券码") ||
@@ -236,7 +285,7 @@ class TextRecognitionHelper {
         return false
     }
 
-    private fun findPickupLocation(mergedText: String, blocks: List<com.google.mlkit.vision.text.Text.TextBlock>): String? {
+    private fun findPickupLocation(mergedText: String, blocks: List<PaddleOcrHelper.TextBlock>): String? {
         // 移除"至"，因为它太短容易误匹配（如"己放至代收点"）
         val startKeywords = listOf("已到", "已至", "到达", "到了", "在", "于", "己到", "前往", "送到", "前住")
         val targetKeywords = listOf("服务站", "驿站", "自提点", "快递站", "菜鸟站", "代收点", "代点", "丰巢柜", "快递柜", "智能柜", "门面", "邮政大厅", "大厅")
@@ -271,7 +320,7 @@ class TextRecognitionHelper {
             if (!isGarbageMatch(loc)) candidates.add(loc to locationScore(loc) + 1000)
         }
         // 次级：地址后无目标关键词时，按标点截断
-        val addressFallback = Regex("地址[:：\\s]*([^,，。！!?；;\\.\\n]{4,60})")
+        val addressFallback = Regex("地址[:：\\s]*([^,，。！!?；;.\\n]{4,60})")
         val fallbackMatch = addressFallback.find(mergedText)
         if (fallbackMatch != null) {
             val candidate = truncateLocation(fallbackMatch.groupValues[1])
@@ -314,7 +363,7 @@ class TextRecognitionHelper {
             .replace(Regex("(?<=[\\u4e00-\\u9fa5A-Z0-9-])\\s+(?=[\\u4e00-\\u9fa5])"), "")
             .replace("\n", "")
             .replace("|", "")
-            .replace("包 裏", "包裹")
+            .replace("包 裹", "包裹")
             .replace("己到", "已到")
             .replace("己至", "已至")
             .replace("取性码", "取件码")
@@ -354,6 +403,11 @@ class TextRecognitionHelper {
         }
         detectedBrand = brandHits.maxByOrNull { it.value }?.key
         if (detectedBrand == "KFC") detectedBrand = "肯德基"
+        
+        // 检测到啡快口令，品牌直接设为星巴克
+        if (mergedText.contains("啡快口令")) {
+            detectedBrand = "星巴克"
+        }
 
 
         // 类型判断
@@ -454,8 +508,8 @@ class TextRecognitionHelper {
     }
 
     fun close() {
-        textRecognizer.close()
         barcodeScanner.close()
+        // 不要关闭 paddleOcr，因为它是单例，应该保持初始化状态
     }
 }
 

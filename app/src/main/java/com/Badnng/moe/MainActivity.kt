@@ -8,6 +8,7 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -27,6 +28,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     var intentToProcess by mutableStateOf<Intent?>(null)
     private lateinit var projectionManager: MediaProjectionManager
+    private var isFromNotification = false
 
     private val captureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK && result.data != null) {
@@ -47,6 +49,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         LogManager.startCollecting()
+
+        // 检查是否从通知进入
+        isFromNotification = intent?.getBooleanExtra("from_notification", false) == true
+
+        // 异步初始化 PaddleOCR（只需一次）
+        lifecycleScope.launch {
+            PaddleOcrHelper.getInstance(applicationContext).initAsync()
+        }
 
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         intentToProcess = intent
@@ -70,11 +80,17 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         intentToProcess = intent
+        // 检查是否从通知进入
+        isFromNotification = intent?.getBooleanExtra("from_notification", false) == true
     }
 
-    fun handleBackToPrevious() {
-        if (intent.getBooleanExtra("from_notification", false)) {
-            moveTaskToBack(true)
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // 从通知进入后，按 Home 键离开时从最近任务移除
+        if (isFromNotification) {
+            finishAndRemoveTask()
         }
     }
+
+    fun isFromNotification(): Boolean = isFromNotification
 }
