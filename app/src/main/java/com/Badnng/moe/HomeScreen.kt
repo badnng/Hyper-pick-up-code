@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Process
 import android.provider.MediaStore
 import androidx.activity.BackEventCompat
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -127,14 +128,19 @@ fun HomeScreen(
         }
     }
 
+    val activity = context as? MainActivity
+
+    // 主页面按返回键时，从最近任务移除卡片
+    BackHandler(enabled = detailOrder == null) {
+        activity?.finishAndRemoveTask()
+    }
+
     val currentScale = if (isPredictiveBackInProgress) 1f - (backProgress * 0.08f) else 1f
     val currentTranslationX = if (isPredictiveBackInProgress) {
         val multiplier = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
         backProgress * 100f * multiplier
     } else 0f
     val currentCornerRadius = if (isPredictiveBackInProgress) (backProgress * 32).dp else 0.dp
-
-    val activity = context as? MainActivity
 
     LaunchedEffect(intentToProcess, orders) {
         if (intentToProcess?.getBooleanExtra("show_qr_detail", false) == true) {
@@ -278,7 +284,10 @@ fun HomeScreen(
         if (selectedOrderForQr != null) {
             QrCodeDialog(order = selectedOrderForQr!!, onDismiss = {
                 selectedOrderForQr = null
-                if (isFromNotification) { activity?.handleBackToPrevious(); isFromNotification = false }
+                if (isFromNotification) { 
+                    activity?.moveTaskToBack(true)
+                    isFromNotification = false 
+                }
             })
         }
     }
@@ -325,7 +334,8 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
                     MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
                 }
 
-                val helper = TextRecognitionHelper()
+                val helper = TextRecognitionHelper(context)
+                helper.initOcr() // 初始化 PaddleOCR
                 val result = helper.recognizeAll(bitmap)
 
                 text = result.code ?: ""

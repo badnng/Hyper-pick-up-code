@@ -64,7 +64,7 @@ import com.Badnng.moe.R
 import java.io.File
 
 enum class SettingsPage {
-    Main, Preference, Permission, Screenshot, Storage, About
+    Main, Preference, Permission, Screenshot, KeepAlive, Storage, About
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -131,6 +131,7 @@ fun SettingsScreen(
                 SettingsPage.Preference -> "偏好设置"
                 SettingsPage.Permission -> "权限设置"
                 SettingsPage.Screenshot -> "截图方式"
+                SettingsPage.KeepAlive -> "保活设置"
                 SettingsPage.Storage -> "清理空间"
                 SettingsPage.About -> "关于"
                 else -> ""
@@ -160,6 +161,7 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
         SettingsListItem(title = "偏好设置", description = "管理自行习惯的设置", onClick = { onNavigate(SettingsPage.Preference) })
         SettingsListItem(title = "权限设置", description = "管理此App授予的权限", onClick = { onNavigate(SettingsPage.Permission) })
         SettingsListItem(title = "截图方式", description = "管理App截图的方式", onClick = { onNavigate(SettingsPage.Screenshot) })
+        SettingsListItem(title = "保活设置", description = "防止系统清理后台导致通知失效", onClick = { onNavigate(SettingsPage.KeepAlive) })
 
         SettingsListItem(
             title = "添加到控制中心",
@@ -194,6 +196,7 @@ fun SubPage(title: String, page: SettingsPage, performHaptic: () -> Unit, onBack
             SettingsPage.Screenshot -> ScreenshotSettingsContent(performHaptic)
             SettingsPage.Permission -> PermissionSettingsContent(performHaptic)
             SettingsPage.Preference -> PreferenceSettingsContent(performHaptic)
+            SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic)
             SettingsPage.Storage -> StorageSettingsContent(performHaptic)
             SettingsPage.About -> AboutSettingsContent(performHaptic)
             else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(text = "正在开发中...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) }
@@ -744,4 +747,252 @@ fun SettingsListItem(title: String, description: String?, onClick: () -> Unit) {
 
 private fun isShizukuReady(): Boolean {
     return try { Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED } catch (e: Exception) { false }
+}
+
+@Composable
+fun KeepAliveSettingsContent(performHaptic: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    var keepAliveEnabled by remember { mutableStateOf(prefs.getBoolean("keep_alive_enabled", false)) }
+    var isIgnoringBattery by remember { mutableStateOf(false) }
+
+    // 检测电池优化白名单状态
+    fun checkBatteryOptimization() {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        isIgnoringBattery = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            checkBatteryOptimization()
+            kotlinx.coroutines.delay(2000)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        // 说明卡片
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "开启保活后，应用切到后台时会自动隐藏卡片并提示正在后台运行，防止系统清理导致通知失效。部分设备可能需要额外设置。",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+
+        PreferenceSection(title = "基础设置") {
+            Surface(
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            ) {
+                PreferenceSwitchItem(
+                    title = "启用保活",
+                    description = "开启后切到后台时自动隐藏卡片并提示",
+                    checked = keepAliveEnabled,
+                    onCheckedChange = { enabled ->
+                        performHaptic()
+                        keepAliveEnabled = enabled
+                        prefs.edit().putBoolean("keep_alive_enabled", enabled).apply()
+                    }
+                )
+            }
+        }
+
+        PreferenceSection(title = "电池优化") {
+            PermissionItem(
+                title = "忽略电池优化",
+                description = if (isIgnoringBattery) "已加入电池优化白名单，应用不会被系统休眠策略限制"
+                else "加入电池优化白名单，防止系统休眠时清理应用",
+                isGranted = isIgnoringBattery,
+                actionButton = if (!isIgnoringBattery) {
+                    {
+                        Button(
+                            onClick = {
+                                performHaptic()
+                                try {
+                                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    context.startActivity(intent)
+                                }
+                            },
+                            shape = RoundedCornerShape(15.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp)
+                        ) {
+                            Icon(Icons.Default.BatterySaver, null, Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("去设置")
+                        }
+                    }
+                } else null
+            )
+        }
+
+        PreferenceSection(title = "锁定后台") {
+            Text(
+                text = "在最近任务界面锁定应用，防止被系统一键清理：",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Surface(
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "锁定方法",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "1. 打开最近任务界面（多任务键或手势上滑悬停）\n2. 找到澎湃记卡片\n3. 长按卡片或点击卡片上的锁图标\n4. 选择「锁定」或点击锁图标使其变为锁定状态",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "锁定后卡片会显示锁图标，不会被一键清理",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+        }
+
+        PreferenceSection(title = "厂商后台管理") {
+            Text(
+                text = "不同厂商有不同的后台管理策略，请根据你的设备品牌进行设置：",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            VendorKeepAliveItem(
+                vendor = "小米 / MIUI",
+                steps = listOf("设置 → 应用设置 → 应用管理 → 澎湃记", "省电策略 → 无限制", "自启动 → 开启"),
+                performHaptic = performHaptic
+            )
+
+            VendorKeepAliveItem(
+                vendor = "华为 / EMUI",
+                steps = listOf("设置 → 应用 → 应用启动管理 → 澎湃记", "手动管理 → 允许后台活动"),
+                performHaptic = performHaptic
+            )
+
+            VendorKeepAliveItem(
+                vendor = "OPPO / ColorOS",
+                steps = listOf("设置 → 应用管理 → 澎湃记", "电池 → 后台冻结 → 关闭", "自启动 → 开启"),
+                performHaptic = performHaptic
+            )
+
+            VendorKeepAliveItem(
+                vendor = "vivo / FuntouchOS",
+                steps = listOf("设置 → 更多设置 → 权限管理 → 澎湃记", "自启动 → 开启", "后台弹出界面 → 允许"),
+                performHaptic = performHaptic
+            )
+
+            VendorKeepAliveItem(
+                vendor = "三星 / OneUI",
+                steps = listOf("设置 → 应用程序 → 澎湃记", "电池 → 不受限制"),
+                performHaptic = performHaptic
+            )
+        }
+
+        Spacer(modifier = Modifier.height(48.dp))
+    }
+}
+
+@Composable
+fun VendorKeepAliveItem(vendor: String, steps: List<String>, performHaptic: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Surface(
+        onClick = { performHaptic(); expanded = !expanded },
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = vendor,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    steps.forEachIndexed { index, step ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                text = "${index + 1}.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = step,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
