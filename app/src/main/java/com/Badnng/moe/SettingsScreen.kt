@@ -129,7 +129,7 @@ fun SettingsScreen(
             val displayPage = if (currentPage != SettingsPage.Main) currentPage else previousPage
             val title = when (displayPage) {
                 SettingsPage.Preference -> "偏好设置"
-                SettingsPage.Permission -> "权限设置"
+                SettingsPage.Permission -> "权限与保活"
                 SettingsPage.Screenshot -> "截图方式"
                 SettingsPage.KeepAlive -> "保活设置"
                 SettingsPage.Storage -> "清理空间"
@@ -159,9 +159,8 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit) {
         Text(text = "设置", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(modifier = Modifier.height(24.dp))
         SettingsListItem(title = "偏好设置", description = "管理自行习惯的设置", onClick = { onNavigate(SettingsPage.Preference) })
-        SettingsListItem(title = "权限设置", description = "管理此App授予的权限", onClick = { onNavigate(SettingsPage.Permission) })
+        SettingsListItem(title = "权限与保活", description = "管理权限和防止系统清理后台", onClick = { onNavigate(SettingsPage.Permission) })
         SettingsListItem(title = "截图方式", description = "管理App截图的方式", onClick = { onNavigate(SettingsPage.Screenshot) })
-        SettingsListItem(title = "保活设置", description = "防止系统清理后台导致通知失效", onClick = { onNavigate(SettingsPage.KeepAlive) })
 
         SettingsListItem(
             title = "添加到控制中心",
@@ -553,17 +552,19 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
     var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "system") ?: "system") }
     var monetEnabled by remember { mutableStateOf(prefs.getBoolean("monet_enabled", true)) }
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
+    var showOnboardingOnNextLaunch by remember { mutableStateOf(prefs.getBoolean("show_onboarding_on_next_launch", false)) }
     var customHue by remember { mutableFloatStateOf(260f) }
     var selectedColorInt by remember { mutableIntStateOf(prefs.getInt("theme_color", Color(0xFF6750A4).toArgb())) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)),
         verticalArrangement = Arrangement.spacedBy(32.dp)
     ) {
+        Spacer(Modifier.height(16.dp))
         PreferenceSection(title = "底栏位置") { Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("left" to "靠左", "center" to "居中", "right" to "靠右").forEach { (key, label) -> ChoiceChip(label = label, selected = navAlignment == key, onClick = { performHaptic(); navAlignment = key; prefs.edit().putString("nav_alignment", key).apply() }, modifier = Modifier.weight(1f)) } } }
 
         PreferenceSection(title = "交互反馈") {
@@ -584,6 +585,21 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
         PreferenceSection(title = "外观设置") { Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) { PreferenceSwitchItem(title = "莫奈取色 (Dynamic Color)", description = "开启后主题色将跟随系统壁纸自动变化", checked = monetEnabled, onCheckedChange = { performHaptic(); monetEnabled = it; prefs.edit().putBoolean("monet_enabled", it).apply() }) } }
         AnimatedVisibility(visible = !monetEnabled, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { PreferenceSection(title = "自定义主题色") { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("滑动调节色相", style = MaterialTheme.typography.bodySmall); Slider(value = customHue, onValueChange = { customHue = it }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth()); val previewColor = remember(customHue) { Color.hsv(customHue, 0.7f, 0.9f) }; Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(previewColor).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)); Button(onClick = { performHaptic(); selectedColorInt = previewColor.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }, shape = RoundedCornerShape(15.dp), modifier = Modifier.weight(1f).height(56.dp)) { Text("应用颜色") } } ; Text("MD3 建议色", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)); val md3Colors = listOf(0xFF6750A4, 0xFF006A60, 0xFF984061, 0xFF005AC1, 0xFF605D62, 0xFF3B6939); Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { md3Colors.forEach { colorLong -> val color = Color(colorLong); Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(color).border(width = if (selectedColorInt == color.toArgb()) 3.dp else 0.dp, color = MaterialTheme.colorScheme.primary, shape = CircleShape).clickable { performHaptic(); selectedColorInt = color.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }) } } } } }
         PreferenceSection(title = "显示模式") { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统").forEach { (key, label) -> Row(modifier = Modifier.fillMaxWidth().clickable { performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = themeMode == key, onClick = { performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply() }); Spacer(Modifier.width(12.dp)); Text(label, fontSize = 16.sp) } } } }
+
+        PreferenceSection(title = "引导设置") {
+            Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) {
+                PreferenceSwitchItem(
+                    title = "下次启动时打开引导页面",
+                    description = "开启后，彻底停止App再启动会显示引导页面，完成引导后自动关闭",
+                    checked = showOnboardingOnNextLaunch,
+                    onCheckedChange = {
+                        performHaptic()
+                        showOnboardingOnNextLaunch = it
+                        prefs.edit().putBoolean("show_onboarding_on_next_launch", it).apply()
+                    }
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(48.dp))
     }
 }
@@ -597,10 +613,12 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
-            .padding(16.dp),
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
+        Spacer(Modifier.height(16.dp))
         Text("选择截图技术方案", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认", selected = captureMode == "media_projection", onClick = { performHaptic(); captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
         CaptureModeItem(title = "Shizuku 免授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { performHaptic(); captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
@@ -610,15 +628,19 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
 @Composable
 fun PermissionSettingsContent(performHaptic: () -> Unit) {
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var hasNotificationPermission by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
     var hasUsageStatsPermission by remember { mutableStateOf(checkUsageStatsPermission(context)) }
     var shizukuReady by remember { mutableStateOf(false) }
+    var keepAliveEnabled by remember { mutableStateOf(prefs.getBoolean("keep_alive_enabled", false)) }
+    var isIgnoringBattery by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) {
             hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled()
             hasUsageStatsPermission = checkUsageStatsPermission(context)
             shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }
+            isIgnoringBattery = checkBatteryOptimization(context)
             delay(1500)
         }
     }
@@ -626,53 +648,213 @@ fun PermissionSettingsContent(performHaptic: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)),
+        verticalArrangement = Arrangement.spacedBy(32.dp)
     ) {
-        PermissionItem(
-            title = "通知权限",
-            description = "请授予该权限，该权限用于收取取餐码通知，如关闭/拒绝该权限将会无法收到此通知",
-            isGranted = hasNotificationPermission,
-            actionButton = if (!hasNotificationPermission) { {
-                Button(onClick = {
-                    performHaptic()
-                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply { putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName) }
-                    context.startActivity(intent)
-                }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                    Icon(Icons.Default.Build, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去修复")
-                }
-            } } else null
-        )
+        Spacer(Modifier.height(16.dp))
+        // 第一大类：权限设置
+        PreferenceSection(title = "权限设置") {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                PermissionItem(
+                    title = "通知权限",
+                    description = "请授予该权限，该权限用于收取取餐码通知，如关闭/拒绝该权限将会无法收到此通知",
+                    isGranted = hasNotificationPermission,
+                    actionButton = if (!hasNotificationPermission) { {
+                        Button(onClick = {
+                            performHaptic()
+                            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply { putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName) }
+                            context.startActivity(intent)
+                        }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                            Icon(Icons.Default.Build, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去修复")
+                        }
+                    } } else null
+                )
 
-        PermissionItem(
-            title = "应用使用情况",
-            description = "此权限能更好的识别当前处在的app是哪个 brand，推荐授权！",
-            isGranted = hasUsageStatsPermission,
-            actionButton = if (!hasUsageStatsPermission) { {
-                Button(onClick = {
-                    performHaptic()
-                    val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
-                        data = Uri.parse("package:${context.packageName}")
+                PermissionItem(
+                    title = "应用使用情况",
+                    description = "此权限能更好的识别当前处在的app是哪个 brand，推荐授权！",
+                    isGranted = hasUsageStatsPermission,
+                    actionButton = if (!hasUsageStatsPermission) { {
+                        Button(onClick = {
+                            performHaptic()
+                            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                                data = Uri.parse("package:${context.packageName}")
+                            }
+                            try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+                        }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                            Icon(Icons.Default.Security, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去授权")
+                        }
+                    } } else null
+                )
+
+                PermissionItem(
+                    title = "Shizuku 运行状态",
+                    description = "该软件用于免授权截图识别的必须条件，如无则无法使用免授权截图",
+                    isGranted = shizukuReady,
+                    actionButton = if (!shizukuReady) { {
+                        Button(onClick = { performHaptic(); if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary), modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                            Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("如果Shizuku已运行请点我")
+                        }
+                    } } else null
+                )
+            }
+        }
+
+        // 第二大类：保活设置
+        PreferenceSection(title = "保活设置") {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // 说明卡片
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = "开启保活后，应用切到后台时会自动隐藏卡片并提示正在后台运行，防止系统清理导致通知失效。部分设备可能需要额外设置。",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            lineHeight = 18.sp
+                        )
                     }
-                    try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
-                }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                    Icon(Icons.Default.Security, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("去授权")
                 }
-            } } else null
-        )
 
-        PermissionItem(
-            title = "Shizuku 运行状态",
-            description = "该软件用于免授权截图识别的必须条件，如无则无法使用免授权截图",
-            isGranted = shizukuReady,
-            actionButton = if (!shizukuReady) { {
-                Button(onClick = { performHaptic(); if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary), modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                    Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("如果Shizuku已运行请点我")
+                // 基础设置
+                Surface(
+                    shape = RoundedCornerShape(15.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                ) {
+                    PreferenceSwitchItem(
+                        title = "启用保活",
+                        description = "开启后切到后台时自动隐藏卡片并提示",
+                        checked = keepAliveEnabled,
+                        onCheckedChange = { enabled ->
+                            performHaptic()
+                            keepAliveEnabled = enabled
+                            prefs.edit().putBoolean("keep_alive_enabled", enabled).apply()
+                        }
+                    )
                 }
-            } } else null
-        )
+
+                // 电池优化
+                PermissionItem(
+                    title = "忽略电池优化",
+                    description = if (isIgnoringBattery) "已加入电池优化白名单，应用不会被系统休眠策略限制"
+                    else "加入电池优化白名单，防止系统休眠时清理应用",
+                    isGranted = isIgnoringBattery,
+                    actionButton = if (!isIgnoringBattery) {
+                        {
+                            Button(
+                                onClick = {
+                                    performHaptic()
+                                    try {
+                                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                            data = Uri.parse("package:${context.packageName}")
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                        context.startActivity(intent)
+                                    }
+                                },
+                                shape = RoundedCornerShape(15.dp),
+                                modifier = Modifier.fillMaxWidth().height(56.dp)
+                            ) {
+                                Icon(Icons.Default.BatterySaver, null, Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("去设置")
+                            }
+                        }
+                    } else null
+                )
+
+                // 锁定后台
+                Text(
+                    text = "在最近任务界面锁定应用，防止被系统一键清理：",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Surface(
+                    shape = RoundedCornerShape(15.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "锁定方法",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "1. 打开最近任务界面（多任务键或手势上滑悬停）\n2. 找到澎湃记卡片\n3. 长按卡片后点击卡片上的锁图标/下滑卡片使其变为锁定状态",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 20.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "锁定后卡片会显示锁图标，不会被一键清理",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+
+                // 厂商后台管理
+                Text(
+                    text = "不同厂商有不同的后台管理策略，请根据你的设备品牌进行设置：",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                VendorKeepAliveItem(
+                    vendor = "HyperOS",
+                    steps = listOf("设置 → 应用设置 → 应用管理 → 澎湃记", "省电策略 → 无限制", "自启动 → 开启"),
+                    performHaptic = performHaptic
+                )
+
+                VendorKeepAliveItem(
+                    vendor = "ColorOS",
+                    steps = listOf("设置 → 应用管理 → 澎湃记", "电池 → 后台冻结 → 关闭", "自启动 → 开启"),
+                    performHaptic = performHaptic
+                )
+
+                VendorKeepAliveItem(
+                    vendor = "OriginOS",
+                    steps = listOf("设置 → 更多设置 → 权限管理 → 澎湃记", "自启动 → 开启", "后台弹出界面 → 允许"),
+                    performHaptic = performHaptic
+                )
+
+                VendorKeepAliveItem(
+                    vendor = "OneUI",
+                    steps = listOf("设置 → 应用程序 → 澎湃记", "电池 → 不受限制"),
+                    performHaptic = performHaptic
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
     }
 }
 
@@ -685,6 +867,11 @@ private fun checkUsageStatsPermission(context: Context): Boolean {
         appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
     }
     return mode == AppOpsManager.MODE_ALLOWED
+}
+
+private fun checkBatteryOptimization(context: Context): Boolean {
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+    return powerManager.isIgnoringBatteryOptimizations(context.packageName)
 }
 
 @Composable
@@ -742,7 +929,7 @@ fun CaptureModeItem(title: String, description: String, selected: Boolean, enabl
 
 @Composable
 fun SettingsListItem(title: String, description: String?, onClick: () -> Unit) {
-    Surface(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable(onClick = onClick), shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
+    Surface(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(15.dp)).clickable(onClick = onClick), shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
         ListItem(headlineContent = { Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium) }, supportingContent = if (description != null) { { Text(text = description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)) } } else null, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
     }
 }
