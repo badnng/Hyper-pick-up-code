@@ -190,7 +190,7 @@ private fun requestAddTile(context: Context) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubPage(title: String, page: SettingsPage, performHaptic: () -> Unit, onBack: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Top))) {
         TopAppBar(title = { Text(text = title, fontSize = 20.sp, fontWeight = FontWeight.Bold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent))
         when (page) {
             SettingsPage.Screenshot -> ScreenshotSettingsContent(performHaptic)
@@ -257,6 +257,8 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                 OssItem("Room", "官方高性能 SQLite 数据库封装", "https://developer.android.com/training/data-storage/room", performHaptic)
                 OssItem("Coil", "现代化的 Android 图片加载库", "https://coil-kt.github.io/coil/", performHaptic)
                 OssItem("Kyant Backdrop", "优雅的毛玻璃与层级模糊效果实现", "https://github.com/Kyant0/AndroidLiquidGlass", performHaptic)
+                OssItem("Paddle Lite" , "使用深度识别算法在本地进行OCR识别" , "https://www.paddlepaddle.org.cn/paddle/paddlelite", performHaptic)
+                OssItem("Paddle4Android" , "不需要学习原理即可一键在Android上引入OCR识别" , "https://github.com/equationl/paddleocr4android", performHaptic)
             }
         }
 
@@ -344,11 +346,11 @@ fun StorageSettingsContent(performHaptic: () -> Unit) {
             val appInfo = context.packageManager.getApplicationInfo(context.packageName, 0)
             val apkFile = File(appInfo.sourceDir)
             appSize = if (apkFile.exists()) apkFile.length() else 0L
-            
+
             // 数据目录大小
             val dataDir = context.filesDir.parentFile
             totalSize = appSize + getFolderSize(dataDir)
-            
+
             // 缓存大小
             cacheSize = getFolderSize(context.cacheDir)
         }
@@ -772,11 +774,12 @@ fun KeepAliveSettingsContent(performHaptic: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
+        Spacer(Modifier.height(16.dp))
         // 说明卡片
         Surface(
             shape = RoundedCornerShape(16.dp),
@@ -872,7 +875,7 @@ fun KeepAliveSettingsContent(performHaptic: () -> Unit) {
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "1. 打开最近任务界面（多任务键或手势上滑悬停）\n2. 找到澎湃记卡片\n3. 长按卡片或点击卡片上的锁图标\n4. 选择「锁定」或点击锁图标使其变为锁定状态",
+                        text = "1. 打开最近任务界面（多任务键或手势上滑悬停）\n2. 找到澎湃记卡片\n3. 长按卡片后点击卡片上的锁图标/下滑卡片使其变为锁定状态",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 20.sp
@@ -906,31 +909,25 @@ fun KeepAliveSettingsContent(performHaptic: () -> Unit) {
             Spacer(Modifier.height(8.dp))
 
             VendorKeepAliveItem(
-                vendor = "小米 / MIUI",
+                vendor = "HyperOS",
                 steps = listOf("设置 → 应用设置 → 应用管理 → 澎湃记", "省电策略 → 无限制", "自启动 → 开启"),
                 performHaptic = performHaptic
             )
 
             VendorKeepAliveItem(
-                vendor = "华为 / EMUI",
-                steps = listOf("设置 → 应用 → 应用启动管理 → 澎湃记", "手动管理 → 允许后台活动"),
-                performHaptic = performHaptic
-            )
-
-            VendorKeepAliveItem(
-                vendor = "OPPO / ColorOS",
+                vendor = "ColorOS",
                 steps = listOf("设置 → 应用管理 → 澎湃记", "电池 → 后台冻结 → 关闭", "自启动 → 开启"),
                 performHaptic = performHaptic
             )
 
             VendorKeepAliveItem(
-                vendor = "vivo / FuntouchOS",
+                vendor = "OriginOS",
                 steps = listOf("设置 → 更多设置 → 权限管理 → 澎湃记", "自启动 → 开启", "后台弹出界面 → 允许"),
                 performHaptic = performHaptic
             )
 
             VendorKeepAliveItem(
-                vendor = "三星 / OneUI",
+                vendor = "OneUI",
                 steps = listOf("设置 → 应用程序 → 澎湃记", "电池 → 不受限制"),
                 performHaptic = performHaptic
             )
