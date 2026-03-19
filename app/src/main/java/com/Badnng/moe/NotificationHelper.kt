@@ -40,9 +40,9 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val viewIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("highlight_order_id", order.id)
+        val viewIntent = Intent(context, OrderQuickViewActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra("order_id", order.id)
             putExtra("from_notification", true)
         }
         val viewPendingIntent = PendingIntent.getActivity(
@@ -75,10 +75,6 @@ class NotificationHelper(private val context: Context) {
             .setContentIntent(viewPendingIntent)
             .setStyle(Notification.BigTextStyle().bigText("$label: ${order.takeoutCode}"))
             .addAction(Notification.Action.Builder(null, "已完成", completePendingIntent).build())
-            
-        if (!order.qrCodeData.isNullOrEmpty()) {
-             builder.addAction(Notification.Action.Builder(null, "展示二维码", qrDetailPendingIntent).build())
-        }
             
         if (Build.VERSION.SDK_INT >= 35) {
             val extras = Bundle()
