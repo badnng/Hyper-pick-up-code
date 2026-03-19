@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -12,27 +14,61 @@ android {
         applicationId = "com.Badnng.moe"
         minSdk = 35
         targetSdk = 36
-        versionCode = 20260316_01
-        versionName = "26.3.16.C01"
+        versionCode = 20260316_02
+        versionName = "26.3.16.C02"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters.add("arm64-v8a")
         }
+        externalNativeBuild {
+            cmake {
+                arguments("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
+            }
+        }
     }
 
+    signingConfigs {
+        // 从 local.properties 读取配置
+        val localProperties = Properties().apply {
+            val localFile = rootProject.file("local.properties")
+            if (localFile.exists()) {
+                load(localFile.inputStream())
+            }
+        }
+
+        // 获取 keystore 路径并使用
+        val keyStorePath = localProperties.getProperty("key.store.path")
+        if (keyStorePath != null) {
+            create("release") {
+                storeFile = file(keyStorePath)
+                storePassword = localProperties.getProperty("key.store.password") ?: ""
+                keyAlias = localProperties.getProperty("key.alias") ?: ""
+                keyPassword = localProperties.getProperty("key.alias.password") ?: ""
+            }
+
+            getByName("debug") {
+                storeFile = file(keyStorePath)
+                storePassword = localProperties.getProperty("key.store.password") ?: ""
+                keyAlias = localProperties.getProperty("key.alias") ?: ""
+                keyPassword = localProperties.getProperty("key.alias.password") ?: ""
+            }
+        }
+    }
 
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug") // 让 release 使用 debug 签名（实际上现在两者用同一个文件）
         }
-        debug {
+        getByName("debug") {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug") // 使用相同签名
         }
     }
 
