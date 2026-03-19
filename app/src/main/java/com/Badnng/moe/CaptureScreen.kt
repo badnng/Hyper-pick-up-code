@@ -16,6 +16,9 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -32,7 +35,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -410,6 +412,159 @@ fun QrCodeDialog(order: OrderEntity, onDismiss: () -> Unit) {
                 Box(modifier = Modifier.fillMaxWidth(0.7f).aspectRatio(1f), contentAlignment = Alignment.Center) {
                     if (qrBitmap != null) { Image(bitmap = qrBitmap.asImageBitmap(), contentDescription = "二维码", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
                     else { Text(text = "暂无数据", color = Color.Gray, fontSize = 12.sp) }
+                }
+            }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(32.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    )
+}
+
+@Composable
+fun OrderQuickViewDialog(order: OrderEntity, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val isExpress = order.orderType == "快递"
+    val label = if (isExpress) "取件码" else "取餐码"
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        modifier = Modifier.fillMaxWidth(0.9f),
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                // 品牌信息
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val brandIcon = remember(order.brandName, order.orderType) {
+                        val resName = when (order.brandName) {
+                            "麦当劳" -> "ic_mcdonalds"
+                            "肯德基", "KFC" -> "ic_kfc"
+                            "瑞幸" -> "ic_luckin"
+                            "喜茶" -> "ic_heytea"
+                            "星巴克" -> "ic_starbucks"
+                            "霸王茶姬" -> "ic_chagee"
+                            "古茗" -> "ic_goodme"
+                            "蜜雪冰城" -> "ic_mixue"
+                            else -> null
+                        }
+                        val resId = if (resName != null) context.resources.getIdentifier(resName, "drawable", context.packageName) else 0
+                        if (resId != 0) resId else when (order.orderType) {
+                            "饮品" -> R.drawable.ic_drink
+                            "快递" -> R.drawable.ic_package
+                            else -> R.drawable.ic_restaurant
+                        }
+                    }
+                    Icon(
+                        painter = painterResource(id = brandIcon),
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = Color.Unspecified
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = order.brandName ?: if (isExpress) "快递" else "取餐码",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // 取餐码/取件码
+                Text(text = label, fontSize = 12.sp, color = Color.Gray, letterSpacing = 1.2.sp)
+                Text(
+                    text = order.takeoutCode, 
+                    fontSize = 36.sp, 
+                    fontWeight = FontWeight.ExtraBold, 
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 2.sp
+                )
+                
+                // 取货地点（如果有）
+                if (!order.pickupLocation.isNullOrEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.LocationOn,
+                            null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = order.pickupLocation!!,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "请向商家出示此码", fontSize = 12.sp, color = Color.Gray.copy(alpha = 0.6f), fontWeight = FontWeight.Medium)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // 分隔线
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+                
+                // 截图原图
+                Text(
+                    text = "截图副本",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                if (!order.screenshotPath.isNullOrEmpty() && java.io.File(order.screenshotPath).exists()) {
+                    AsyncImage(
+                        model = java.io.File(order.screenshotPath),
+                        contentDescription = "原图",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.note),
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp).alpha(0.3f),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "暂无图片数据",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
                 }
             }
         },

@@ -2,4 +2,12 @@
 <resources>
 
     <style name="Theme.澎湃记" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.澎湃记.Overlay">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.6</item>
+    </style>
 </resources>

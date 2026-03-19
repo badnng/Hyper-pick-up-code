@@ -13,6 +13,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -69,8 +71,35 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             澎湃记Theme {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    HomeScreen(intentToProcess = intentToProcess)
+                val prefs = remember { getSharedPreferences("settings", Context.MODE_PRIVATE) }
+                var showOnboarding by remember { 
+                    mutableStateOf(
+                        !prefs.getBoolean("onboarding_completed", false) || 
+                        prefs.getBoolean("show_onboarding_on_next_launch", false)
+                    )
+                }
+
+                AnimatedContent(
+                    targetState = showOnboarding,
+                    label = "onboarding_transition",
+                    transitionSpec = {
+                        fadeIn(animationSpec = tween(500)) togetherWith
+                                fadeOut(animationSpec = tween(500))
+                    }
+                ) { isOnboarding ->
+                    if (isOnboarding) {
+                        OnboardingScreen(
+                            onComplete = { 
+                                showOnboarding = false
+                                // 完成引导后，自动关闭"下次启动时打开引导页面"开关
+                                prefs.edit().putBoolean("show_onboarding_on_next_launch", false).apply()
+                            }
+                        )
+                    } else {
+                        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                            HomeScreen(intentToProcess = intentToProcess)
+                        }
+                    }
                 }
             }
         }

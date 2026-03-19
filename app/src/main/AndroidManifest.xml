@@ -65,6 +65,16 @@
         </activity>
 
         <activity
+            android:name=".OrderQuickViewActivity"
+            android:label="订单快速查看"
+            android:theme="@style/Theme.澎湃记.Overlay"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:exported="false"
+            android:taskAffinity=".quickview"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
+        <activity
             android:name=".ShareReceiverActivity"
             android:label="识别截图"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
