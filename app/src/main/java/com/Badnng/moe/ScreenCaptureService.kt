@@ -79,17 +79,28 @@ class ScreenCaptureService : Service() {
             delay(800)
             val pkg = getForegroundPackageName(applicationContext)
             val appName = pkg?.let { getAppName(applicationContext, it) }
+            
+            var bitmap: Bitmap? = null
+            var cropped: Bitmap? = null
+            
             try {
-                val bitmap = captureShizukuScreenshot()
+                bitmap = captureShizukuScreenshot()
                 if (bitmap != null) {
-                    val cropped = cropStatusBar(bitmap)
+                    cropped = cropStatusBar(bitmap)
                     // 识别完成后再停止服务
-                    recognizeAndStop(cropped, appName, pkg)
+                    recognizeAndStop(cropped!!, appName, pkg)
                 } else {
                     stopSelf()
                 }
             } catch (e: Exception) {
+                Log.e("CaptureLog", "Shizuku 截图失败", e)
                 stopSelf()
+            } finally {
+                // 🚀 优化：确保 Bitmap 被回收
+                bitmap?.recycle()
+                cropped?.let { 
+                    // cropped 在 recognizeAndStop 中回收，这里不需要重复回收
+                }
             }
         }
     }
@@ -149,8 +160,14 @@ class ScreenCaptureService : Service() {
             delay(800)
             val pkg = getForegroundPackageName(applicationContext)
             val appName = pkg?.let { getAppName(applicationContext, it) }
+            
+            var image: android.media.Image? = null
+            var bitmap: Bitmap? = null
+            var cleanBitmap: Bitmap? = null
+            var cropped: Bitmap? = null
+            
             try {
-                val image = imageReader?.acquireLatestImage()
+                image = imageReader?.acquireLatestImage()
                 if (image == null) {
                     stopSelf()
                     return@launch
@@ -161,16 +178,24 @@ class ScreenCaptureService : Service() {
                 val pixelStride = planes[0].pixelStride
                 val rowStride = planes[0].rowStride
                 val rowPadding = rowStride - pixelStride * image.width
-                val bitmap = Bitmap.createBitmap(image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888)
-                bitmap.copyPixelsFromBuffer(buffer)
-                val cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
-                image.close()
-
-                val cropped = cropStatusBar(cleanBitmap)
+                
+                // 🚀 优化：使用 try-finally 确保所有 Bitmap 都被回收
+                bitmap = Bitmap.createBitmap(image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888)
+                bitmap?.copyPixelsFromBuffer(buffer)
+                cleanBitmap = Bitmap.createBitmap(bitmap!!, 0, 0, image.width, image.height)
+                cropped = cropStatusBar(cleanBitmap!!)
+                
                 // 识别完成后再停止服务
-                recognizeAndStop(cropped, appName, pkg)
+                recognizeAndStop(cropped!!, appName, pkg)
             } catch (e: Exception) {
+                Log.e("CaptureLog", "MediaProjection 截图失败", e)
                 stopSelf()
+            } finally {
+                // 🚀 关键优化：确保所有资源都被正确释放
+                image?.close()
+                bitmap?.recycle()
+                cleanBitmap?.recycle()
+                // cropped 在 recognizeAndStop 中回收，这里不需要重复回收
             }
         }
     }
@@ -195,21 +220,28 @@ class ScreenCaptureService : Service() {
 
     private fun recognizeAndStop(bitmap: Bitmap, sourceApp: String?, sourcePkg: String?) {
         scope.launch {
+            var helper: TextRecognitionHelper? = null
+            var screenshotFile: File? = null
+            var outputStream: FileOutputStream? = null
+            
             try {
                 Log.d("CaptureLog", "开始识别...")
-                val helper = TextRecognitionHelper(applicationContext)
+                helper = TextRecognitionHelper(applicationContext)
                 val result = helper.recognizeAll(bitmap, sourceApp, sourcePkg)
-                helper.close()
 
                 if (result.code != null) {
-                    val screenshotFile = File(filesDir, "screenshots/${System.currentTimeMillis()}.png")
-                    screenshotFile.parentFile?.mkdirs()
-                    FileOutputStream(screenshotFile).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    screenshotFile = File(filesDir, "screenshots/${System.currentTimeMillis()}.png")
+                    screenshotFile?.parentFile?.mkdirs()
+                    
+                    // 🚀 优化：使用 try-with-resources 确保输出流被关闭
+                    FileOutputStream(screenshotFile).use { fos ->
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    }
 
                     val order = OrderEntity(
                         takeoutCode = result.code,
                         qrCodeData = result.qr,
-                        screenshotPath = screenshotFile.absolutePath,
+                        screenshotPath = screenshotFile?.absolutePath ?: "",
                         recognizedText = "自动识别",
                         orderType = result.type,
                         brandName = result.brand,
@@ -228,8 +260,29 @@ class ScreenCaptureService : Service() {
                 }
             } catch (e: Exception) {
                 Log.e("CaptureLog", "识别异常", e)
+                // 🚀 优化：即使失败也要显示提示
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(applicationContext, "识别失败，请重试", Toast.LENGTH_SHORT).show()
+                }
             } finally {
-                bitmap.recycle()
+                // 🚀 关键优化：确保所有资源都被正确释放
+                try {
+                    helper?.close()
+                } catch (e: Exception) {
+                    Log.e("CaptureLog", "关闭 TextRecognitionHelper 失败", e)
+                }
+                
+                try {
+                    outputStream?.close()
+                } catch (e: Exception) {
+                    Log.e("CaptureLog", "关闭输出流失败", e)
+                }
+                
+                // 确保 Bitmap 被回收
+                if (!bitmap.isRecycled) {
+                    bitmap.recycle()
+                }
+                
                 // 识别完成后停止服务
                 stopSelf()
             }
