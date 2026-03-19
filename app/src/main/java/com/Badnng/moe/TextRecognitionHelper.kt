@@ -160,12 +160,22 @@ class TextRecognitionHelper(private val context: Context) {
             val matchedKeyword = expressKeywords.firstOrNull { text.contains(it) } ?: continue
             val afterKeyword = text.substringAfter(matchedKeyword).trimStart(':', '：', ' ')
             Log.d("RecognitionMonitor", "AfterKeyword: [$afterKeyword]")
-            // 优先带连字符（A-2-7261, 4-3-958, 10-3-0221），再纯数字（39359），最后字母数字混合
-            val dashMatch = Regex("([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)").find(afterKeyword)
+            
+            // 🚀 优化：支持更多格式的快递取件码
+            // 1. 三段式连字符（A-2-7261, 4-3-958, 10-3-0221）
+            val dashMatch3 = Regex("([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)").find(afterKeyword)
+            // 2. 两段式连字符（ZT-20001, A1-12, ZT20001）
+            val dashMatch2 = Regex("([A-Z]{1,3}[0-9]{0,3}-[0-9]{3,8}|[A-Z0-9]{1,4}-[A-Z0-9]{3,8})").find(afterKeyword)
+            // 3. 纯数字（39359）
             val numMatch = Regex("(?<![0-9])([0-9]{4,8})(?![0-9])").find(afterKeyword)
+            // 4. 字母数字混合（ZT20001, A1121111）
+            val alphaNumMatch = Regex("([A-Z]{1,3}[0-9]{4,8}|[A-Z][0-9]{6,10})").find(afterKeyword)
+            // 5. 通用模式（字母数字和连字符的组合）
             val alphaMatch = Regex("[A-Z0-9-]{3,12}").find(afterKeyword)
-            Log.d("RecognitionMonitor", "dashMatch=${dashMatch?.value} numMatch=${numMatch?.value} alphaMatch=${alphaMatch?.value}")
-            val match = dashMatch ?: numMatch ?: alphaMatch
+            
+            Log.d("RecognitionMonitor", "dashMatch3=${dashMatch3?.value} dashMatch2=${dashMatch2?.value} numMatch=${numMatch?.value} alphaNumMatch=${alphaNumMatch?.value} alphaMatch=${alphaMatch?.value}")
+            
+            val match = dashMatch3 ?: dashMatch2 ?: numMatch ?: alphaNumMatch ?: alphaMatch
             if (match != null && !isInvalidExpressCode(match.value)) {
                 return match.value
             }
@@ -177,12 +187,24 @@ class TextRecognitionHelper(private val context: Context) {
         if (!hasExpressKeyword) return null
         val candidates = blocks.flatMap { block ->
             val text = block.text.replace(" ", "").replace("\n", "")
-            val pattern = Regex("(?<![a-zA-Z0-9-])([0-9]{4,8}|[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+|[A-Z0-9][A-Z0-9-]{2,11})(?![a-zA-Z0-9-])")
+            // 🚀 优化：支持更多格式的快递取件码正则表达式
+            val pattern = Regex("(?<![a-zA-Z0-9-])(" +
+                "[0-9]{4,8}|" +  // 纯数字 4-8 位
+                "[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+|" +  // 三段式连字符
+                "[A-Z]{1,3}[0-9]{0,3}-[0-9]{3,8}|" +  // 两段式：字母-数字
+                "[A-Z0-9]{1,4}-[A-Z0-9]{3,8}|" +  // 两段式：字母数字-字母数字
+                "[A-Z]{1,3}[0-9]{4,8}|" +  // 字母开头+数字
+                "[A-Z][0-9]{6,10}|" +  // 单字母+数字
+                "[A-Z0-9][A-Z0-9-]{2,11}" +  // 通用模式
+                ")(?![a-zA-Z0-9-])")
             pattern.findAll(text).mapNotNull { match ->
                 val value = match.value
                 if (isInvalidExpressCode(value)) return@mapNotNull null
                 var weight = (block.boundingBox?.width() ?: 0) * value.length
+                // 给带连字符的格式更高权重
                 if (value.contains("-")) weight *= 20
+                // 给字母开头的格式更高权重
+                if (value.any { it.isLetter() }) weight *= 5
                 value to weight
             }.toList()
         }.sortedByDescending { it.second }
@@ -449,10 +471,20 @@ class TextRecognitionHelper(private val context: Context) {
         val matchedKeyword = expressKeywords.firstOrNull { mergedText.contains(it) }
         if (matchedKeyword != null) {
             val afterKeyword = mergedText.substringAfter(matchedKeyword).trimStart(':', '：', ' ')
-            val dashMatch = Regex("([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)").find(afterKeyword)
+            
+            // 🚀 优化：支持更多格式的快递取件码
+            // 1. 三段式连字符（A-2-7261, 4-3-958, 10-3-0221）
+            val dashMatch3 = Regex("([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)").find(afterKeyword)
+            // 2. 两段式连字符（ZT-20001, A1-12, ZT20001）
+            val dashMatch2 = Regex("([A-Z]{1,3}[0-9]{0,3}-[0-9]{3,8}|[A-Z0-9]{1,4}-[A-Z0-9]{3,8})").find(afterKeyword)
+            // 3. 纯数字（39359）
             val numMatch = Regex("(?<![0-9])([0-9]{4,8})(?![0-9])").find(afterKeyword)
+            // 4. 字母数字混合（ZT20001, A1121111）
+            val alphaNumMatch = Regex("([A-Z]{1,3}[0-9]{4,8}|[A-Z][0-9]{6,10})").find(afterKeyword)
+            // 5. 通用模式（字母数字和连字符的组合）
             val alphaMatch = Regex("[A-Z0-9-]{3,12}").find(afterKeyword)
-            val match = dashMatch ?: numMatch ?: alphaMatch
+            
+            val match = dashMatch3 ?: dashMatch2 ?: numMatch ?: alphaNumMatch ?: alphaMatch
             if (match != null && !isInvalidExpressCode(match.value)) {
                 return match.value
             }
@@ -460,12 +492,24 @@ class TextRecognitionHelper(private val context: Context) {
 
         // 第二步：兜底——按权重筛选
         if (!hasExpressKeyword) return null
-        val pattern = Regex("(?<![a-zA-Z0-9-])([0-9]{4,8}|[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+|[A-Z0-9][A-Z0-9-]{2,11})(?![a-zA-Z0-9-])")
+        // 🚀 优化：支持更多格式的快递取件码正则表达式
+        val pattern = Regex("(?<![a-zA-Z0-9-])(" +
+            "[0-9]{4,8}|" +  // 纯数字 4-8 位
+            "[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+|" +  // 三段式连字符
+            "[A-Z]{1,3}[0-9]{0,3}-[0-9]{3,8}|" +  // 两段式：字母-数字
+            "[A-Z0-9]{1,4}-[A-Z0-9]{3,8}|" +  // 两段式：字母数字-字母数字
+            "[A-Z]{1,3}[0-9]{4,8}|" +  // 字母开头+数字
+            "[A-Z][0-9]{6,10}|" +  // 单字母+数字
+            "[A-Z0-9][A-Z0-9-]{2,11}" +  // 通用模式
+            ")(?![a-zA-Z0-9-])")
         val candidates = pattern.findAll(mergedText).mapNotNull { match ->
             val value = match.value
             if (isInvalidExpressCode(value)) return@mapNotNull null
             var weight = value.length
+            // 给带连字符的格式更高权重
             if (value.contains("-")) weight *= 20
+            // 给字母开头的格式更高权重
+            if (value.any { it.isLetter() }) weight *= 5
             value to weight
         }.sortedByDescending { it.second }
         return candidates.firstOrNull()?.first
