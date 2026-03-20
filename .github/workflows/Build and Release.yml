@@ -63,48 +63,53 @@ jobs:
             echo "json_file=stable.json" >> $GITHUB_OUTPUT
           fi
 
-      # 生成对应的 JSON
+      - name: Read changelog
+        id: changelog
+        run: |
+          if [ -f changelog.txt ]; then
+            CHANGELOG=$(cat changelog.txt)
+            echo "content<<EOF" >> $GITHUB_OUTPUT
+            echo "$CHANGELOG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "content=无更新日志" >> $GITHUB_OUTPUT
+          fi
+
       - name: Generate version JSON
         run: |
           VERSION_CODE=$(grep 'versionCode' app/build.gradle.kts | head -1 | grep -oP '\d+')
           VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"$$.*$$".*/\1/')
           TAG_NAME=${{ github.ref_name }}
           JSON_FILE=${{ steps.check_prerelease.outputs.json_file }}
+          CHANGELOG=$(cat changelog.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
 
           cat > $JSON_FILE << EOF
           {
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
-            "releaseNotes": "请查看 Release 页面获取更新日志",
+            "releaseNotes": "$CHANGELOG",
             "downloadUrl": "https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/app-release.apk"
           }
           EOF
 
-          echo "Updated $JSON_FILE with versionCode=$VERSION_CODE versionName=$VERSION_NAME"
-
-      # 把 JSON 提交回 master 分支
       - name: Commit JSON to master
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-
-          # 切到 master 分支
           git checkout master
-
-          # 把生成的 JSON 复制过来
           cp ${{ github.workspace }}/${{ steps.check_prerelease.outputs.json_file }} .
-
           JSON_FILE=${{ steps.check_prerelease.outputs.json_file }}
           git add $JSON_FILE
           git diff --cached --quiet || git commit -m "Update $JSON_FILE for ${{ github.ref_name }}"
           git push origin master
 
-      # 创建 Release
       - name: Create Release and Upload APK
         uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/release/app-release.apk
-          generate_release_notes: true
+          body: |
+            ## 更新内容
+            ${{ steps.changelog.outputs.content }}
           prerelease: ${{ steps.check_prerelease.outputs.is_prerelease }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
