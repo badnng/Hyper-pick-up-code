@@ -125,10 +125,10 @@ jobs:
           git config user.email "actions@github.com"
           IS_PRERELEASE=${{ steps.check_prerelease.outputs.is_prerelease }}
 
-          if [ \"$IS_PRERELEASE\" = \"true\" ]; then
-            FILES=\"Dev.json\"
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            FILES="Dev.json"
           else
-            FILES=\"Stable.json Dev.json\"
+            FILES="Stable.json Dev.json"
           fi
 
           for f in $FILES; do
@@ -142,7 +142,7 @@ jobs:
             git add $f
           done
 
-          git diff --cached --quiet || git commit -m \"Update JSON for ${{ github.ref_name }}\"
+          git diff --cached --quiet || git commit -m "Update JSON for ${{ github.ref_name }}"
           git push origin master
           
       - name: Create Release and Upload APK
