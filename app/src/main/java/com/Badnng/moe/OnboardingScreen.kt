@@ -12,9 +12,8 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Process
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import android.provider.Settings
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
@@ -56,7 +55,13 @@ enum class OnboardingStep {
 fun OnboardingScreen(onComplete: () -> Unit) {
     var currentStep by remember { mutableStateOf(OnboardingStep.Permissions) }
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+
+    // 震动辅助函数（使用Compose HapticFeedback API，与主页一致）
+    val performHaptic = {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
 
     // 权限状态
     var hasNotificationPermission by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
@@ -169,7 +174,7 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                     Button(
                         onClick = {
                             if (allRequiredGranted) {
-                                vibrate(context)
+                                performHaptic()
                                 currentStep = OnboardingStep.Features
                             }
                         },
@@ -201,7 +206,7 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                     ) {
                         Button(
                             onClick = { 
-                                vibrate(context)
+                                performHaptic()
                                 currentStep = OnboardingStep.Permissions 
                             },
                             modifier = Modifier
@@ -224,7 +229,7 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                         }
                         Button(
                             onClick = {
-                                vibrate(context)
+                                performHaptic()
                                 // 保存引导完成状态
                                 prefs.edit().putBoolean("onboarding_completed", true).apply()
                                 onComplete()
@@ -713,24 +718,6 @@ private fun FeatureCard(
                 }
             }
         }
-    }
-}
-
-// 震动辅助函数
-private fun vibrate(context: Context) {
-    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-        vibratorManager.defaultVibrator
-    } else {
-        @Suppress("DEPRECATION")
-        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-    }
-    
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
-    } else {
-        @Suppress("DEPRECATION")
-        vibrator.vibrate(20)
     }
 }
 
