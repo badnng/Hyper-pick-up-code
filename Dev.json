@@ -1,6 +1,6 @@
 {
-  "versionCode": 2026032011,
-  "versionName": "26.3.20.C01-Dev",
-  "releaseNotes": "1.优化 App整体性能 截图处理性能和内存占用优化\n2.移除 点击通知时跳转到app主页并高亮取餐卡片\n3.添加 点击通知时在正在使用的app上层弹出独立取餐码截图副本\n4.优化 二维码弹出卡片在app上层\n5.优化 权限设置和保活设置统一合并于权限与保活选项中\n6.添加 开屏引导（老用户，新用户都会弹，完成之后就不会了）\n7.添加 再次启动开屏引导设置（在偏好设置内）\n8.修复 设置页面按钮按下反馈的形状异常\n9.优化 快递取件码识别逻辑（快递部分暂未完善，请多多反馈）\n10.修复 icon在部分场景看不清的问题\n11.优化 OCR识别逻辑\n12.修复 OCR在手动添加中不生效\n13.修复 截图后二次处理的裁剪过头导致部分页面无法截取取餐码的问题",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.20.C01-Dev/app-release.apk"
+  "versionCode": 2026032111,
+  "versionName": "26.3.21.C01-Dev",
+  "releaseNotes": "1.添加 联网更新功能（需要在偏好设置内开启开关，联网仅用于下载更新并安装）\n2.添加 测试版更新渠道\n3.修复 引导页面的部分遮挡/页面异常问题",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.21.C01-Dev/app-release.apk"
 }
