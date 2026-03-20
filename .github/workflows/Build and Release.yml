@@ -97,8 +97,16 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           JSON_FILE=${{ steps.check_prerelease.outputs.json_file }}
+
+          # 先存到临时目录
+          cp ${{ github.workspace }}/$JSON_FILE /tmp/$JSON_FILE
+
+          # 切到 master
           git checkout -f master
-          cp ${{ github.workspace }}/$JSON_FILE .
+
+          # 从临时目录复制过来
+          cp /tmp/$JSON_FILE $JSON_FILE
+
           git add $JSON_FILE
           git diff --cached --quiet || git commit -m "Update $JSON_FILE for ${{ github.ref_name }}"
           git push origin master
