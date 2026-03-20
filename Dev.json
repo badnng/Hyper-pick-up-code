@@ -1,6 +1,6 @@
 {
-  "versionCode": 2026032111,
-  "versionName": "26.3.21.C01-Dev",
-  "releaseNotes": "1.添加 联网更新功能（需要在偏好设置内开启开关，联网仅用于下载更新并安装）\n2.添加 测试版更新渠道\n3.修复 引导页面的部分遮挡/页面异常问题",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.21.C01-Dev/app-release.apk"
+  "versionCode": 2026032112,
+  "versionName": "26.3.21.C02-Dev",
+  "releaseNotes": "修复 引导页面的下一步按钮部分场景下透明的问题",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.21.C02-Dev/app-release.apk"
 }
