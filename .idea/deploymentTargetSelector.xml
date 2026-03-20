@@ -3,7 +3,7 @@
   <component name="deploymentTargetSelector">
     <selectionStates>
       <SelectionState runConfigName="app">
-        <option name="selectionMode" value="DROPDOWN" />
+        <option name="selectionMode" value="DIALOG" />
         <DropdownSelection timestamp="2026-03-17T10:14:54.241363200Z">
           <Target type="DEFAULT_BOOT">
             <handle>
@@ -15,17 +15,12 @@
           <targets>
             <Target type="DEFAULT_BOOT">
               <handle>
-                <DeviceId pluginId="PhysicalDevice" identifier="serial=101c7163" />
+                <DeviceId pluginId="Default" identifier="serial=192.168.137.38:33159;connection=992bba44" />
               </handle>
             </Target>
             <Target type="DEFAULT_BOOT">
               <handle>
                 <DeviceId pluginId="PhysicalDevice" identifier="serial=CAQC9LDIZXGAOZI7" />
-              </handle>
-            </Target>
-            <Target type="DEFAULT_BOOT">
-              <handle>
-                <DeviceId pluginId="LocalEmulator" identifier="path=D:\Android SDK\Android AVD\Medium_Phone.avd" />
               </handle>
             </Target>
           </targets>
