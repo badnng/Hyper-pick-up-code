@@ -160,15 +160,29 @@ class PaddleOcrHelper private constructor(private val context: Context) {
             return null
         }
 
-        // 🚀 优化：预处理图片，避免重复创建
+        // 🚀 优化：预处理图片，确保格式为 ARGB_8888
         val processedBitmap = if (bitmap.width > 960 || bitmap.height > 960) {
             val scale = 960f / maxOf(bitmap.width, bitmap.height)
             val newWidth = (bitmap.width * scale).toInt()
             val newHeight = (bitmap.height * scale).toInt()
             Log.d(TAG, "缩小图片: ${bitmap.width}x${bitmap.height} -> ${newWidth}x${newHeight}")
-            Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+            // 创建缩放后的 bitmap，并确保格式为 ARGB_8888
+            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+            // 如果不是 ARGB_8888 格式，转换为 ARGB_8888
+            if (scaledBitmap.config != Bitmap.Config.ARGB_8888) {
+                val argbBitmap = scaledBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                scaledBitmap.recycle()
+                argbBitmap
+            } else {
+                scaledBitmap
+            }
         } else {
-            bitmap
+            // 确保原始 bitmap 也是 ARGB_8888 格式
+            if (bitmap.config != Bitmap.Config.ARGB_8888) {
+                bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            } else {
+                bitmap
+            }
         }
 
         Log.d(TAG, "开始识别图片: ${processedBitmap.width}x${processedBitmap.height}")
@@ -229,16 +243,23 @@ class PaddleOcrHelper private constructor(private val context: Context) {
 
             if (text.isNotEmpty()) {
                 textBlocks.add(TextBlock(text, boundingBox, confidence))
-                if (fullTextBuilder.isNotEmpty()) {
-                    fullTextBuilder.append("\n")
-                }
-                fullTextBuilder.append(text)
             }
         }
 
-        Log.i(TAG, "解析完成: ${textBlocks.size} 个有效文本块")
+        // 按照从上到下的顺序排序文字块（根据 boundingBox 的 top 坐标）
+        val sortedTextBlocks = textBlocks.sortedBy { it.boundingBox?.top ?: 0 }
 
-        return RecognizeResult(fullTextBuilder.toString(), textBlocks)
+        // 按照排序后的顺序拼接全文
+        sortedTextBlocks.forEachIndexed { index, textBlock ->
+            if (index > 0) {
+                fullTextBuilder.append("\n")
+            }
+            fullTextBuilder.append(textBlock.text)
+        }
+
+        Log.i(TAG, "解析完成: ${sortedTextBlocks.size} 个有效文本块")
+
+        return RecognizeResult(fullTextBuilder.toString(), sortedTextBlocks)
     }
 
     private fun pointsToRect(points: List<Point>): Rect? {
