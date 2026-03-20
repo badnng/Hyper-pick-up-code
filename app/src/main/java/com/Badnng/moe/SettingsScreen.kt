@@ -35,6 +35,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -61,6 +63,10 @@ import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import com.Badnng.moe.CaptureTileService
 import com.Badnng.moe.R
+import com.Badnng.moe.UpdateHelper
+import com.Badnng.moe.UpdateInfo
+import com.Badnng.moe.UpdateDialog
+import com.Badnng.moe.UpdateProgressDialog
 import java.io.File
 
 enum class SettingsPage {
@@ -207,7 +213,18 @@ fun SubPage(title: String, page: SettingsPage, performHaptic: () -> Unit, onBack
 fun AboutSettingsContent(performHaptic: () -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     val versionName = remember { getVersionName(context) }
+    val versionCode = remember { getVersionCode(context) }
+    
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var showProgressDialog by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var downloadProgress by remember { mutableFloatStateOf(0f) }
+    var isPaused by remember { mutableStateOf(false) }
+    var isChecking by remember { mutableStateOf(false) }
+    
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -242,7 +259,58 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
         Text(text = "澎湃记", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
-        Text(text = "版本 $versionName", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+        Text(text = "版本 $versionName($versionCode)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+
+        Spacer(Modifier.height(24.dp))
+
+        // 检查更新按钮
+        val networkUpdateEnabled = prefs.getBoolean("network_update_enabled", false)
+        val updateChannel = prefs.getString("update_channel", "stable") ?: "stable"
+        
+        if (networkUpdateEnabled) {
+                Button(
+                    onClick = {
+                        performHaptic()
+                        isChecking = true
+                        coroutineScope.launch {
+                            val info = UpdateHelper.checkUpdate(updateChannel == "dev")
+                            isChecking = false
+                            if (info != null) {
+                                val localVersion = UpdateHelper.getCurrentVersionCode(context)
+                                android.util.Log.d("UpdateCheck", "本地版本号: $localVersion")
+                                android.util.Log.d("UpdateCheck", "远程版本号: ${info.versionCode}")
+                                android.util.Log.d("UpdateCheck", "版本比较: ${info.versionCode} > $localVersion = ${info.versionCode > localVersion}")
+                                
+                                if (info.versionCode > localVersion) {
+                                    android.util.Log.d("UpdateCheck", "发现新版本，显示更新弹窗")
+                                    updateInfo = info
+                                    showUpdateDialog = true
+                                } else {
+                                    android.util.Log.d("UpdateCheck", "当前已是最新版本")
+                                    UpdateHelper.showNoUpdateToast(context)
+                                }
+                            } else {
+                                android.util.Log.e("UpdateCheck", "获取更新信息失败")
+                            }
+                        }
+                    },
+                shape = RoundedCornerShape(15.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                enabled = !isChecking
+            ) {
+                if (isChecking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Icon(Icons.Default.SystemUpdate, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (isChecking) "检查中..." else "检查更新")
+            }
+        }
 
         Spacer(Modifier.height(48.dp))
 
@@ -271,6 +339,41 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
             lineHeight = 20.sp
         )
         Spacer(Modifier.height(32.dp))
+    }
+
+    // 更新弹窗
+    if (showUpdateDialog && updateInfo != null) {
+        UpdateDialog(
+            updateInfo = updateInfo!!,
+            onDismiss = { showUpdateDialog = false },
+            onInstall = {
+                showUpdateDialog = false
+                showProgressDialog = true
+                coroutineScope.launch {
+                    val file = UpdateHelper.downloadUpdate(
+                        context = context,
+                        updateInfo = updateInfo!!,
+                        onProgress = { downloadProgress = it },
+                        isPaused = { isPaused }
+                    )
+                    showProgressDialog = false
+                    if (file != null) {
+                        UpdateHelper.installUpdate(context, file)
+                    }
+                }
+            }
+        )
+    }
+
+    // 下载进度弹窗
+    if (showProgressDialog) {
+        UpdateProgressDialog(
+            progress = downloadProgress,
+            isPaused = isPaused,
+            onPause = { isPaused = true },
+            onResume = { isPaused = false },
+            onCancel = { showProgressDialog = false }
+        )
     }
 }
 
@@ -312,6 +415,20 @@ private fun getVersionName(context: Context): String {
         packageInfo.versionName ?: "1.0.0"
     } catch (e: Exception) {
         "1.0.0"
+    }
+}
+
+private fun getVersionCode(context: Context): Long {
+    return try {
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode.toLong()
+        }
+    } catch (e: Exception) {
+        0L
     }
 }
 
@@ -555,6 +672,8 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
     var showOnboardingOnNextLaunch by remember { mutableStateOf(prefs.getBoolean("show_onboarding_on_next_launch", false)) }
     var customHue by remember { mutableFloatStateOf(260f) }
     var selectedColorInt by remember { mutableIntStateOf(prefs.getInt("theme_color", Color(0xFF6750A4).toArgb())) }
+    var networkUpdateEnabled by remember { mutableStateOf(prefs.getBoolean("network_update_enabled", false)) }
+    var updateChannel by remember { mutableStateOf(prefs.getString("update_channel", "stable") ?: "stable") }
 
     Column(
         modifier = Modifier
@@ -598,6 +717,58 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
                         prefs.edit().putBoolean("show_onboarding_on_next_launch", it).apply()
                     }
                 )
+            }
+        }
+
+        PreferenceSection(title = "联网更新") {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) {
+                    PreferenceSwitchItem(
+                        title = "联网更新",
+                        description = "仅用于检测App新版本并下载，不用于其他用途",
+                        checked = networkUpdateEnabled,
+                        onCheckedChange = {
+                            performHaptic()
+                            networkUpdateEnabled = it
+                            prefs.edit().putBoolean("network_update_enabled", it).apply()
+                        }
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = networkUpdateEnabled,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "更新通道",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        CaptureModeItem(
+                            title = "接收正式版更新",
+                            description = "只接收稳定版本的更新",
+                            selected = updateChannel == "stable",
+                            onClick = {
+                                performHaptic()
+                                updateChannel = "stable"
+                                prefs.edit().putString("update_channel", "stable").apply()
+                            }
+                        )
+                        CaptureModeItem(
+                            title = "接收测试版更新",
+                            description = "接收所有版本的更新，包括测试版",
+                            selected = updateChannel == "dev",
+                            onClick = {
+                                performHaptic()
+                                updateChannel = "dev"
+                                prefs.edit().putString("update_channel", "dev").apply()
+                            }
+                        )
+                    }
+                }
             }
         }
         Spacer(modifier = Modifier.height(48.dp))

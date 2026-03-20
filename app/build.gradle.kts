@@ -97,6 +97,8 @@ kotlin {
 
 dependencies {
     val shizuku_version = "13.1.5"
+    // OkHttp for update checking
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.github.kyant0:backdrop:2.0.0-alpha03")
     implementation("dev.rikka.shizuku:provider:${shizuku_version}")
     implementation("dev.rikka.shizuku:api:${shizuku_version}")
