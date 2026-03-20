@@ -1,6 +1,7 @@
 package com.Badnng.moe
 
 import android.annotation.SuppressLint
+import androidx.compose.animation.core.animateFloatAsState
 import android.app.AppOpsManager
 import android.app.StatusBarManager
 import android.content.ComponentName
@@ -11,9 +12,13 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Process
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.Settings
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -95,9 +100,14 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
 
-            // 进度指示器
+            // 进度指示器（带动画）
+            val animatedProgress by animateFloatAsState(
+                targetValue = if (currentStep == OnboardingStep.Permissions) 0.5f else 1f,
+                animationSpec = tween(durationMillis = 500),
+                label = "progress_animation"
+            )
             LinearProgressIndicator(
-                progress = { if (currentStep == OnboardingStep.Permissions) 0.5f else 1f },
+                progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
@@ -159,6 +169,7 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                     Button(
                         onClick = {
                             if (allRequiredGranted) {
+                                vibrate(context)
                                 currentStep = OnboardingStep.Features
                             }
                         },
@@ -189,7 +200,10 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Button(
-                            onClick = { currentStep = OnboardingStep.Permissions },
+                            onClick = { 
+                                vibrate(context)
+                                currentStep = OnboardingStep.Permissions 
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(56.dp),
@@ -197,6 +211,10 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.surface,
                                 contentColor = MaterialTheme.colorScheme.primary
+                            ),
+                            border = BorderStroke(
+                                width = 1.5.dp,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         ) {
                             Text(
@@ -206,6 +224,7 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                         }
                         Button(
                             onClick = {
+                                vibrate(context)
                                 // 保存引导完成状态
                                 prefs.edit().putBoolean("onboarding_completed", true).apply()
                                 onComplete()
@@ -367,7 +386,8 @@ private fun PermissionsStep(
             isToggle = true
         )
 
-        Spacer(Modifier.height(16.dp))
+        // 底部额外空白，防止按钮遮挡最后一个内容项
+        Spacer(Modifier.height(120.dp))
     }
 }
 
@@ -578,7 +598,8 @@ private fun FeaturesStep() {
             onAction = null
         )
 
-        Spacer(Modifier.height(16.dp))
+        // 底部额外空白，防止按钮遮挡最后一个内容项
+        Spacer(Modifier.height(120.dp))
     }
 }
 
@@ -692,6 +713,24 @@ private fun FeatureCard(
                 }
             }
         }
+    }
+}
+
+// 震动辅助函数
+private fun vibrate(context: Context) {
+    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+        vibratorManager.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    }
+    
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
+    } else {
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(20)
     }
 }
 
