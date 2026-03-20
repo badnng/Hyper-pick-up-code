@@ -81,16 +81,19 @@ jobs:
           VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | head -1 | grep -oP '"[^"]*"' | tr -d '"')
           TAG_NAME=${{ github.ref_name }}
           JSON_FILE=${{ steps.check_prerelease.outputs.json_file }}
-          CHANGELOG=$(cat changelog.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
 
-          cat > $JSON_FILE << EOF
-          {
-            "versionCode": $VERSION_CODE,
-            "versionName": "$VERSION_NAME",
-            "releaseNotes": "$CHANGELOG",
-            "downloadUrl": "https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/app-release.apk"
+          python3 -c "
+          import json
+          with open('changelog.txt', 'r') as f:
+              changelog = f.read().strip()
+          data = {
+              'versionCode': int('${VERSION_CODE}'),
+              'versionName': '${VERSION_NAME}',
+              'releaseNotes': changelog,
+              'downloadUrl': 'https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/app-release.apk'
           }
-          EOF
+          with open('${JSON_FILE}', 'w') as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
 
       - name: Commit JSON to master
         run: |
