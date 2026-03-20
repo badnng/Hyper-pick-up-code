@@ -78,7 +78,7 @@ jobs:
       - name: Generate version JSON
         run: |
           VERSION_CODE=$(grep 'versionCode' app/build.gradle.kts | head -1 | grep -oP '\d+')
-          VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"$$.*$$".*/\1/')
+          VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | head -1 | grep -oP '"[^"]*"' | tr -d '"')
           TAG_NAME=${{ github.ref_name }}
           JSON_FILE=${{ steps.check_prerelease.outputs.json_file }}
           CHANGELOG=$(cat changelog.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
