@@ -82,7 +82,10 @@ fun OnboardingScreen(onComplete: () -> Unit) {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier
+        .fillMaxSize()
+        .background(MaterialTheme.colorScheme.background)
+    ) {
 
         // 顶部标题栏 + 进度条 + 内容区域
         Column(modifier = Modifier.fillMaxSize()) {
@@ -93,7 +96,8 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                         Text(
                             text = "欢迎使用澎湃记",
                             fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = if (currentStep == OnboardingStep.Permissions) "第 1 步：权限设置" else "第 2 步：功能介绍",
@@ -186,11 +190,11 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                             containerColor = if (allRequiredGranted)
                                 MaterialTheme.colorScheme.primary
                             else
-                                Color(0xFFBDBDBD),
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                             contentColor = if (allRequiredGranted)
                                 MaterialTheme.colorScheme.onPrimary
                             else
-                                Color(0xFF616161)
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                         )
                     ) {
                         Text(
@@ -367,8 +371,8 @@ private fun PermissionsStep(
         )
 
         PermissionCard(
-            title = "Shizuku 运行状态",
-            description = "用于免授权截图识别，需要安装 Shizuku 应用",
+            title = "Shizuku",
+            description = "用于免授权截图识别，需要安装 Shizuku 应用并启动服务\n（如已启动服务请点击卡片进行授权，未启动服务将不会弹出任何内容）",
             icon = Icons.Default.Adb,
             isGranted = shizukuReady,
             isRequired = false,
@@ -452,7 +456,8 @@ private fun PermissionCard(
                     Text(
                         text = title,
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     if (isRequired) {
                         Spacer(Modifier.width(8.dp))
@@ -490,7 +495,7 @@ private fun PermissionCard(
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = "已授权",
-                    tint = Color(0xFF4CAF50),
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(28.dp)
                 )
             } else {
@@ -648,7 +653,8 @@ private fun FeatureCard(
                     Text(
                         text = title,
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Surface(
                         shape = RoundedCornerShape(4.dp),
