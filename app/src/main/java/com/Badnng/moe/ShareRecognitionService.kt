@@ -100,8 +100,8 @@ class ShareRecognitionService : Service() {
     
     private fun cropStatusBar(src: Bitmap): Bitmap {
         val statusBarHeight = 150
-        val sideMargin = (src.width * 0.05).toInt()
-        val targetWidth = (src.width * 0.9).toInt()
+        val sideMargin = (src.width * 0.02).toInt()
+        val targetWidth = (src.width * 0.92).toInt()
         val targetHeight = (src.height * 0.81).toInt()
         return if (src.height > statusBarHeight + targetHeight && src.width > sideMargin + targetWidth) {
             Bitmap.createBitmap(src, sideMargin, statusBarHeight, targetWidth, targetHeight)

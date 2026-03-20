@@ -202,15 +202,15 @@ class ScreenCaptureService : Service() {
 
     private fun cropStatusBar(src: Bitmap): Bitmap {
         val statusBarHeight = 150
-        val sideMargin = (src.width * 0.05).toInt()
-        val targetWidth = (src.width * 0.9).toInt()
+        val sideMargin = (src.width * 0.02).toInt()
+        val targetWidth = (src.width * 0.92).toInt()
         val targetHeight = (src.height * 0.81).toInt()
         return if (src.height > statusBarHeight + targetHeight && src.width > sideMargin + targetWidth) {
             Bitmap.createBitmap(
                 src,
-                sideMargin,       // x: 从左边 10% 处开始
+                sideMargin,       // x: 从左边 3% 处开始
                 statusBarHeight,  // y: 从状态栏高度处开始
-                targetWidth,      // width: 宽度为原图的 80%
+                targetWidth,      // width: 宽度为原图的 92%
                 targetHeight
             )
         } else {

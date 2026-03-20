@@ -323,16 +323,31 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
     }
 
     val coroutineScope = rememberCoroutineScope()
+    var screenshotPath by remember { mutableStateOf<String?>(null) }
+
+    fun cropStatusBar(src: Bitmap): Bitmap {
+        val statusBarHeight = 150
+        val sideMargin = (src.width * 0.02).toInt()
+        val targetWidth = (src.width * 0.96).toInt()
+        val targetHeight = (src.height * 0.81).toInt()
+        return if (src.height > statusBarHeight + targetHeight && src.width > sideMargin + targetWidth) {
+            Bitmap.createBitmap(src, sideMargin, statusBarHeight, targetWidth, targetHeight)
+        } else {
+            src
+        }
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             coroutineScope.launch {
-                val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val originalBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
                 } else {
                     @Suppress("DEPRECATION")
                     MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
                 }
+
+                val bitmap = cropStatusBar(originalBitmap)
 
                 val helper = TextRecognitionHelper(context)
                 helper.initOcr() // 初始化 PaddleOCR
@@ -343,6 +358,16 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
                 orderType = result.type
                 brandName = result.brand
                 pickupLocation = result.pickupLocation
+
+                // 保存裁剪后的图片
+                if (result.code != null) {
+                    val screenshotFile = java.io.File(context.filesDir, "screenshots/manual_${System.currentTimeMillis()}.png")
+                    screenshotFile.parentFile?.mkdirs()
+                    val outputStream = java.io.FileOutputStream(screenshotFile)
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                    outputStream.close()
+                    screenshotPath = screenshotFile.absolutePath
+                }
 
                 helper.close()
             }
@@ -395,7 +420,7 @@ fun BottomSheetContent(viewModel: OrderViewModel, onDismiss: () -> Unit) {
                     viewModel.addOrder(OrderEntity(
                         takeoutCode = text,
                         qrCodeData = detectedQrData,
-                        screenshotPath = "",
+                        screenshotPath = screenshotPath ?: "",
                         recognizedText = "手动输入",
                         orderType = orderType,
                         brandName = brandName,
