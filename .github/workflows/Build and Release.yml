@@ -78,6 +78,7 @@ jobs:
       - name: Generate version JSON
         env:
           JSON_FILE: ${{ steps.check_prerelease.outputs.json_file }}
+          IS_PRERELEASE: ${{ steps.check_prerelease.outputs.is_prerelease }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           python3 -c "
@@ -102,26 +103,48 @@ jobs:
               'downloadUrl': 'https://github.com/badnng/Hyper-pick-up-code/releases/download/' + os.environ['TAG_NAME'] + '/app-release.apk'
           }
 
-          json_file = os.environ['JSON_FILE']
-          with open(json_file, 'w') as f:
-              json.dump(data, f, ensure_ascii=False, indent=2)
+          is_prerelease = os.environ['IS_PRERELEASE'] == 'true'
 
-          print('Generated ' + json_file)
-          print(json.dumps(data, ensure_ascii=False, indent=2))
+          if is_prerelease:
+              # 测试版：只更新 Dev.json
+              with open('Dev.json', 'w') as f:
+                  json.dump(data, f, ensure_ascii=False, indent=2)
+              print('Updated Dev.json only')
+          else:
+              # 正式版：两个都更新
+              with open('Stable.json', 'w') as f:
+                  json.dump(data, f, ensure_ascii=False, indent=2)
+              with open('Dev.json', 'w') as f:
+                  json.dump(data, f, ensure_ascii=False, indent=2)
+              print('Updated Stable.json and Dev.json')
           "
 
       - name: Commit JSON to master
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          JSON_FILE=${{ steps.check_prerelease.outputs.json_file }}
-          cp ${{ github.workspace }}/$JSON_FILE /tmp/$JSON_FILE
-          git checkout -f master
-          cp /tmp/$JSON_FILE $JSON_FILE
-          git add $JSON_FILE
-          git diff --cached --quiet || git commit -m "Update $JSON_FILE for ${{ github.ref_name }}"
-          git push origin master
+          IS_PRERELEASE=${{ steps.check_prerelease.outputs.is_prerelease }}
 
+          if [ \"$IS_PRERELEASE\" = \"true\" ]; then
+            FILES=\"Dev.json\"
+          else
+            FILES=\"Stable.json Dev.json\"
+          fi
+
+          for f in $FILES; do
+            cp ${{ github.workspace }}/$f /tmp/$f
+          done
+
+          git checkout -f master
+
+          for f in $FILES; do
+            cp /tmp/$f $f
+            git add $f
+          done
+
+          git diff --cached --quiet || git commit -m \"Update JSON for ${{ github.ref_name }}\"
+          git push origin master
+          
       - name: Create Release and Upload APK
         uses: softprops/action-gh-release@v2
         with:
