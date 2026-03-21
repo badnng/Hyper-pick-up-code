@@ -77,20 +77,29 @@ jobs:
 
       - name: Generate version JSON
         run: |
-          VERSION_CODE=$(grep 'versionCode' app/build.gradle.kts | head -1 | grep -oP '\d+')
-          VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"$$.*$$".*/\1/')
-          TAG_NAME=${{ github.ref_name }}
-          JSON_FILE=${{ steps.check_prerelease.outputs.json_file }}
-          CHANGELOG=$(cat changelog.txt | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
-
-          cat > $JSON_FILE << EOF
-          {
-            "versionCode": $VERSION_CODE,
-            "versionName": "$VERSION_NAME",
-            "releaseNotes": "$CHANGELOG",
-            "downloadUrl": "https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/app-release.apk"
-          }
-          EOF
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          IS_PRERELEASE=${{ steps.check_prerelease.outputs.is_prerelease }}
+          
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            FILES="Dev.json"
+          else
+            FILES="Stable.json Dev.json"
+          fi
+          
+          for f in $FILES; do
+            cp ${{ github.workspace }}/$f /tmp/$f
+          done
+          
+          git checkout -f master
+          
+          for f in $FILES; do
+            cp /tmp/$f $f
+            git add $f
+          done
+          
+          git diff --cached --quiet || git commit -m "Update JSON for ${{ github.ref_name }}"
+          git push origin master
 
       - name: Commit JSON to master
         run: |
