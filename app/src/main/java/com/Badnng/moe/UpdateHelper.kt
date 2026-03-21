@@ -35,6 +35,29 @@ object UpdateHelper {
     private const val DEV_URL = "https://badnng.dpdns.org/https://raw.githubusercontent.com/badnng/Hyper-pick-up-code/refs/heads/master/Dev.json"
     private const val DOWNLOAD_BASE_URL = "https://badnng.dpdns.org/"
 
+    // 下载状态跟踪
+    @Volatile
+    var isDownloading = false
+        private set
+    
+    // 当前下载的版本信息
+    @Volatile
+    var currentDownloadingVersion: UpdateInfo? = null
+        private set
+    
+    // 已下载的文件
+    @Volatile
+    var downloadedFile: File? = null
+        private set
+
+    // 更新当前下载状态
+    fun setDownloadingState(downloading: Boolean, version: UpdateInfo? = null, file: File? = null) {
+        isDownloading = downloading
+        currentDownloadingVersion = if (downloading) version else null
+        downloadedFile = if (downloading) null else file
+        Log.d(TAG, "下载状态更新: isDownloading=$downloading, version=${version?.versionName}, file=${file?.name}")
+    }
+
     suspend fun checkUpdate(isDev: Boolean): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
             val url = if (isDev) DEV_URL else STABLE_URL
@@ -101,7 +124,11 @@ object UpdateHelper {
         isPaused: () -> Boolean
     ): File? = withContext(Dispatchers.IO) {
         try {
+            // 设置下载状态
+            setDownloadingState(true, updateInfo)
+            
             val downloadUrl = DOWNLOAD_BASE_URL + updateInfo.downloadUrl
+            Log.d(TAG, "开始下载: $downloadUrl")
             val request = Request.Builder().url(downloadUrl).build()
             val response = client.newCall(request).execute()
             val body = response.body ?: return@withContext null
@@ -119,6 +146,8 @@ object UpdateHelper {
 
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         if (isPaused()) {
+                            Log.d(TAG, "下载被暂停")
+                            setDownloadingState(false)
                             return@withContext null
                         }
                         output.write(buffer, 0, bytesRead)
@@ -127,8 +156,14 @@ object UpdateHelper {
                     }
                 }
             }
+            
+            // 下载完成，设置下载状态
+            Log.d(TAG, "下载完成: ${file.name}")
+            setDownloadingState(false, null, file)
             file
         } catch (e: Exception) {
+            Log.e(TAG, "下载失败", e)
+            setDownloadingState(false)
             e.printStackTrace()
             null
         }

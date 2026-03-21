@@ -35,4 +35,7 @@ interface OrderDao {
 
     @Query("DELETE FROM orders WHERE isCompleted = 1")
     suspend fun deleteCompletedOrders()
+
+    @Query("SELECT * FROM orders ORDER BY createdAt DESC")
+    suspend fun getAllOrdersList(): List<OrderEntity>
 }

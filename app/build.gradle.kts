@@ -14,8 +14,8 @@ android {
         applicationId = "com.Badnng.moe"
         minSdk = 35
         targetSdk = 36
-        versionCode = 20260321_12
-        versionName = "26.3.21.C02-Dev"
+        versionCode = 20260322_11
+        versionName = "26.3.22.C01-Dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
