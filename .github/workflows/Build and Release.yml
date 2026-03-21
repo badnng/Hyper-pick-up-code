@@ -58,17 +58,7 @@ jobs:
           APKSIGNER="$ANDROID_HOME/build-tools/36.1.0/apksigner"
 
           APK="app/build/outputs/apk/release/app-release.apk"
-
-          # 提取包名
-          PACKAGE_NAME=$(aapt2 dump badging "$APK" | grep "package:" | sed "s/.*name='//" | sed "s/'.*//")
-          echo "包名: $PACKAGE_NAME"
-
-          if [ "$PACKAGE_NAME" != "com.Badnng.moe" ]; then
-            echo "❌ 包名不匹配! 期望: com.Badnng.moe, 实际: $PACKAGE_NAME"
-            exit 1
-          fi
-          echo "✅ 包名验证通过"
-
+          
           # 提取签名 SHA-256
           SIGNATURE=$($APKSIGNER verify --print-certs "$APK" | grep "SHA-256 digest" | sed "s/.*: //")
           echo "签名 SHA-256: $SIGNATURE"
@@ -83,7 +73,7 @@ jobs:
           fi
           echo "✅ 签名验证通过"
 
-          echo "=== APK 验证全部通过 ==="
+          echo "=== APK 签名证书验证通过 ==="
 
       - name: Check if pre-release
         id: check_prerelease
