@@ -14,8 +14,8 @@ android {
         applicationId = "com.Badnng.moe"
         minSdk = 35
         targetSdk = 36
-        versionCode = 20260321_11
-        versionName = "26.3.21.C01-Dev"
+        versionCode = 20260321_12
+        versionName = "26.3.21.C02-Dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -29,7 +29,6 @@ android {
     }
 
     signingConfigs {
-        // 从 local.properties 读取配置
         val localProperties = Properties().apply {
             val localFile = rootProject.file("local.properties")
             if (localFile.exists()) {
@@ -37,38 +36,39 @@ android {
             }
         }
 
-        // 获取 keystore 路径并使用
-        val keyStorePath = localProperties.getProperty("key.store.path")
+        // 本地读 local.properties，Actions 读环境变量
+        val keyStorePath = System.getenv("KEY_STORE_PATH")
+            ?: localProperties.getProperty("key.store.path")
+        val keyStorePassword = System.getenv("STORE_PASSWORD")
+            ?: localProperties.getProperty("key.store.password")
+        val keyAlias = System.getenv("KEY_ALIAS")
+            ?: localProperties.getProperty("key.alias")
+        val keyPassword = System.getenv("KEY_PASSWORD")
+            ?: localProperties.getProperty("key.alias.password")
+
         if (keyStorePath != null) {
             create("release") {
                 storeFile = file(keyStorePath)
-                storePassword = localProperties.getProperty("key.store.password") ?: ""
-                keyAlias = localProperties.getProperty("key.alias") ?: ""
-                keyPassword = localProperties.getProperty("key.alias.password") ?: ""
+                storePassword = keyStorePassword ?: ""
+                this.keyAlias = keyAlias ?: ""
+                this.keyPassword = keyPassword ?: ""
             }
 
             getByName("debug") {
                 storeFile = file(keyStorePath)
-                storePassword = localProperties.getProperty("key.store.password") ?: ""
-                keyAlias = localProperties.getProperty("key.alias") ?: ""
-                keyPassword = localProperties.getProperty("key.alias.password") ?: ""
+                storePassword = keyStorePassword ?: ""
+                this.keyAlias = keyAlias ?: ""
+                this.keyPassword = keyPassword ?: ""
             }
         }
     }
 
     buildTypes {
         getByName("release") {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            signingConfig = signingConfigs.getByName("debug") // 让 release 使用 debug 签名（实际上现在两者用同一个文件）
+            signingConfig = signingConfigs.getByName("release")
         }
         getByName("debug") {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug") // 使用相同签名
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
