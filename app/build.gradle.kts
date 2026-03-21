@@ -36,9 +36,12 @@ android {
             }
         }
 
-        // 本地读 local.properties，Actions 读环境变量
-        val keyStorePath = System.getenv("KEY_STORE_PATH")
-            ?: localProperties.getProperty("key.store.path")
+        val keyStorePath = System.getenv("KEY_STORE_PATH")?.let {
+            rootProject.file(it)    // ← 相对根目录
+        } ?: localProperties.getProperty("key.store.path")?.let {
+            file(it)
+        }
+
         val keyStorePassword = System.getenv("STORE_PASSWORD")
             ?: localProperties.getProperty("key.store.password")
         val keyAlias = System.getenv("KEY_ALIAS")
@@ -48,14 +51,14 @@ android {
 
         if (keyStorePath != null) {
             create("release") {
-                storeFile = file(keyStorePath)
+                storeFile = keyStorePath
                 storePassword = keyStorePassword ?: ""
                 this.keyAlias = keyAlias ?: ""
                 this.keyPassword = keyPassword ?: ""
             }
 
             getByName("debug") {
-                storeFile = file(keyStorePath)
+                storeFile = keyStorePath
                 storePassword = keyStorePassword ?: ""
                 this.keyAlias = keyAlias ?: ""
                 this.keyPassword = keyPassword ?: ""
