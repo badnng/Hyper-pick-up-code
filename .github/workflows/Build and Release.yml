@@ -49,6 +49,41 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: ./gradlew assembleRelease
+      - name: Verify APK signature
+        run: |
+          echo "=== 验证 APK ==="
+
+          # 安装 apksigner
+          ANDROID_HOME="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.1.0/apksigner"
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          # 提取包名
+          PACKAGE_NAME=$(aapt2 dump badging "$APK" | grep "package:" | sed "s/.*name='//" | sed "s/'.*//")
+          echo "包名: $PACKAGE_NAME"
+
+          if [ "$PACKAGE_NAME" != "com.Badnng.moe" ]; then
+            echo "❌ 包名不匹配! 期望: com.Badnng.moe, 实际: $PACKAGE_NAME"
+            exit 1
+          fi
+          echo "✅ 包名验证通过"
+
+          # 提取签名 SHA-256
+          SIGNATURE=$($APKSIGNER verify --print-certs "$APK" | grep "SHA-256 digest" | sed "s/.*: //")
+          echo "签名 SHA-256: $SIGNATURE"
+
+          EXPECTED_SIGNATURE="9400b749bcd477daa317c4026d25ec97dd033be3b748fd89e42a989a093b97ca"
+
+          if [ "$SIGNATURE" != "$EXPECTED_SIGNATURE" ]; then
+            echo "❌ 签名不匹配!"
+            echo "   期望: $EXPECTED_SIGNATURE"
+            echo "   实际: $SIGNATURE"
+            exit 1
+          fi
+          echo "✅ 签名验证通过"
+
+          echo "=== APK 验证全部通过 ==="
 
       - name: Check if pre-release
         id: check_prerelease
