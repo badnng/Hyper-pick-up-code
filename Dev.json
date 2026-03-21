@@ -1,6 +1,6 @@
 {
-  "versionCode": 2026032112,
-  "versionName": "26.3.21.C02-Dev",
-  "releaseNotes": "修复 引导页面的下一步按钮部分场景下透明的问题",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.21.C02-Dev/app-release.apk"
+  "versionCode": 2026032211,
+  "versionName": "26.3.22.C01-Dev",
+  "releaseNotes": "添加 备份功能\n修复 下载功能的部分逻辑导致重复下载\n修复 下载功能产生的文件无法清理",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.22.C01-Dev/app-release.apk"
 }
