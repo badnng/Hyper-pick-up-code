@@ -15,7 +15,7 @@ android {
         minSdk = 35
         targetSdk = 36
         versionCode = 20260322_11
-        versionName = "26.3.22.C01-Dev"
+        versionName = "26.3.22.C02-Dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
