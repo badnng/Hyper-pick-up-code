@@ -25,3 +25,19 @@
 # PaddleOCR ncnn 库
 -keep class com.equationl.ncnnandroidppocr.** { *; }
 -keep interface com.equationl.ncnnandroidppocr.** { *; }
+
+# ncnn 库（OCR 依赖）
+-keep class org.ncnn.** { *; }
+-keep interface org.ncnn.** { *; }
+
+# 禁用 OCR 库的优化（避免 R8 破坏内部逻辑）
+-dontoptimize com.equationl.ncnnandroidppocr.**
+-dontoptimize org.ncnn.**
+
+# 保留所有 native 方法
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# 保留 OCR 相关的 JNI 类
+-keep class * implements java.io.Serializable { *; }
