@@ -25,3 +25,8 @@
 # PaddleOCR ncnn 库
 -keep class com.equationl.ncnnandroidppocr.** { *; }
 -keep interface com.equationl.ncnnandroidppocr.** { *; }
+
+# ncnn 库（OCR 依赖）
+-keep class org.ncnn.** { *; }
+-keep interface org.ncnn.** { *; }
+

@@ -246,8 +246,8 @@ class PaddleOcrHelper private constructor(private val context: Context) {
             }
         }
 
-        // 按照从上到下的顺序排序文字块（根据 boundingBox 的 top 坐标）
-        val sortedTextBlocks = textBlocks.sortedBy { it.boundingBox?.top ?: 0 }
+        // 按照从下到上的顺序排序文字块（根据 boundingBox 的 bottom 坐标降序）
+        val sortedTextBlocks = textBlocks.sortedByDescending { it.boundingBox?.bottom ?: 0 }
 
         // 按照排序后的顺序拼接全文
         sortedTextBlocks.forEachIndexed { index, textBlock ->
@@ -257,7 +257,7 @@ class PaddleOcrHelper private constructor(private val context: Context) {
             fullTextBuilder.append(textBlock.text)
         }
 
-        Log.i(TAG, "解析完成: ${sortedTextBlocks.size} 个有效文本块")
+        Log.i(TAG, "解析完成: ${sortedTextBlocks.size} 个有效文本块，从下到上排序")
 
         return RecognizeResult(fullTextBuilder.toString(), sortedTextBlocks)
     }

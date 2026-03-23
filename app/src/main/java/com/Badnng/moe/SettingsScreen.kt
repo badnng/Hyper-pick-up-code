@@ -35,6 +35,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -61,6 +63,12 @@ import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import com.Badnng.moe.CaptureTileService
 import com.Badnng.moe.R
+import com.Badnng.moe.UpdateHelper
+import com.Badnng.moe.UpdateInfo
+import com.Badnng.moe.UpdateDialog
+import com.Badnng.moe.UpdateProgressDialog
+import com.Badnng.moe.BackupHelper
+import com.Badnng.moe.OrderDatabase
 import java.io.File
 
 enum class SettingsPage {
@@ -189,6 +197,8 @@ private fun requestAddTile(context: Context) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubPage(title: String, page: SettingsPage, performHaptic: () -> Unit, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Top))) {
         TopAppBar(title = { Text(text = title, fontSize = 20.sp, fontWeight = FontWeight.Bold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent))
         when (page) {
@@ -196,7 +206,7 @@ fun SubPage(title: String, page: SettingsPage, performHaptic: () -> Unit, onBack
             SettingsPage.Permission -> PermissionSettingsContent(performHaptic)
             SettingsPage.Preference -> PreferenceSettingsContent(performHaptic)
             SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic)
-            SettingsPage.Storage -> StorageSettingsContent(performHaptic)
+            SettingsPage.Storage -> StorageSettingsContent(performHaptic, prefs)
             SettingsPage.About -> AboutSettingsContent(performHaptic)
             else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(text = "正在开发中...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) }
         }
@@ -207,7 +217,18 @@ fun SubPage(title: String, page: SettingsPage, performHaptic: () -> Unit, onBack
 fun AboutSettingsContent(performHaptic: () -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     val versionName = remember { getVersionName(context) }
+    val versionCode = remember { getVersionCode(context) }
+    
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var showProgressDialog by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var downloadProgress by remember { mutableFloatStateOf(0f) }
+    var isPaused by remember { mutableStateOf(false) }
+    var isChecking by remember { mutableStateOf(false) }
+    
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -242,7 +263,74 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
         Text(text = "澎湃记", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
-        Text(text = "版本 $versionName", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+        Text(text = "版本 $versionName($versionCode)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+
+        Spacer(Modifier.height(24.dp))
+
+        // 检查更新按钮
+        val networkUpdateEnabled = prefs.getBoolean("network_update_enabled", false)
+        val updateChannel = prefs.getString("update_channel", "stable") ?: "stable"
+        
+        if (networkUpdateEnabled) {
+                Button(
+                    onClick = {
+                        performHaptic()
+                        isChecking = true
+                        coroutineScope.launch {
+                            val info = UpdateHelper.checkUpdate(updateChannel == "dev")
+                            isChecking = false
+                            if (info != null) {
+                                val localVersion = UpdateHelper.getCurrentVersionCode(context)
+                                android.util.Log.d("UpdateCheck", "本地版本号: $localVersion")
+                                android.util.Log.d("UpdateCheck", "远程版本号: ${info.versionCode}")
+                                android.util.Log.d("UpdateCheck", "版本比较: ${info.versionCode} > $localVersion = ${info.versionCode > localVersion}")
+                                
+                                if (info.versionCode > localVersion) {
+                                    android.util.Log.d("UpdateCheck", "发现新版本")
+                                    
+                                    // 检查是否正在下载
+                                    if (UpdateHelper.isDownloading) {
+                                        android.util.Log.d("UpdateCheck", "正在下载中，显示下载进度弹窗")
+                                        updateInfo = info
+                                        showProgressDialog = true
+                                    } 
+                                    // 检查是否已下载
+                                    else if (UpdateHelper.downloadedFile != null && UpdateHelper.downloadedFile!!.exists()) {
+                                        android.util.Log.d("UpdateCheck", "已下载完成，直接安装")
+                                        UpdateHelper.installUpdate(context, UpdateHelper.downloadedFile!!)
+                                    }
+                                    // 显示更新弹窗
+                                    else {
+                                        android.util.Log.d("UpdateCheck", "显示更新弹窗")
+                                        updateInfo = info
+                                        showUpdateDialog = true
+                                    }
+                                } else {
+                                    android.util.Log.d("UpdateCheck", "当前已是最新版本")
+                                    UpdateHelper.showNoUpdateToast(context)
+                                }
+                            } else {
+                                android.util.Log.e("UpdateCheck", "获取更新信息失败")
+                            }
+                        }
+                    },
+                shape = RoundedCornerShape(15.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                enabled = !isChecking
+            ) {
+                if (isChecking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Icon(Icons.Default.SystemUpdate, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (isChecking) "检查中..." else "检查更新")
+            }
+        }
 
         Spacer(Modifier.height(48.dp))
 
@@ -261,6 +349,184 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
             }
         }
 
+        Spacer(Modifier.height(48.dp))
+
+        // 备份与恢复
+        PreferenceSection(title = "备份与恢复") {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // 备份相关状态
+                var isBackingUp by remember { mutableStateOf(false) }
+                var isRestoring by remember { mutableStateOf(false) }
+                var pendingBackupData by remember { mutableStateOf<ByteArray?>(null) }
+                
+                // 创建备份文件的launcher
+                val createBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                    contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/octet-stream")
+                ) { uri ->
+                    uri?.let { 
+                        coroutineScope.launch {
+                            try {
+                                pendingBackupData?.let { data ->
+                                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                                        outputStream.write(data)
+                                    }
+                                    android.widget.Toast.makeText(context, "备份成功！", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("Backup", "保存备份失败", e)
+                                android.widget.Toast.makeText(context, "保存备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                            } finally {
+                                pendingBackupData = null
+                            }
+                        }
+                    }
+                }
+                
+                // 恢复备份的launcher
+                val restoreBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                    contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+                ) { uri ->
+                    uri?.let {
+                        isRestoring = true
+                        coroutineScope.launch {
+                            try {
+                                val backupData = context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                                    inputStream.readBytes()
+                                } ?: throw Exception("无法读取备份文件")
+                                
+                                val restoredData = BackupHelper.restoreBackup(context, backupData)
+                                
+                                // 恢复设置
+                                val editor = prefs.edit()
+                                restoredData.settings.forEach { (key, value) ->
+                                    when (value) {
+                                        is Boolean -> editor.putBoolean(key, value)
+                                        is String -> editor.putString(key, value)
+                                        is Int -> editor.putInt(key, value)
+                                        is Long -> editor.putLong(key, value)
+                                        is Float -> editor.putFloat(key, value)
+                                    }
+                                }
+                                editor.apply()
+                                
+                                // 恢复订单数据
+                                val database = OrderDatabase.getDatabase(context)
+                                val orderDao = database.orderDao()
+                                restoredData.orders.forEach { order ->
+                                    val existingOrder = orderDao.getOrderById(order.id)
+                                    if (existingOrder == null) {
+                                        orderDao.insert(order)
+                                    }
+                                }
+                                
+                                android.widget.Toast.makeText(context, "恢复成功！共恢复 ${restoredData.orders.size} 条取餐码", android.widget.Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                android.util.Log.e("Backup", "恢复备份失败", e)
+                                android.widget.Toast.makeText(context, "恢复备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                            } finally {
+                                isRestoring = false
+                            }
+                        }
+                    }
+                }
+
+                // 备份卡片
+                Surface(
+                    shape = RoundedCornerShape(15.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "备份数据", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "备份取餐码和设置到压缩包", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Button(
+                            onClick = {
+                                performHaptic()
+                                isBackingUp = true
+                                coroutineScope.launch {
+                                    try {
+                                        // 获取订单数据
+                                        val database = OrderDatabase.getDatabase(context)
+                                        val orders = database.orderDao().getAllOrdersList()
+                                        
+                                        // 获取设置数据
+                                        val settingsMap = mutableMapOf<String, Any?>()
+                                        val allPrefs = prefs.all
+                                        allPrefs.forEach { (key, value) ->
+                                            settingsMap[key] = value
+                                        }
+                                        
+                                        // 创建备份
+                                        val backupData = BackupHelper.createBackup(context, orders, settingsMap)
+                                        pendingBackupData = backupData
+                                        
+                                        // 使用ActivityResultLauncher保存文件
+                                        val fileName = BackupHelper.generateBackupFileName()
+                                        createBackupLauncher.launch(fileName)
+                                        
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("Backup", "备份失败", e)
+                                        android.widget.Toast.makeText(context, "备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                        isBackingUp = false
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            enabled = !isBackingUp
+                        ) {
+                            if (isBackingUp) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text("备份")
+                            }
+                        }
+                    }
+                }
+
+                // 恢复卡片
+                Surface(
+                    shape = RoundedCornerShape(15.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "恢复数据", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "从备份文件恢复取餐码和设置", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Button(
+                            onClick = {
+                                performHaptic()
+                                restoreBackupLauncher.launch(arrayOf("*/*"))
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            enabled = !isRestoring
+                        ) {
+                            if (isRestoring) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text("恢复")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Spacer(Modifier.height(64.dp))
         val currentYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
         Text(
@@ -271,6 +537,41 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
             lineHeight = 20.sp
         )
         Spacer(Modifier.height(32.dp))
+    }
+
+    // 更新弹窗
+    if (showUpdateDialog && updateInfo != null) {
+        UpdateDialog(
+            updateInfo = updateInfo!!,
+            onDismiss = { showUpdateDialog = false },
+            onInstall = {
+                showUpdateDialog = false
+                showProgressDialog = true
+                coroutineScope.launch {
+                    val file = UpdateHelper.downloadUpdate(
+                        context = context,
+                        updateInfo = updateInfo!!,
+                        onProgress = { downloadProgress = it },
+                        isPaused = { isPaused }
+                    )
+                    showProgressDialog = false
+                    if (file != null) {
+                        UpdateHelper.installUpdate(context, file)
+                    }
+                }
+            }
+        )
+    }
+
+    // 下载进度弹窗
+    if (showProgressDialog) {
+        UpdateProgressDialog(
+            progress = downloadProgress,
+            isPaused = isPaused,
+            onPause = { isPaused = true },
+            onResume = { isPaused = false },
+            onCancel = { showProgressDialog = false }
+        )
     }
 }
 
@@ -315,13 +616,28 @@ private fun getVersionName(context: Context): String {
     }
 }
 
+private fun getVersionCode(context: Context): Long {
+    return try {
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode.toLong()
+        }
+    } catch (e: Exception) {
+        0L
+    }
+}
+
 @Composable
-fun StorageSettingsContent(performHaptic: () -> Unit) {
+fun StorageSettingsContent(performHaptic: () -> Unit, prefs: android.content.SharedPreferences) {
     val context = LocalContext.current
     var appSize by remember { mutableLongStateOf(0L) }       // App 本身（APK + 代码）
     var totalSize by remember { mutableLongStateOf(0L) }     // 总占用
     var cacheSize by remember { mutableLongStateOf(0L) }     // 缓存
     var screenshotSize by remember { mutableLongStateOf(0L) } // 截图数据
+    var downloadSize by remember { mutableLongStateOf(0L) }   // 下载文件
 
     fun refreshSizes() {
         // 使用 StorageStatsManager 获取完整存储统计
@@ -354,19 +670,22 @@ fun StorageSettingsContent(performHaptic: () -> Unit) {
             cacheSize = getFolderSize(context.cacheDir)
         }
         screenshotSize = getFolderSize(File(context.filesDir, "screenshots"))
+        downloadSize = getFolderSize(File(context.filesDir, "downloads"))
     }
 
     LaunchedEffect(Unit) { refreshSizes() }
 
-    // 计算各部分比例：App本身、截图、缓存、其他
-    val otherSize = (totalSize - appSize - screenshotSize - cacheSize).coerceAtLeast(0L)
+    // 计算各部分比例：App本身、截图、缓存、下载、其他
+    val otherSize = (totalSize - appSize - screenshotSize - cacheSize - downloadSize).coerceAtLeast(0L)
     val appRatio = if (totalSize > 0) appSize.toFloat() / totalSize else 0f
     val screenshotRatio = if (totalSize > 0) screenshotSize.toFloat() / totalSize else 0f
     val cacheRatio = if (totalSize > 0) cacheSize.toFloat() / totalSize else 0f
+    val downloadRatio = if (totalSize > 0) downloadSize.toFloat() / totalSize else 0f
 
     // 使用同色系渐变色彩 - 更和谐
     val appColor = Color(0xFF6750A4)       // 深紫 - 应用
     val screenshotColor = Color(0xFF9A82DB) // 中紫 - 截图
+    val downloadColor = Color(0xFFB39DDB)   // 浅紫 - 下载
     val cacheColor = Color(0xFFE8DEF8)      // 浅紫 - 缓存
     val otherColor = Color(0xFF79747E)      // 灰色 - 其他
 
@@ -387,12 +706,13 @@ fun StorageSettingsContent(performHaptic: () -> Unit) {
                 val gap = 2f  // 分段间隙
                 var startAngle = -90f
 
-                // 绘制各分段（按顺序：应用、截图、缓存、其他）
+                // 绘制各分段（按顺序：应用、截图、下载、缓存、其他）
                 val segments = listOf(
                     appRatio to appColor,
                     screenshotRatio to screenshotColor,
+                    downloadRatio to downloadColor,
                     cacheRatio to cacheColor,
-                    (1f - appRatio - screenshotRatio - cacheRatio) to otherColor
+                    (1f - appRatio - screenshotRatio - downloadRatio - cacheRatio) to otherColor
                 )
 
                 segments.forEach { (ratio, color) ->
@@ -450,6 +770,13 @@ fun StorageSettingsContent(performHaptic: () -> Unit) {
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                 StorageLegendRow(
+                    color = downloadColor,
+                    label = "下载",
+                    size = formatFileSize(downloadSize),
+                    description = "更新包等"
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                StorageLegendRow(
                     color = cacheColor,
                     label = "缓存",
                     size = formatFileSize(cacheSize),
@@ -471,8 +798,11 @@ fun StorageSettingsContent(performHaptic: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StorageActionCard(title = "清理系统缓存", description = "删除 App 运行产生的临时文件", size = formatFileSize(cacheSize), onClear = { performHaptic(); deleteFolderContents(context.cacheDir); refreshSizes() })
                 StorageActionCard(title = "清理识别截图", description = "删除保存在本地的识别原始截图 (不影响已生成的记录)", size = formatFileSize(screenshotSize), onClear = { performHaptic(); deleteFolderContents(File(context.filesDir, "screenshots")); refreshSizes() })
+                StorageActionCard(title = "清理下载文件", description = "删除下载的更新包等文件", size = formatFileSize(downloadSize), onClear = { performHaptic(); deleteFolderContents(File(context.filesDir, "downloads")); refreshSizes() })
             }
         }
+
+        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -555,6 +885,8 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
     var showOnboardingOnNextLaunch by remember { mutableStateOf(prefs.getBoolean("show_onboarding_on_next_launch", false)) }
     var customHue by remember { mutableFloatStateOf(260f) }
     var selectedColorInt by remember { mutableIntStateOf(prefs.getInt("theme_color", Color(0xFF6750A4).toArgb())) }
+    var networkUpdateEnabled by remember { mutableStateOf(prefs.getBoolean("network_update_enabled", false)) }
+    var updateChannel by remember { mutableStateOf(prefs.getString("update_channel", "stable") ?: "stable") }
 
     Column(
         modifier = Modifier
@@ -598,6 +930,58 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
                         prefs.edit().putBoolean("show_onboarding_on_next_launch", it).apply()
                     }
                 )
+            }
+        }
+
+        PreferenceSection(title = "联网更新") {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) {
+                    PreferenceSwitchItem(
+                        title = "联网更新",
+                        description = "仅用于检测App新版本并下载，不用于其他用途",
+                        checked = networkUpdateEnabled,
+                        onCheckedChange = {
+                            performHaptic()
+                            networkUpdateEnabled = it
+                            prefs.edit().putBoolean("network_update_enabled", it).apply()
+                        }
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = networkUpdateEnabled,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "更新通道",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        CaptureModeItem(
+                            title = "接收正式版更新",
+                            description = "只接收稳定版本的更新",
+                            selected = updateChannel == "stable",
+                            onClick = {
+                                performHaptic()
+                                updateChannel = "stable"
+                                prefs.edit().putString("update_channel", "stable").apply()
+                            }
+                        )
+                        CaptureModeItem(
+                            title = "接收测试版更新",
+                            description = "接收所有版本的更新，包括测试版",
+                            selected = updateChannel == "dev",
+                            onClick = {
+                                performHaptic()
+                                updateChannel = "dev"
+                                prefs.edit().putString("update_channel", "dev").apply()
+                            }
+                        )
+                    }
+                }
             }
         }
         Spacer(modifier = Modifier.height(48.dp))
@@ -870,7 +1254,7 @@ private fun checkUsageStatsPermission(context: Context): Boolean {
 }
 
 private fun checkBatteryOptimization(context: Context): Boolean {
-    val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
     return powerManager.isIgnoringBatteryOptimizations(context.packageName)
 }
 

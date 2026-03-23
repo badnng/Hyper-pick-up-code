@@ -190,11 +190,11 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                             containerColor = if (allRequiredGranted)
                                 MaterialTheme.colorScheme.primary
                             else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                                Color.Gray,
                             contentColor = if (allRequiredGranted)
                                 MaterialTheme.colorScheme.onPrimary
                             else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                Color.White
                         )
                     ) {
                         Text(
