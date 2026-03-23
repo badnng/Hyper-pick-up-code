@@ -75,7 +75,7 @@ jobs:
             echo "json_file=Dev.json" >> $GITHUB_OUTPUT
           else
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
-            echo "json_file=stable.json" >> $GITHUB_OUTPUT
+            echo "json_file=Stable.json" >> $GITHUB_OUTPUT
           fi
 
       - name: Read changelog
