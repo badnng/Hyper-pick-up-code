@@ -72,10 +72,8 @@ jobs:
           echo "Branch: $BRANCH"
           if [[ "$BRANCH" == "dev" ]] || [[ "$BRANCH" == "Dev" ]]; then
             echo "is_prerelease=true" >> $GITHUB_OUTPUT
-            echo "json_file=Dev.json" >> $GITHUB_OUTPUT
           else
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
-            echo "json_file=Stable.json" >> $GITHUB_OUTPUT
           fi
 
       - name: Read changelog
@@ -92,8 +90,8 @@ jobs:
 
       - name: Generate version JSON
         env:
-          JSON_FILE: ${{ steps.check_prerelease.outputs.json_file }}
           TAG_NAME: ${{ github.ref_name }}
+          IS_PRERELEASE: ${{ steps.check_prerelease.outputs.is_prerelease }}
         run: |
           python3 -c "
           import re, json, os
@@ -111,7 +109,7 @@ jobs:
               changelog = f.read().strip()
 
           tag_name = os.environ['TAG_NAME']
-          json_file = os.environ['JSON_FILE']
+          is_prerelease = os.environ['IS_PRERELEASE']
 
           data = {
               'versionCode': version_code,
@@ -120,11 +118,15 @@ jobs:
               'downloadUrl': 'https://github.com/badnng/Hyper-pick-up-code/releases/download/' + tag_name + '/app-release.apk'
           }
 
-          with open(json_file, 'w') as f:
-              json.dump(data, f, ensure_ascii=False, indent=2)
+          if is_prerelease == 'true':
+              files = ['Dev.json']
+          else:
+              files = ['Stable.json', 'Dev.json']
 
-          print('Generated ' + json_file)
-          print(json.dumps(data, ensure_ascii=False, indent=2))
+          for f in files:
+              with open(f, 'w') as fp:
+                  json.dump(data, fp, ensure_ascii=False, indent=2)
+              print('Generated ' + f)
           "
 
       - name: Commit JSON to master
