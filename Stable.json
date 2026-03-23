@@ -1,6 +1,6 @@
 {
-  "versionCode": 2026032112,
-  "versionName": "26.3.21.C02-Dev",
-  "releaseNotes": "修复 引导页面的下一步按钮部分场景下透明的问题",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.21.C02-Dev/app-release.apk"
+  "versionCode": 2026032301,
+  "versionName": "26.3.23.C01",
+  "releaseNotes": "欢迎使用澎湃记正式版本！\n26.3.22.C01更改如下：\n1.添加 点击通知时在正在使用的app上层弹出独立取餐码截图副本\n2.添加 开屏引导（老用户，新用户都会弹，完成之后就不会了）\n3.添加 再次启动开屏引导设置（在偏好设置内）\n4.添加 备份功能\n5.添加 联网更新功能（需要在偏好设置内开启开关，默认关闭，联网仅用于下载更新并安装）\n6.优化 App整体性能 截图处理性能和内存占用优化\n7.优化 二维码弹出卡片在app上层\n8.优化 权限设置和保活设置统一合并于权限与保活选项中\n9.优化 快递取件码识别逻辑（快递部分暂未完善，请多多反馈）\n10.修复 设置页面按钮按下的触摸反馈形状异常\n11.移除 点击通知时跳转到app主页并高亮取餐卡片",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.22.C01/app-release.apk"
 }
