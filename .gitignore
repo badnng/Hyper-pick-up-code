@@ -16,3 +16,13 @@
 local.properties
 /app/src/test/java/com/Badnng/moe/ExampleUnitTest.kt
 /app/src/androidTest/java/com/Badnng/moe/ExampleInstrumentedTest.kt
+/app/release/app-release.apk
+/app/release/baselineProfiles/0/app-release.dm
+/app/release/baselineProfiles/1/app-release.dm
+/.kotlin/errors/errors-1773657295099.log
+/.kotlin/errors/errors-1774273204577.log
+/.gradle-user/wrapper/dists/gradle-9.2.1-bin/2t0n5ozlw9xmuyvbp7dnzaxug/gradle-9.2.1-bin.zip.lck
+/.gradle-user/wrapper/dists/gradle-9.2.1-bin/2t0n5ozlw9xmuyvbp7dnzaxug/gradle-9.2.1-bin.zip.part
+/hs_err_pid21376.log
+/app/release/output-metadata.json
+/replay_pid21376.log

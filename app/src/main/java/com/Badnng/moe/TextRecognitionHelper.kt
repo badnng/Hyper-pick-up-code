@@ -14,7 +14,7 @@ class TextRecognitionHelper(private val context: Context) {
     private val barcodeScanner = BarcodeScanning.getClient()
 
     // PaddleOCR 文字识别
-    private val paddleOcr = PaddleOcrHelper.getInstance(context)
+    val paddleOcr = PaddleOcrHelper.getInstance(context)
 
     private val drinkBrands = listOf("星巴克", "瑞幸", "喜茶", "奈雪", "霸王茶姬", "茶百道", "蜜雪冰城", "一点点", "古茗", "Manner", "山楂奶绿", "取茶", "奶茶", "茶颜悦色")
     private val foodBrands = listOf("麦当劳", "肯德基", "KFC", "汉堡王", "塔斯汀", "老乡鸡", "华莱士")
@@ -551,6 +551,152 @@ class TextRecognitionHelper(private val context: Context) {
         return candidates.firstOrNull()?.first
     }
 
+    /**
+     * 🚀 多取件码识别 - 用于识别一张图片中的多个快递取件码
+     */
+    suspend fun recognizeMultipleCodes(bitmap: Bitmap, sourceApp: String? = null, sourcePkg: String? = null): MultiRecognitionResult {
+        Log.d("RecognitionMonitor", "=== recognizeMultipleCodes 开始 ===")
+        
+        // 确保 OCR 已初始化
+        var waitCount = 0
+        while (!paddleOcr.isInitialized && waitCount < 30) {
+            kotlinx.coroutines.delay(100)
+            waitCount++
+        }
+        if (!paddleOcr.isInitialized) {
+            paddleOcr.init()
+        }
+        
+        // 使用 PaddleOCR 进行文字识别
+        val ocrResult = paddleOcr.recognize(bitmap)
+        val rawFullText = ocrResult?.fullText ?: ""
+        val textBlocks = ocrResult?.textBlocks ?: emptyList()
+        
+        // 保留 ML Kit 条码扫描
+        val image = InputImage.fromBitmap(bitmap, 0)
+        val barcodeResult = try {
+            withContext(Dispatchers.Main) {
+                barcodeScanner.process(image).await()
+            }
+        } catch (e: Exception) { null }
+        
+        val mergedText = cleanChineseText(rawFullText)
+        Log.d("RecognitionMonitor", "多取件码识别 - 全文: ${mergedText.take(200)}")
+        
+        // 查找所有取件码和对应的快递品牌
+        val orders = mutableListOf<RecognitionResult>()
+        
+        // 方法1：基于"取件码"关键词查找
+        val expressKeywords = listOf("取件码", "取性码", "请凭", "靖凭", "凭")
+        val pattern = Regex("(?:${expressKeywords.joinToString("|")})[:：\\s]*([A-Z0-9-]{3,12})")
+        
+        val allMatches = pattern.findAll(mergedText).toList()
+        Log.d("RecognitionMonitor", "找到 ${allMatches.size} 个取件码匹配")
+        
+        for (match in allMatches) {
+            val code = match.groupValues[1]
+            if (!isInvalidExpressCode(code)) {
+                // 查找这个取件码对应的快递品牌
+                val brand = findBrandForCode(code, mergedText, match.range)
+                
+                // 查找取货地点
+                val pickupLocation = findPickupLocation(mergedText, textBlocks)
+                
+                val order = RecognitionResult(
+                    code = code,
+                    qr = null,
+                    type = "快递",
+                    brand = brand,
+                    fullText = rawFullText,
+                    pickupLocation = pickupLocation
+                )
+                orders.add(order)
+                
+                Log.d("RecognitionMonitor", "识别到取件码: $code, 品牌: $brand")
+            }
+        }
+        
+        // 方法2：如果方法1找到的取件码不足，尝试基于快递品牌名称查找
+        if (orders.isEmpty()) {
+            val expressBrands = listOf("圆通快递", "中通快递", "申通快递", "韵达快递", "顺丰快递", "极兔快递", "德邦快递")
+            for (brand in expressBrands) {
+                if (mergedText.contains(brand)) {
+                    // 在品牌名称附近查找取件码
+                    val brandIndex = mergedText.indexOf(brand)
+                    val nearbyText = mergedText.substring(
+                        maxOf(0, brandIndex - 50),
+                        minOf(mergedText.length, brandIndex + brand.length + 100)
+                    )
+                    
+                    // 查找附近的取件码
+                    val codePattern = Regex("取件码[:：\\s]*([A-Z0-9-]{3,12})")
+                    val codeMatch = codePattern.find(nearbyText)
+                    if (codeMatch != null) {
+                        val code = codeMatch.groupValues[1]
+                        if (!isInvalidExpressCode(code)) {
+                            val pickupLocation = findPickupLocation(mergedText, textBlocks)
+                            val order = RecognitionResult(
+                                code = code,
+                                qr = null,
+                                type = "快递",
+                                brand = brand,
+                                fullText = rawFullText,
+                                pickupLocation = pickupLocation
+                            )
+                            orders.add(order)
+                            Log.d("RecognitionMonitor", "基于品牌找到取件码: $code, 品牌: $brand")
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 去重
+        val uniqueOrders = orders.distinctBy { it.code }
+        
+        Log.d("RecognitionMonitor", "多取件码识别完成，共识别到 ${uniqueOrders.size} 个取件码")
+        
+        return MultiRecognitionResult(
+            orders = uniqueOrders,
+            hasMultipleCodes = uniqueOrders.size > 1
+        )
+    }
+    
+    /**
+     * 根据取件码位置查找对应的快递品牌
+     */
+    private fun findBrandForCode(code: String, text: String, codeRange: IntRange): String? {
+        val expressBrands = listOf(
+            "圆通快递" to "圆通",
+            "中通快递" to "中通",
+            "申通快递" to "申通",
+            "韵达快递" to "韵达",
+            "顺丰快递" to "顺丰",
+            "极兔快递" to "极兔",
+            "德邦快递" to "德邦"
+        )
+        
+        // 在取件码附近查找快递品牌
+        val startIndex = maxOf(0, codeRange.first - 200)
+        val endIndex = minOf(text.length, codeRange.last + 200)
+        val nearbyText = text.substring(startIndex, endIndex)
+        
+        for ((fullName, shortName) in expressBrands) {
+            if (nearbyText.contains(fullName)) {
+                return shortName
+            }
+        }
+        
+        // 如果没找到完整品牌名，尝试查找简写
+        for ((fullName, shortName) in expressBrands) {
+            if (nearbyText.contains(shortName)) {
+                return shortName
+            }
+        }
+        
+        return "快递"
+    }
+    
     fun close() {
         barcodeScanner.close()
         // 不要关闭 paddleOcr，因为它是单例，应该保持初始化状态
@@ -558,3 +704,11 @@ class TextRecognitionHelper(private val context: Context) {
 }
 
 data class RecognitionResult(val code: String?, val qr: String?, val type: String, val brand: String?, val fullText: String, val pickupLocation: String? = null)
+
+/**
+ * 多取件码识别结果
+ */
+data class MultiRecognitionResult(
+    val orders: List<RecognitionResult>,
+    val hasMultipleCodes: Boolean
+)

@@ -105,6 +105,8 @@ kotlin {
 
 dependencies {
     val shizuku_version = "13.1.5"
+    // LocalBroadcastManager
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
     // OkHttp for update checking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.github.kyant0:backdrop:2.0.0-alpha03")

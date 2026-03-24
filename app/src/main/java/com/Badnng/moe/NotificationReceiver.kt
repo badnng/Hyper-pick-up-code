@@ -9,17 +9,33 @@ import kotlinx.coroutines.launch
 
 class NotificationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == "ACTION_MARK_COMPLETED") {
-            val orderId = intent.getStringExtra("order_id") ?: return
-            
-            val database = OrderDatabase.getDatabase(context)
-            val orderDao = database.orderDao()
-            val notificationHelper = NotificationHelper(context)
+        val pendingResult = goAsync()
+        val database = OrderDatabase.getDatabase(context)
+        val orderDao = database.orderDao()
+        val orderGroupDao = database.orderGroupDao()
+        val notificationHelper = NotificationHelper(context)
 
-            CoroutineScope(Dispatchers.IO).launch {
-                orderDao.markAsCompleted(orderId, System.currentTimeMillis())
-                // 修复：传入 orderId 以取消对应的通知
-                notificationHelper.cancelNotification(orderId)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                when (intent.action) {
+                    "ACTION_MARK_COMPLETED" -> {
+                        val orderId = intent.getStringExtra("order_id") ?: return@launch
+                        orderDao.markAsCompleted(orderId, System.currentTimeMillis())
+                        notificationHelper.cancelNotification(orderId)
+                    }
+
+                    "ACTION_MARK_GROUP_COMPLETED" -> {
+                        val groupId = intent.getLongExtra("group_id", -1L)
+                        if (groupId == -1L) return@launch
+
+                        val completedTime = System.currentTimeMillis()
+                        orderGroupDao.markGroupAsCompleted(groupId, completedTime)
+                        orderGroupDao.markAllOrdersInGroupCompleted(groupId, completedTime)
+                        notificationHelper.cancelGroupNotification(groupId)
+                    }
+                }
+            } finally {
+                pendingResult.finish()
             }
         }
     }

@@ -1,10 +1,23 @@
 package com.Badnng.moe
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
-@Entity(tableName = "orders")
+@Entity(
+    tableName = "orders",
+    foreignKeys = [
+        ForeignKey(
+            entity = OrderGroup::class,
+            parentColumns = ["id"],
+            childColumns = ["groupId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["groupId"])]
+)
 data class OrderEntity(
     @PrimaryKey
     val id: String = UUID.randomUUID().toString(),
@@ -20,5 +33,6 @@ data class OrderEntity(
     val sourceApp: String? = null,
     val sourcePackage: String? = null,
     val fullText: String? = null,
-    val pickupLocation: String? = null
+    val pickupLocation: String? = null,
+    val groupId: Long? = null  // 关联到 OrderGroup 的 id
 )

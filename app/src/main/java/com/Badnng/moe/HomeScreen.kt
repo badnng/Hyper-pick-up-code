@@ -59,6 +59,7 @@ import com.Badnng.moe.screens.SettingsScreen
 import com.Badnng.moe.screens.QrCodeDialog
 import com.Badnng.moe.screens.LogScreen
 import com.Badnng.moe.screens.OrderDetailScreen
+import com.Badnng.moe.screens.GroupDetailScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 
@@ -76,11 +77,15 @@ fun HomeScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val orders by viewModel.orders.collectAsState()
+    val orderGroups by viewModel.orderGroups.collectAsState()
     var selectedOrderForQr by remember { mutableStateOf<OrderEntity?>(null) }
     var detailOrder by remember { mutableStateOf<OrderEntity?>(null) }
+    var detailGroup by remember { mutableStateOf<OrderGroup?>(null) }
     var previousDetailOrder by remember { mutableStateOf<OrderEntity?>(null) }
+    var previousDetailGroup by remember { mutableStateOf<OrderGroup?>(null) }
     var isFromNotification by remember { mutableStateOf(false) }
     var isManaging by remember { mutableStateOf(false) }
+    var groupOrders by remember { mutableStateOf<List<OrderEntity>>(emptyList()) }
 
     var backProgress by remember { mutableFloatStateOf(0f) }
     var backSwipeEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
@@ -109,19 +114,44 @@ fun HomeScreen(
     }
 
     LaunchedEffect(detailOrder) {
-        if (detailOrder != null) previousDetailOrder = detailOrder
+        detailOrder?.let {
+            previousDetailOrder = it
+        }
     }
 
-    PredictiveBackHandler(enabled = detailOrder != null) { backEvent: Flow<androidx.activity.BackEventCompat> ->
+    LaunchedEffect(detailGroup) {
+        detailGroup?.let {
+            previousDetailGroup = it
+        }
+    }
+
+    LaunchedEffect(detailGroup) {
+        detailGroup?.let { group ->
+            viewModel.getOrdersByGroupId(group.id).collect { orders ->
+                groupOrders = orders
+            }
+        }
+    }
+
+
+    PredictiveBackHandler(enabled = detailOrder != null || detailGroup != null) { backEvent: Flow<androidx.activity.BackEventCompat> ->
         isPredictiveBackInProgress = true
         try {
             backEvent.collect { event ->
                 backProgress = event.progress
                 backSwipeEdge = event.swipeEdge
             }
-            detailOrder = null
+            if (detailGroup != null) {
+                detailGroup = null
+            } else {
+                detailOrder = null
+            }
         } catch (e: CancellationException) {
-            detailOrder = previousDetailOrder
+            if (previousDetailGroup != null && detailGroup == null) {
+                detailGroup = previousDetailGroup
+            } else {
+                detailOrder = previousDetailOrder
+            }
         } finally {
             isPredictiveBackInProgress = false
             backProgress = 0f
@@ -131,7 +161,7 @@ fun HomeScreen(
     val activity = context as? MainActivity
 
     // 主页面按返回键时，从最近任务移除卡片
-    BackHandler(enabled = detailOrder == null) {
+    BackHandler(enabled = detailOrder == null && detailGroup == null) {
         activity?.finishAndRemoveTask()
     }
 
@@ -154,6 +184,14 @@ fun HomeScreen(
         }
         if (intentToProcess?.hasExtra("highlight_order_id") == true) {
             detailOrder = null // 自动关闭详情页回到列表
+            coroutineScope.launch { pagerState.animateScrollToPage(0) }
+        }
+    }
+
+    LaunchedEffect(intentToProcess, orderGroups) {
+        if (intentToProcess?.getBooleanExtra("show_group_detail", false) == true) {
+            detailOrder = null
+            detailGroup = null
             coroutineScope.launch { pagerState.animateScrollToPage(0) }
         }
     }
@@ -252,9 +290,14 @@ fun HomeScreen(
             }
         ) { _ ->
             Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
-                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !isManaging && !isSettingsSubPageOpen && detailOrder == null) { page ->
+                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !isManaging && !isSettingsSubPageOpen && detailOrder == null && detailGroup == null) { page ->
                     when (page) {
-                        0 -> CaptureScreen(modifier = Modifier.fillMaxSize(), bottomPadding = 100.dp, backdrop = backdrop, onEditModeChange = { isManaging = it }, onNavigateToDetail = { detailOrder = it })
+                        0 -> CaptureScreen(modifier = Modifier.fillMaxSize(), bottomPadding = 100.dp, backdrop = backdrop, onEditModeChange = { isManaging = it }, onNavigateToDetail = { detailItem ->
+                            when (detailItem) {
+                                is OrderEntity -> detailOrder = detailItem
+                                is OrderGroup -> detailGroup = detailItem
+                            }
+                        })
                         1 -> LogScreen(modifier = Modifier.fillMaxSize())
                         2 -> SettingsScreen(modifier = Modifier.fillMaxSize(), onSubPageStatusChange = { isSettingsSubPageOpen = it })
                     }
@@ -271,6 +314,36 @@ fun HomeScreen(
             if (displayOrder != null) {
                 Box(modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = currentScale; scaleY = currentScale; translationX = currentTranslationX; shape = RoundedCornerShape(currentCornerRadius); clip = true }.border(width = if (isPredictiveBackInProgress) 1.dp else 0.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = backProgress), shape = RoundedCornerShape(currentCornerRadius)).background(MaterialTheme.colorScheme.background)) {
                     OrderDetailScreen(order = displayOrder, onBack = { detailOrder = null })
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = detailGroup != null,
+            enter = slideInHorizontally { it } + fadeIn(),
+            exit = slideOutHorizontally { it } + fadeOut()
+        ) {
+            val displayGroup = detailGroup ?: previousDetailGroup
+            if (displayGroup != null) {
+                Box(modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = currentScale; scaleY = currentScale; translationX = currentTranslationX; shape = RoundedCornerShape(currentCornerRadius); clip = true }.border(width = if (isPredictiveBackInProgress) 1.dp else 0.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = backProgress), shape = RoundedCornerShape(currentCornerRadius)).background(MaterialTheme.colorScheme.background)) {
+                    GroupDetailScreen(
+                        group = displayGroup,
+                        orders = groupOrders,
+                        onBack = { detailGroup = null },
+                        onMarkAllCompleted = {
+                            groupOrders = groupOrders.map {
+                                if (it.isCompleted) it else it.copy(isCompleted = true, completedAt = System.currentTimeMillis())
+                            }
+                            viewModel.markAllOrdersInGroupCompleted(displayGroup.id)
+                            detailGroup = null
+                        },
+                        onMarkOrderCompleted = { order ->
+                            groupOrders = groupOrders.map {
+                                if (it.id == order.id) it.copy(isCompleted = true, completedAt = System.currentTimeMillis()) else it
+                            }
+                            viewModel.markAsCompleted(order.id)
+                        }
+                    )
                 }
             }
         }
