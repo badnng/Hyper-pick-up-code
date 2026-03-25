@@ -150,23 +150,28 @@ jobs:
             FILES="Stable.json Dev.json"
           fi
 
+          # 保存 JSON 文件到临时目录
+          mkdir -p /tmp/json_files
           for f in $FILES; do
-            git add -f $f
+            cp $f /tmp/json_files/
           done
 
-          git stash push --include-untracked
+          # 切换到 master 分支
           git checkout -f master
-          git stash pop
 
+          # 用临时目录的文件覆盖 master 分支
           for f in $FILES; do
+            cp /tmp/json_files/$f $f
             git add $f
           done
 
+          # 提交
           echo "=== 暂存区文件 ==="
           git diff --cached --stat
 
           git diff --cached --quiet || git commit -m "Update JSON for ${{ github.ref_name }}"
           git push origin master
+      
 
       - name: Create Release and Upload APK
         uses: softprops/action-gh-release@v2

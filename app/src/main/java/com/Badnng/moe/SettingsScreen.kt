@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import com.Badnng.moe.CaptureTileService
+import com.Badnng.moe.NotificationHelper
 import com.Badnng.moe.R
 import com.Badnng.moe.UpdateHelper
 import com.Badnng.moe.UpdateInfo
@@ -229,6 +230,7 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
     var isChecking by remember { mutableStateOf(false) }
     
     val coroutineScope = rememberCoroutineScope()
+    val notificationHelper = remember { NotificationHelper(context) }
 
     Column(
         modifier = Modifier
@@ -551,10 +553,20 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                     val file = UpdateHelper.downloadUpdate(
                         context = context,
                         updateInfo = updateInfo!!,
-                        onProgress = { downloadProgress = it },
+                        onProgress = {
+                            downloadProgress = it
+                            if (!showProgressDialog) {
+                                notificationHelper.showUpdateDownloadNotification(
+                                    versionName = updateInfo!!.versionName,
+                                    progress = it,
+                                    isPaused = isPaused
+                                )
+                            }
+                        },
                         isPaused = { isPaused }
                     )
                     showProgressDialog = false
+                    notificationHelper.cancelUpdateDownloadNotification()
                     if (file != null) {
                         UpdateHelper.installUpdate(context, file)
                     } else {
@@ -570,9 +582,24 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
         UpdateProgressDialog(
             progress = downloadProgress,
             isPaused = isPaused,
-            onPause = { isPaused = true },
-            onResume = { isPaused = false },
-            onCancel = { showProgressDialog = false }
+            onPause = {
+                isPaused = true
+                updateInfo?.let {
+                    notificationHelper.showUpdateDownloadNotification(it.versionName, downloadProgress, true)
+                }
+            },
+            onResume = {
+                isPaused = false
+                updateInfo?.let {
+                    notificationHelper.showUpdateDownloadNotification(it.versionName, downloadProgress, false)
+                }
+            },
+            onCancel = {
+                showProgressDialog = false
+                updateInfo?.let {
+                    notificationHelper.showUpdateDownloadNotification(it.versionName, downloadProgress, isPaused)
+                }
+            }
         )
     }
 }

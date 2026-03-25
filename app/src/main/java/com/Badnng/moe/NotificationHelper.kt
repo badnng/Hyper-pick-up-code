@@ -12,6 +12,8 @@ import android.os.Bundle
 class NotificationHelper(private val context: Context) {
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val channelId = "promoted_live_update_channel"
+    private val updateChannelId = "update_download_channel"
+    private val updateNotificationId = 20260325
 
     init {
         createNotificationChannel()
@@ -27,6 +29,15 @@ class NotificationHelper(private val context: Context) {
                 description = "用于在状态栏和锁屏显示订单实时进度"
             }
             notificationManager.createNotificationChannel(channel)
+
+            val updateChannel = NotificationChannel(
+                updateChannelId,
+                "更新下载",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "用于显示更新包下载进度"
+            }
+            notificationManager.createNotificationChannel(updateChannel)
         }
     }
 
@@ -172,5 +183,45 @@ class NotificationHelper(private val context: Context) {
 
     fun cancelGroupNotification(groupId: Long) {
         notificationManager.cancel(groupId.hashCode())
+    }
+
+    fun showUpdateDownloadNotification(versionName: String, progress: Float, isPaused: Boolean = false) {
+        val clampedProgress = progress.coerceIn(0f, 1f)
+        val percent = (clampedProgress * 100).toInt()
+        val contentIntent = PendingIntent.getActivity(
+            context,
+            updateNotificationId,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = Notification.Builder(context, updateChannelId)
+            .setContentTitle(if (isPaused) "更新下载已暂停" else "正在后台下载更新")
+            .setContentText("v$versionName  $percent%")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setContentIntent(contentIntent)
+            .setProgress(100, percent, false)
+
+        if (Build.VERSION.SDK_INT >= 35) {
+            val extras = Bundle()
+            extras.putBoolean("android.requestPromotedOngoing", true)
+            builder.addExtras(extras)
+            try {
+                if (Build.VERSION.SDK_INT >= 36) {
+                    builder.setShortCriticalText(" $percent%")
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        notificationManager.notify(updateNotificationId, builder.build())
+    }
+
+    fun cancelUpdateDownloadNotification() {
+        notificationManager.cancel(updateNotificationId)
     }
 }
