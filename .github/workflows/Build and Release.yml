@@ -94,7 +94,15 @@ jobs:
           IS_PRERELEASE: ${{ steps.check_prerelease.outputs.is_prerelease }}
         run: |
           python3 -c "
-          import re, json, os
+          import re, json, os, hashlib
+
+          # 计算 APK MD5
+          apk_path = 'app/build/outputs/apk/release/app-release.apk'
+          if os.path.exists(apk_path):
+              with open(apk_path, 'rb') as f:
+                  md5_hash = hashlib.md5(f.read()).hexdigest()
+          else:
+              md5_hash = 'APK_NOT_FOUND'
 
           with open('app/build.gradle.kts', 'r') as f:
               content = f.read()
@@ -115,7 +123,8 @@ jobs:
               'versionCode': version_code,
               'versionName': version_name,
               'releaseNotes': changelog,
-              'downloadUrl': 'https://github.com/badnng/Hyper-pick-up-code/releases/download/' + tag_name + '/app-release.apk'
+              'downloadUrl': 'https://github.com/badnng/Hyper-pick-up-code/releases/download/' + tag_name + '/app-release.apk',
+              'md5': md5_hash
           }
 
           if is_prerelease == 'true':
@@ -141,26 +150,18 @@ jobs:
             FILES="Stable.json Dev.json"
           fi
 
-          # ====== 关键修复：用 git add -f 强制暂存，再 stash ======
           for f in $FILES; do
             git add -f $f
           done
 
-          # 把暂存的修改保存到 stash
           git stash push --include-untracked
-
-          # 切到 master
           git checkout -f master
-
-          # 把修改拿回来
           git stash pop
 
-          # 再 add 一次（stash pop 后文件是已修改状态）
           for f in $FILES; do
             git add $f
           done
 
-          # 调试：看看文件内容
           echo "=== 暂存区文件 ==="
           git diff --cached --stat
 
