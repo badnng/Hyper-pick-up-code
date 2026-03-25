@@ -37,10 +37,14 @@ class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+    private var triggeredByAccessibilityShortcut = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val normalCaptureDelayMs = 800L
+    private val accessibilityCaptureDelayMs = 950L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val useShizuku = intent?.getBooleanExtra("use_shizuku", false) ?: false
+        triggeredByAccessibilityShortcut = intent?.getBooleanExtra("triggered_by_accessibility_shortcut", false) ?: false
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -93,7 +97,12 @@ class ScreenCaptureService : Service() {
 
     private fun startShizukuCaptureSingleTry() {
         scope.launch {
-            delay(800)
+            val captureDelay = if (triggeredByAccessibilityShortcut) {
+                accessibilityCaptureDelayMs
+            } else {
+                normalCaptureDelayMs
+            }
+            delay(captureDelay)
             val pkg = getForegroundPackageName(applicationContext)
             val appName = pkg?.let { getAppName(applicationContext, it) }
 
@@ -103,7 +112,7 @@ class ScreenCaptureService : Service() {
                 bitmap = captureShizukuScreenshot()
                 if (bitmap != null) {
                     val cropped = cropStatusBar(bitmap)
-                    recognizeAndStop(cropped, appName, pkg)
+                    recognizeAndStop(cropped, appName, pkg, triggeredByAccessibilityShortcut)
                 } else {
                     stopSelf()
                 }
@@ -193,7 +202,12 @@ class ScreenCaptureService : Service() {
         }
 
         scope.launch {
-            delay(800)
+            val captureDelay = if (triggeredByAccessibilityShortcut) {
+                accessibilityCaptureDelayMs
+            } else {
+                normalCaptureDelayMs
+            }
+            delay(captureDelay)
             val pkg = getForegroundPackageName(applicationContext)
             val appName = pkg?.let { getAppName(applicationContext, it) }
 
@@ -222,7 +236,7 @@ class ScreenCaptureService : Service() {
                 bitmap.copyPixelsFromBuffer(buffer)
                 cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
                 val cropped = cropStatusBar(cleanBitmap)
-                recognizeAndStop(cropped, appName, pkg)
+                recognizeAndStop(cropped, appName, pkg, triggeredByAccessibilityShortcut)
             } catch (e: Exception) {
                 Log.e("CaptureLog", "MediaProjection capture failed", e)
                 stopSelf()
@@ -246,22 +260,22 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private fun recognizeAndStop(bitmap: Bitmap, sourceApp: String?, sourcePkg: String?) {
+    private fun recognizeAndStop(bitmap: Bitmap, sourceApp: String?, sourcePkg: String?, triggeredByAccessibilityShortcut: Boolean) {
         scope.launch {
             var helper: TextRecognitionHelper? = null
 
             try {
                 helper = TextRecognitionHelper(applicationContext)
-                helper.initOcr()
-
-                val quickText = helper.paddleOcr.recognize(bitmap)?.fullText.orEmpty()
-                val hasExpressKeyword = quickText.contains("\u53d6\u4ef6") ||
-                    quickText.contains("\u53d6\u8d27") ||
-                    quickText.contains("\u5feb\u9012") ||
-                    quickText.contains("\u9a7f\u7ad9") ||
-                    quickText.contains("\u83dc\u9e1f")
+                if (!helper.paddleOcr.isInitialized) {
+                    helper.initOcr()
+                }
 
                 val singleResult = helper.recognizeAll(bitmap, sourceApp, sourcePkg)
+                val hasExpressKeyword = singleResult.fullText.contains("\u53d6\u4ef6") ||
+                    singleResult.fullText.contains("\u53d6\u8d27") ||
+                    singleResult.fullText.contains("\u5feb\u9012") ||
+                    singleResult.fullText.contains("\u9a7f\u7ad9") ||
+                    singleResult.fullText.contains("\u83dc\u9e1f")
                 val multiResult = if (hasExpressKeyword || singleResult.type == "\u5feb\u9012") {
                     helper.recognizeMultipleCodes(bitmap, sourceApp, sourcePkg)
                 } else {
@@ -377,6 +391,9 @@ class ScreenCaptureService : Service() {
                     ).show()
                 }
             } finally {
+                if (triggeredByAccessibilityShortcut) {
+                    AccessibilityShortcutHelper.disableServiceWithShizuku(applicationContext)
+                }
                 try {
                     helper?.close()
                 } catch (e: Exception) {

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -115,7 +116,10 @@ fun CaptureScreen(
                 order?.let { viewModel.deleteOrder(it) }
             }
         },
-        onClearAllCompleted = { viewModel.deleteCompletedOrders() },
+        onClearAllCompleted = {
+            viewModel.deleteCompletedOrders()
+            viewModel.deleteCompletedGroups()
+        },
         onMarkGroupCompleted = { groupId -> viewModel.markGroupAsCompleted(groupId) },
         onDeleteGroup = { group -> viewModel.deleteGroup(group) },
         onEditModeChange = onEditModeChange,
@@ -325,7 +329,11 @@ fun CaptureScreenContent(
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
                     // 全选/取消全选按钮（只选择组外的订单和组）
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = {
@@ -451,6 +459,11 @@ fun CaptureScreenContent(
                                         onMarkAllCompleted = { performHaptic(); onMarkGroupCompleted(group.id) },
                                         onDeleteGroup = { performHaptic(); onDeleteGroup(group) },
                                         initiallyExpanded = expandedGroupId == group.id,
+                                        onInitialExpandConsumed = {
+                                            if (expandedGroupId == group.id) {
+                                                expandedGroupId = null
+                                            }
+                                        },
                                         isEditMode = isEditMode,
                                         isSelectable = isEditMode,
                                         isSelected = selectedGroupIds.contains(group.id),
@@ -756,6 +769,7 @@ fun OrderGroupCard(
     onMarkAllCompleted: () -> Unit,
     onDeleteGroup: () -> Unit,
     initiallyExpanded: Boolean = false,
+    onInitialExpandConsumed: () -> Unit = {},
     isEditMode: Boolean = false,
     isSelectable: Boolean = false,
     isSelected: Boolean = false,
@@ -764,10 +778,11 @@ fun OrderGroupCard(
 ) {
     val context = LocalContext.current
     val viewModel: OrderViewModel = viewModel()
-    var isExpanded by remember { mutableStateOf(false) }
+    var isExpanded by rememberSaveable(group.id) { mutableStateOf(initiallyExpanded) }
     LaunchedEffect(initiallyExpanded) {
         if (initiallyExpanded) {
             isExpanded = true
+            onInitialExpandConsumed()
         }
     }
     val timeStr = remember(group.createdAt) { val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()); sdf.format(Date(group.createdAt)) }
@@ -837,7 +852,11 @@ fun OrderGroupCard(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
             shape = RoundedCornerShape(15.dp)
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 // 顶部区域：图标 + 标题
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(painter = painterResource(id = brandIcon), contentDescription = null, modifier = Modifier.size(32.dp), tint = Color.Unspecified)

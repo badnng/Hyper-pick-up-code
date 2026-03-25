@@ -1,4 +1,4 @@
-package com.Badnng.moe.screens
+﻿package com.Badnng.moe.screens
 
 import android.app.AppOpsManager
 import android.app.StatusBarManager
@@ -69,6 +69,7 @@ import com.Badnng.moe.UpdateInfo
 import com.Badnng.moe.UpdateDialog
 import com.Badnng.moe.UpdateProgressDialog
 import com.Badnng.moe.BackupHelper
+import com.Badnng.moe.AccessibilityShortcutHelper
 import com.Badnng.moe.OrderDatabase
 import java.io.File
 
@@ -221,14 +222,14 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     val versionName = remember { getVersionName(context) }
     val versionCode = remember { getVersionCode(context) }
-    
+
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showProgressDialog by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var downloadProgress by remember { mutableFloatStateOf(0f) }
     var isPaused by remember { mutableStateOf(false) }
     var isChecking by remember { mutableStateOf(false) }
-    
+
     val coroutineScope = rememberCoroutineScope()
     val notificationHelper = remember { NotificationHelper(context) }
 
@@ -272,50 +273,50 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
         // 检查更新按钮
         val networkUpdateEnabled = prefs.getBoolean("network_update_enabled", false)
         val updateChannel = prefs.getString("update_channel", "stable") ?: "stable"
-        
+
         if (networkUpdateEnabled) {
-                Button(
-                    onClick = {
-                        performHaptic()
-                        isChecking = true
-                        coroutineScope.launch {
-                            val info = UpdateHelper.checkUpdate(updateChannel == "dev")
-                            isChecking = false
-                            if (info != null) {
-                                val localVersion = UpdateHelper.getCurrentVersionCode(context)
-                                android.util.Log.d("UpdateCheck", "本地版本号: $localVersion")
-                                android.util.Log.d("UpdateCheck", "远程版本号: ${info.versionCode}")
-                                android.util.Log.d("UpdateCheck", "版本比较: ${info.versionCode} > $localVersion = ${info.versionCode > localVersion}")
-                                
-                                if (info.versionCode > localVersion) {
-                                    android.util.Log.d("UpdateCheck", "发现新版本")
-                                    
-                                    // 检查是否正在下载
-                                    if (UpdateHelper.isDownloading) {
-                                        android.util.Log.d("UpdateCheck", "正在下载中，显示下载进度弹窗")
-                                        updateInfo = info
-                                        showProgressDialog = true
-                                    } 
-                                    // 检查是否已下载
-                                    else if (UpdateHelper.downloadedFile != null && UpdateHelper.downloadedFile!!.exists()) {
-                                        android.util.Log.d("UpdateCheck", "已下载完成，直接安装")
-                                        UpdateHelper.installUpdate(context, UpdateHelper.downloadedFile!!)
-                                    }
-                                    // 显示更新弹窗
-                                    else {
-                                        android.util.Log.d("UpdateCheck", "显示更新弹窗")
-                                        updateInfo = info
-                                        showUpdateDialog = true
-                                    }
-                                } else {
-                                    android.util.Log.d("UpdateCheck", "当前已是最新版本")
-                                    UpdateHelper.showNoUpdateToast(context)
+            Button(
+                onClick = {
+                    performHaptic()
+                    isChecking = true
+                    coroutineScope.launch {
+                        val info = UpdateHelper.checkUpdate(updateChannel == "dev")
+                        isChecking = false
+                        if (info != null) {
+                            val localVersion = UpdateHelper.getCurrentVersionCode(context)
+                            android.util.Log.d("UpdateCheck", "本地版本号: $localVersion")
+                            android.util.Log.d("UpdateCheck", "远程版本号: ${info.versionCode}")
+                            android.util.Log.d("UpdateCheck", "版本比较: ${info.versionCode} > $localVersion = ${info.versionCode > localVersion}")
+
+                            if (info.versionCode > localVersion) {
+                                android.util.Log.d("UpdateCheck", "发现新版本")
+
+                                // 检查是否正在下载
+                                if (UpdateHelper.isDownloading) {
+                                    android.util.Log.d("UpdateCheck", "正在下载中，显示下载进度弹窗")
+                                    updateInfo = info
+                                    showProgressDialog = true
+                                }
+                                // 检查是否已下载
+                                else if (UpdateHelper.downloadedFile != null && UpdateHelper.downloadedFile!!.exists()) {
+                                    android.util.Log.d("UpdateCheck", "已下载完成，直接安装")
+                                    UpdateHelper.installUpdate(context, UpdateHelper.downloadedFile!!)
+                                }
+                                // 显示更新弹窗
+                                else {
+                                    android.util.Log.d("UpdateCheck", "显示更新弹窗")
+                                    updateInfo = info
+                                    showUpdateDialog = true
                                 }
                             } else {
-                                android.util.Log.e("UpdateCheck", "获取更新信息失败")
+                                android.util.Log.d("UpdateCheck", "当前已是最新版本")
+                                UpdateHelper.showNoUpdateToast(context)
                             }
+                        } else {
+                            android.util.Log.e("UpdateCheck", "获取更新信息失败")
                         }
-                    },
+                    }
+                },
                 shape = RoundedCornerShape(15.dp),
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 enabled = !isChecking
@@ -360,12 +361,12 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                 var isBackingUp by remember { mutableStateOf(false) }
                 var isRestoring by remember { mutableStateOf(false) }
                 var pendingBackupData by remember { mutableStateOf<ByteArray?>(null) }
-                
+
                 // 创建备份文件的launcher
                 val createBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
                     contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/octet-stream")
                 ) { uri ->
-                    uri?.let { 
+                    uri?.let {
                         coroutineScope.launch {
                             try {
                                 pendingBackupData?.let { data ->
@@ -383,7 +384,7 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                         }
                     }
                 }
-                
+
                 // 恢复备份的launcher
                 val restoreBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
                     contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
@@ -395,9 +396,9 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                                 val backupData = context.contentResolver.openInputStream(uri)?.use { inputStream ->
                                     inputStream.readBytes()
                                 } ?: throw Exception("无法读取备份文件")
-                                
+
                                 val restoredData = BackupHelper.restoreBackup(context, backupData)
-                                
+
                                 // 恢复设置
                                 val editor = prefs.edit()
                                 restoredData.settings.forEach { (key, value) ->
@@ -410,7 +411,7 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                                     }
                                 }
                                 editor.apply()
-                                
+
                                 // 恢复订单数据
                                 val database = OrderDatabase.getDatabase(context)
                                 val orderDao = database.orderDao()
@@ -420,7 +421,7 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                                         orderDao.insert(order)
                                     }
                                 }
-                                
+
                                 android.widget.Toast.makeText(context, "恢复成功！共恢复 ${restoredData.orders.size} 条取餐码", android.widget.Toast.LENGTH_SHORT).show()
                             } catch (e: Exception) {
                                 android.util.Log.e("Backup", "恢复备份失败", e)
@@ -455,22 +456,22 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                                         // 获取订单数据
                                         val database = OrderDatabase.getDatabase(context)
                                         val orders = database.orderDao().getAllOrdersList()
-                                        
+
                                         // 获取设置数据
                                         val settingsMap = mutableMapOf<String, Any?>()
                                         val allPrefs = prefs.all
                                         allPrefs.forEach { (key, value) ->
                                             settingsMap[key] = value
                                         }
-                                        
+
                                         // 创建备份
                                         val backupData = BackupHelper.createBackup(context, orders, settingsMap)
                                         pendingBackupData = backupData
-                                        
+
                                         // 使用ActivityResultLauncher保存文件
                                         val fileName = BackupHelper.generateBackupFileName()
                                         createBackupLauncher.launch(fileName)
-                                        
+
                                     } catch (e: Exception) {
                                         android.util.Log.e("Backup", "备份失败", e)
                                         android.widget.Toast.makeText(context, "备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
@@ -1021,8 +1022,9 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
 fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
     val context = LocalContext.current; val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var captureMode by remember { mutableStateOf(prefs.getString("capture_mode", "media_projection") ?: "media_projection") }
+    var volumeKeyShortcutEnabled by remember { mutableStateOf(prefs.getBoolean("volume_key_shortcut_enabled", false)) }
     var shizukuReady by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { while (true) { shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }; if (!shizukuReady && captureMode == "shizuku") { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() }; delay(1500) } }
+    LaunchedEffect(Unit) { while (true) { shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }; if (!shizukuReady && captureMode == "shizuku") { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() }; if (!shizukuReady && volumeKeyShortcutEnabled) { volumeKeyShortcutEnabled = false; prefs.edit().putBoolean("volume_key_shortcut_enabled", false).apply() }; delay(1500) } }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1035,6 +1037,52 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
         Text("选择截图技术方案", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认", selected = captureMode == "media_projection", onClick = { performHaptic(); captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
         CaptureModeItem(title = "Shizuku 免授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { performHaptic(); captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
+        Surface(
+            onClick = {
+                if (shizukuReady) {
+                    performHaptic()
+                    val targetEnabled = !volumeKeyShortcutEnabled
+                    val success = if (targetEnabled) {
+                        AccessibilityShortcutHelper.configureShortcutWithShizuku(context)
+                    } else {
+                        AccessibilityShortcutHelper.disableServiceWithShizuku(context)
+                    }
+                    if (success) {
+                        volumeKeyShortcutEnabled = targetEnabled
+                        prefs.edit().putBoolean("volume_key_shortcut_enabled", targetEnabled).apply()
+                    }
+                }
+            },
+            shape = RoundedCornerShape(15.dp),
+            color = if (shizukuReady) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
+            modifier = Modifier.fillMaxWidth(),
+            enabled = shizukuReady
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "音量键快捷触发",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (shizukuReady) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                    Text(
+                        text = if (shizukuReady) "通过 Shizuku 一键配置无障碍快捷方式，启用后可使用音量键快捷触发截图识别" else "需要 Shizuku 已运行并授权后才可启用",
+                        fontSize = 12.sp,
+                        color = if (shizukuReady) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                }
+                Switch(
+                    checked = volumeKeyShortcutEnabled,
+                    onCheckedChange = null,
+                    enabled = shizukuReady
+                )
+            }
+        }
     }
 }
 

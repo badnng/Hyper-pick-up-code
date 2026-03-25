@@ -66,15 +66,13 @@ class ShareRecognitionService : Service() {
         try {
             helper.initOcr()
 
-            val quickText = helper.paddleOcr.recognize(croppedBitmap)?.fullText.orEmpty()
-            val hasExpressKeyword = quickText.contains("\u53d6\u4ef6") ||
-                quickText.contains("\u53d6\u8d27") ||
-                quickText.contains("\u5feb\u9012") ||
-                quickText.contains("\u9a7f\u7ad9") ||
-                quickText.contains("\u83dc\u9e1f")
-
+            val singleResult = helper.recognizeAll(croppedBitmap)
+            val hasExpressKeyword = singleResult.fullText.contains("\u53d6\u4ef6") ||
+                singleResult.fullText.contains("\u53d6\u8d27") ||
+                singleResult.fullText.contains("\u5feb\u9012") ||
+                singleResult.fullText.contains("\u9a7f\u7ad9") ||
+                singleResult.fullText.contains("\u83dc\u9e1f")
             val bitmapToUse = if (hasExpressKeyword) bitmap else croppedBitmap
-            val singleResult = helper.recognizeAll(bitmapToUse)
             val multiResult = if (hasExpressKeyword || singleResult.type == "\u5feb\u9012") {
                 helper.recognizeMultipleCodes(bitmapToUse)
             } else {
