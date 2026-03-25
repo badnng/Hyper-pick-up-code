@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -228,6 +229,7 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var downloadProgress by remember { mutableFloatStateOf(0f) }
     var isPaused by remember { mutableStateOf(false) }
+    val pausedFlag = remember { AtomicBoolean(false) }
     var isChecking by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
@@ -550,6 +552,8 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
             onInstall = {
                 showUpdateDialog = false
                 showProgressDialog = true
+                isPaused = false
+                pausedFlag.set(false)
                 coroutineScope.launch {
                     val file = UpdateHelper.downloadUpdate(
                         context = context,
@@ -560,18 +564,20 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                                 notificationHelper.showUpdateDownloadNotification(
                                     versionName = updateInfo!!.versionName,
                                     progress = it,
-                                    isPaused = isPaused
+                                    isPaused = pausedFlag.get()
                                 )
                             }
                         },
-                        isPaused = { isPaused }
+                        isPaused = { pausedFlag.get() }
                     )
                     showProgressDialog = false
                     notificationHelper.cancelUpdateDownloadNotification()
                     if (file != null) {
                         UpdateHelper.installUpdate(context, file)
                     } else {
-                        android.widget.Toast.makeText(context, "下载失败或更新包已失效", android.widget.Toast.LENGTH_SHORT).show()
+                        if (!UpdateHelper.consumePausedStop()) {
+                            android.widget.Toast.makeText(context, "下载失败或更新包已失效", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -585,12 +591,14 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
             isPaused = isPaused,
             onPause = {
                 isPaused = true
+                pausedFlag.set(true)
                 updateInfo?.let {
                     notificationHelper.showUpdateDownloadNotification(it.versionName, downloadProgress, true)
                 }
             },
             onResume = {
                 isPaused = false
+                pausedFlag.set(false)
                 updateInfo?.let {
                     notificationHelper.showUpdateDownloadNotification(it.versionName, downloadProgress, false)
                 }

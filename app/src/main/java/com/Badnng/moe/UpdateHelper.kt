@@ -2,27 +2,27 @@ package com.Badnng.moe
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
-import java.io.FileInputStream
-import java.security.MessageDigest
+import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 data class UpdateInfo(
     val versionCode: Long,
     val versionName: String,
     val releaseNotes: String,
-    val downloadUrl: String,
-    val md5: String? = null
+    val downloadUrl: String
 )
 
 object UpdateHelper {
@@ -36,20 +36,33 @@ object UpdateHelper {
     private const val STABLE_URL = "https://badnng.dpdns.org/https://raw.githubusercontent.com/badnng/Hyper-pick-up-code/refs/heads/master/Stable.json"
     private const val DEV_URL = "https://badnng.dpdns.org/https://raw.githubusercontent.com/badnng/Hyper-pick-up-code/refs/heads/master/Dev.json"
     private const val DOWNLOAD_BASE_URL = "https://badnng.dpdns.org/"
-    private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
 
+    // 下载状态跟踪
     @Volatile
     var isDownloading = false
         private set
 
+    // 当前下载的版本信息
     @Volatile
     var currentDownloadingVersion: UpdateInfo? = null
         private set
 
+    // 已下载的文件
     @Volatile
     var downloadedFile: File? = null
         private set
 
+    // 本次下载是否由用户暂停结束（用于避免提示“已损坏/失效”）
+    @Volatile
+    private var pausedStop = false
+
+    fun consumePausedStop(): Boolean {
+        val value = pausedStop
+        pausedStop = false
+        return value
+    }
+
+    // 更新当前下载状态
     fun setDownloadingState(downloading: Boolean, version: UpdateInfo? = null, file: File? = null) {
         isDownloading = downloading
         currentDownloadingVersion = if (downloading) version else null
@@ -60,40 +73,44 @@ object UpdateHelper {
     suspend fun checkUpdate(isDev: Boolean): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
             val url = if (isDev) DEV_URL else STABLE_URL
-            Log.d(TAG, "开始检查更新: channel=${if (isDev) "dev" else "stable"}")
-            val response = client.newCall(Request.Builder().url(url).build()).execute()
-            if (!response.isSuccessful) {
-                Log.e(TAG, "检查更新失败: http=${response.code}")
+            Log.d(TAG, "开始检查更新 - 通道: ${if (isDev) "测试版" else "正式版"}")
+            Log.d(TAG, "请求URL: $url")
+
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+
+            Log.d(TAG, "HTTP响应码: ${response.code}")
+            Log.d(TAG, "HTTP响应消息: ${response.message}")
+
+            val body = response.body?.string()
+            if (body == null) {
+                Log.e(TAG, "响应体为空")
                 return@withContext null
             }
 
-            val body = response.body?.string()?.trim()
-            if (body.isNullOrEmpty()) {
-                Log.e(TAG, "检查更新失败: empty body")
-                return@withContext null
-            }
+            Log.d(TAG, "响应内容: $body")
 
             val json = JSONObject(body)
-            val versionCode = json.optLong("versionCode", -1L)
-            val versionName = json.optString("versionName").trim()
-            val releaseNotes = json.optString("releaseNotes").trim()
-            val downloadUrl = json.optString("downloadUrl").trim()
-            val md5 = json.optString("md5").trim().ifEmpty { null }
+            val versionCode = json.getLong("versionCode")
+            val versionName = json.getString("versionName")
+            val releaseNotes = json.getString("releaseNotes")
+            val downloadUrl = json.getString("downloadUrl")
 
-            if (versionCode <= 0L || versionName.isEmpty() || downloadUrl.isEmpty()) {
-                Log.e(TAG, "更新信息无效: versionCode=$versionCode, versionName=$versionName, downloadUrl=$downloadUrl")
-                return@withContext null
-            }
+            Log.d(TAG, "解析结果:")
+            Log.d(TAG, "  - versionCode: $versionCode")
+            Log.d(TAG, "  - versionName: $versionName")
+            Log.d(TAG, "  - releaseNotes: $releaseNotes")
+            Log.d(TAG, "  - downloadUrl: $downloadUrl")
 
-            UpdateInfo(
+            return@withContext UpdateInfo(
                 versionCode = versionCode,
                 versionName = versionName,
                 releaseNotes = releaseNotes,
-                downloadUrl = downloadUrl,
-                md5 = md5
+                downloadUrl = downloadUrl
             )
         } catch (e: Exception) {
             Log.e(TAG, "检查更新失败", e)
+            e.printStackTrace()
             null
         }
     }
@@ -107,7 +124,7 @@ object UpdateHelper {
                 @Suppress("DEPRECATION")
                 packageInfo.versionCode.toLong()
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             0L
         }
     }
@@ -118,101 +135,98 @@ object UpdateHelper {
         onProgress: (Float) -> Unit,
         isPaused: () -> Boolean
     ): File? = withContext(Dispatchers.IO) {
-        var file: File? = null
         try {
+            pausedStop = false
+
+            // 设置下载状态
             setDownloadingState(true, updateInfo)
-            onProgress(0f)
 
-            val rawDownloadUrl = updateInfo.downloadUrl.trim()
-            if (rawDownloadUrl.isEmpty()) {
-                Log.e(TAG, "下载失败: empty download url")
-                return@withContext null
-            }
-
-            val downloadUrl = resolveProxiedDownloadUrl(rawDownloadUrl) ?: return@withContext null
-
-            val response = client.newCall(Request.Builder().url(downloadUrl).build()).execute()
-            if (!response.isSuccessful) {
-                Log.e(TAG, "下载失败: http=${response.code}, url=$downloadUrl")
-                return@withContext null
-            }
-
-            val body = response.body ?: run {
-                Log.e(TAG, "下载失败: empty response body")
-                return@withContext null
-            }
-
-            val contentType = body.contentType()?.toString().orEmpty()
-            val contentLength = body.contentLength()
-            if (contentLength == 0L) {
-                Log.e(TAG, "下载失败: empty file")
-                return@withContext null
-            }
+            val downloadUrl = DOWNLOAD_BASE_URL + updateInfo.downloadUrl
+            Log.d(TAG, "开始下载: $downloadUrl")
 
             val downloadsDir = File(context.filesDir, "downloads")
             if (!downloadsDir.exists()) downloadsDir.mkdirs()
-            file = File(downloadsDir, "update_${updateInfo.versionName}.apk")
-            if (file.exists()) file.delete()
+            val file = File(downloadsDir, "update_${updateInfo.versionName}.apk")
+            var downloadedBytes = if (file.exists()) file.length() else 0L
+            var totalBytes = -1L
 
-            body.byteStream().use { input ->
-                file.outputStream().use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var totalBytesRead = 0L
+            downloadLoop@ while (true) {
+                while (isPaused()) {
+                    pausedStop = true
+                    delay(150)
+                }
 
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        if (isPaused()) {
-                            Log.d(TAG, "下载被暂停")
-                            file.delete()
-                            return@withContext null
+                val requestBuilder = Request.Builder().url(downloadUrl)
+                if (downloadedBytes > 0L) {
+                    requestBuilder.addHeader("Range", "bytes=$downloadedBytes-")
+                }
+                val request = requestBuilder.build()
+                val call = client.newCall(request)
+                val response = call.execute()
+                if (!response.isSuccessful) {
+                    response.close()
+                    Log.e(TAG, "下载失败: http=${response.code}")
+                    return@withContext null
+                }
+                val body = response.body ?: return@withContext null
+
+                val code = response.code
+                val isPartialResponse = code == 206
+                val appendMode = downloadedBytes > 0L && isPartialResponse
+
+                if (downloadedBytes > 0L && !isPartialResponse) {
+                    // 服务端不支持断点续传，回退到完整重下
+                    downloadedBytes = 0L
+                    if (file.exists()) file.delete()
+                }
+
+                val responseLength = body.contentLength()
+                if (totalBytes <= 0L && responseLength > 0L) {
+                    totalBytes = if (appendMode) downloadedBytes + responseLength else responseLength
+                }
+
+                var pausedDuringStream = false
+                body.byteStream().use { input ->
+                    FileOutputStream(file, appendMode).use { output ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            if (isPaused()) {
+                                pausedStop = true
+                                pausedDuringStream = true
+                                call.cancel()
+                                break
+                            }
+                            val bytesRead = input.read(buffer)
+                            if (bytesRead == -1) break
+                            output.write(buffer, 0, bytesRead)
+                            downloadedBytes += bytesRead
+                            if (totalBytes > 0L) {
+                                onProgress((downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f))
+                            }
                         }
-                        output.write(buffer, 0, bytesRead)
-                        totalBytesRead += bytesRead
-
-                        val progress = if (contentLength > 0L) {
-                            (totalBytesRead.toDouble() / contentLength.toDouble()).toFloat()
-                        } else {
-                            0f
-                        }.coerceIn(0f, 1f)
-                        onProgress(progress)
                     }
                 }
+
+                response.close()
+                if (pausedDuringStream) {
+                    continue@downloadLoop
+                }
+                break@downloadLoop
             }
 
-            if (!file.exists() || file.length() <= 0L) {
-                Log.e(TAG, "下载失败: file missing or empty")
-                file.delete()
-                return@withContext null
-            }
-
-            if (!matchesMd5(file, updateInfo.md5)) {
-                Log.e(TAG, "下载失败: md5 mismatch, expected=${updateInfo.md5}, actual=${calculateMd5(file)}")
-                file.delete()
-                return@withContext null
-            }
-
-            onProgress(1f)
+            // 下载完成，设置下载状态
             Log.d(TAG, "下载完成: ${file.name}")
             setDownloadingState(false, null, file)
             file
         } catch (e: Exception) {
             Log.e(TAG, "下载失败", e)
-            file?.delete()
+            setDownloadingState(false)
+            e.printStackTrace()
             null
-        } finally {
-            if (isDownloading) {
-                setDownloadingState(false)
-            }
         }
     }
 
     fun installUpdate(context: Context, file: File) {
-        if (!file.exists() || file.length() <= 0L) {
-            Toast.makeText(context, "更新包无效或已失效", Toast.LENGTH_SHORT).show()
-            downloadedFile = null
-            return
-        }
-
         val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
         } else {
@@ -220,58 +234,19 @@ object UpdateHelper {
         }
 
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, APK_MIME_TYPE)
+            setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
         try {
             context.startActivity(intent)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             Toast.makeText(context, "无法启动安装器", Toast.LENGTH_SHORT).show()
         }
     }
 
     fun showNoUpdateToast(context: Context) {
         Toast.makeText(context, "暂无新版本更新", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun matchesMd5(file: File, expectedMd5: String?): Boolean {
-        if (expectedMd5.isNullOrBlank()) return true
-        val actualMd5 = calculateMd5(file) ?: return false
-        return actualMd5.equals(expectedMd5.trim(), ignoreCase = true)
-    }
-
-    private fun resolveProxiedDownloadUrl(rawUrl: String): String? {
-        val trimmed = rawUrl.trim()
-        if (trimmed.isEmpty()) return null
-
-        val suffix = when {
-            trimmed.startsWith(DOWNLOAD_BASE_URL) -> trimmed.removePrefix(DOWNLOAD_BASE_URL)
-            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> {
-                trimmed.substringAfter("://").substringAfter("/", "")
-            }
-            else -> trimmed.trimStart('/')
-        }.trimStart('/')
-
-        if (suffix.isEmpty()) return null
-        return DOWNLOAD_BASE_URL + suffix
-    }
-
-    private fun calculateMd5(file: File): String? {
-        return try {
-            val digest = MessageDigest.getInstance("MD5")
-            FileInputStream(file).use { input ->
-                val buffer = ByteArray(8192)
-                var read: Int
-                while (input.read(buffer).also { read = it } != -1) {
-                    digest.update(buffer, 0, read)
-                }
-            }
-            digest.digest().joinToString("") { "%02x".format(it) }
-        } catch (e: Exception) {
-            Log.e(TAG, "计算MD5失败", e)
-            null
-        }
     }
 }
