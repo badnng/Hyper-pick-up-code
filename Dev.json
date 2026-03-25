@@ -2,6 +2,6 @@
   "versionCode": 2026032511,
   "versionName": "26.3.25.C01-Dev",
   "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n26.3.25.C01-Dev版本更新如下：\n1.修复 下载环节相关问题\n2.修复 组卡片在部分场景出现交互问题\n3.添加 无障碍快捷方式用于长按两个音量键进行识别*\n\n*识别方案我们仍推荐引导页的那三个方式，无论是速度方面和识别页面准度都是最优的\n*由于Android的无障碍权限过于苛刻和调用方式跨度过于遥远，有延迟是无可避免的，我们正在尽力优化\n（话说不是我一个人么？哪里来的我们...？艹...）",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.25.C01-Dev/app-release.apk",
+  "downloadUrl": "https://badnng.dpdns.org/https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.25.C01-Dev/app-release.apk",
   "md5": "491cfef74c9af4703017e1fdb3d35b7e"
 }
