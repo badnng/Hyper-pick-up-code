@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.animation.*
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -419,11 +420,11 @@ fun CaptureScreenContent(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 label = "listTransition",
                 transitionSpec = {
-                    fadeIn(animationSpec = tween(300)) togetherWith
-                            fadeOut(animationSpec = tween(300))
+                    fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
                 }
-            ) { (isCompletedOnly, currentStandaloneOrders, currentAllGroups) ->
-                val currentState = if (isCompletedOnly) {
+            ) { (currentShowCompletedOnly, currentStandaloneOrders, currentAllGroups) ->
+                // 使用外部定义的变量
+                val currentState = if (currentShowCompletedOnly) {
                     completedListState
                 } else {
                     incompleteListState
@@ -449,8 +450,8 @@ fun CaptureScreenContent(
                                         onClick = { onNavigateToDetail(group) },
                                         onMarkAllCompleted = { performHaptic(); onMarkGroupCompleted(group.id) },
                                         onDeleteGroup = { performHaptic(); onDeleteGroup(group) },
-                                        isEditMode = isEditMode,
                                         initiallyExpanded = expandedGroupId == group.id,
+                                        isEditMode = isEditMode,
                                         isSelectable = isEditMode,
                                         isSelected = selectedGroupIds.contains(group.id),
                                         onSelectionChange = { checked ->
@@ -493,7 +494,7 @@ fun CaptureScreenContent(
                                         onMarkCompleted = { performHaptic(); onMarkCompleted(order.id) },
                                         onDelete = { performHaptic(); orderToDelete = order },
                                         onShowQr = { performHaptic(); selectedOrderForQr = order },
-                                        isCompleted = isCompletedOnly,
+                                        isCompleted = currentShowCompletedOnly,
                                         isHighlighted = highlightOrderId == order.id,
                                         isEditMode = isEditMode,
                                         onNavigateToDetail = onNavigateToDetail,
@@ -763,7 +764,7 @@ fun OrderGroupCard(
 ) {
     val context = LocalContext.current
     val viewModel: OrderViewModel = viewModel()
-    var isExpanded by remember { mutableStateOf(initiallyExpanded) }
+    var isExpanded by remember { mutableStateOf(false) }
     LaunchedEffect(initiallyExpanded) {
         if (initiallyExpanded) {
             isExpanded = true
@@ -847,54 +848,56 @@ fun OrderGroupCard(
                 Text(text = "包含 ${groupOrders.size} 个取件码", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 // 操作按钮放在标题下面（只在非编辑模式下显示）
-                AnimatedVisibility(
-                    visible = !isEditMode,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clipToBounds()
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            FilledTonalButton(
-                                onClick = { performHaptic(); onMarkAllCompleted() },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(15.dp)
-                            ) {
-                                Text("全部完成")
+                    if (!isEditMode) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Spacer(Modifier.height(0.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                FilledTonalButton(
+                                    onClick = { performHaptic(); onMarkAllCompleted() },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(15.dp)
+                                ) {
+                                    Text("全部完成")
+                                }
+                                OutlinedButton(
+                                    onClick = { performHaptic(); onDeleteGroup() },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                    shape = RoundedCornerShape(15.dp)
+                                ) {
+                                    Text("删除组")
+                                }
                             }
-                            OutlinedButton(
-                                onClick = { performHaptic(); onDeleteGroup() },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                                shape = RoundedCornerShape(15.dp)
-                            ) {
-                                Text("删除组")
-                            }
-                        }
 
-                        // 再次推送实时通知按钮
-                        if (!group.isCompleted) {
-                            FilledTonalButton(
-                                onClick = {
-                                    performHaptic()
-                                    // 推送组通知
-                                    val notificationGroup = OrderGroup(
-                                        id = group.id,
-                                        name = group.name,
-                                        orderType = group.orderType,
-                                        brandName = group.brandName,
-                                        screenshotPath = group.screenshotPath,
-                                        recognizedText = group.recognizedText,
-                                        sourceApp = group.sourceApp
-                                    )
-                                    NotificationHelper(context).showGroupNotification(notificationGroup, groupOrders)
-                                },
-                                modifier = Modifier.fillMaxWidth().height(44.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-                            ) {
-                                Icon(Icons.Default.NotificationAdd, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("再次推送实时通知", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            // 再次推送实时通知按钮
+                            if (!group.isCompleted) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        performHaptic()
+                                        val notificationGroup = OrderGroup(
+                                            id = group.id,
+                                            name = group.name,
+                                            orderType = group.orderType,
+                                            brandName = group.brandName,
+                                            screenshotPath = group.screenshotPath,
+                                            recognizedText = group.recognizedText,
+                                            sourceApp = group.sourceApp
+                                        )
+                                        NotificationHelper(context).showGroupNotification(notificationGroup, groupOrders)
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                                ) {
+                                    Icon(Icons.Default.NotificationAdd, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("再次推送实时通知", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -959,10 +962,11 @@ fun OrderGroupCard(
                 }
 
                 // 展开/折叠内容（只在非编辑模式下显示）
-                AnimatedVisibility(
+                Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
+                androidx.compose.animation.AnimatedVisibility(
                     visible = isExpanded && !isEditMode,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -978,14 +982,15 @@ fun OrderGroupCard(
                                         onShowQr = { /* TODO: 显示二维码 */ },
                                         isCompleted = order.isCompleted,
                                         isEditMode = isEditMode,
-                                        showRealtimeNotification = false,
                                         onNavigateToDetail = { /* TODO: 导航到详情 */ },
+                                        showRealtimeNotification = false,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -1038,7 +1043,7 @@ fun OrderCard(
                                 text = order.takeoutCode,
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = if (isCompleted && !showRealtimeNotification) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
                                 textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
                             )
                             if (!order.pickupLocation.isNullOrEmpty()) {
@@ -1052,7 +1057,7 @@ fun OrderCard(
                                     text = order.pickupLocation!!,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = if (isCompleted && !showRealtimeNotification) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                     textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
@@ -1071,27 +1076,30 @@ fun OrderCard(
             }
             Text(text = "时间: $timeStr", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) )
 
-            AnimatedVisibility(
-                visible = !isEditMode,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clipToBounds()
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (!isCompleted) { FilledTonalButton(onClick = onMarkCompleted, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) { Text("完成") } }
-                        OutlinedButton(onClick = onDelete, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) { Text("删除") }
-                    }
+                if (!isEditMode) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Spacer(Modifier.height(0.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (!isCompleted) { FilledTonalButton(onClick = onMarkCompleted, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp)) { Text("完成") } }
+                            OutlinedButton(onClick = onDelete, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error), shape = RoundedCornerShape(15.dp)) { Text("删除") }
+                        }
 
-                    if (!isCompleted && showRealtimeNotification) {
-                        FilledTonalButton(
-                            onClick = { NotificationHelper(context).showPromotedLiveUpdate(order) },
-                            modifier = Modifier.fillMaxWidth().height(44.dp),
-                            shape = RoundedCornerShape(15.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-                        ) {
-                            Icon(Icons.Default.NotificationAdd, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("再次推送实时通知", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        if (!isCompleted && showRealtimeNotification) {
+                            FilledTonalButton(
+                                onClick = { NotificationHelper(context).showPromotedLiveUpdate(order) },
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(15.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                            ) {
+                                Icon(Icons.Default.NotificationAdd, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("再次推送实时通知", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

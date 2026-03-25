@@ -557,6 +557,8 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                     showProgressDialog = false
                     if (file != null) {
                         UpdateHelper.installUpdate(context, file)
+                    } else {
+                        android.widget.Toast.makeText(context, "下载失败或更新包已失效", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
             }

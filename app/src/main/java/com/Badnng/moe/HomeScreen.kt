@@ -331,11 +331,17 @@ fun HomeScreen(
                         orders = groupOrders,
                         onBack = { detailGroup = null },
                         onMarkAllCompleted = {
+                            val completedAt = System.currentTimeMillis()
                             groupOrders = groupOrders.map {
-                                if (it.isCompleted) it else it.copy(isCompleted = true, completedAt = System.currentTimeMillis())
+                                if (it.isCompleted) it else it.copy(isCompleted = true, completedAt = completedAt)
                             }
-                            viewModel.markAllOrdersInGroupCompleted(displayGroup.id)
-                            detailGroup = null
+                            detailGroup = displayGroup.copy(
+                                isCompleted = true,
+                                completedAt = completedAt,
+                                orderCount = groupOrders.size
+                            )
+                            previousDetailGroup = detailGroup
+                            viewModel.markGroupAsCompleted(displayGroup.id)
                         },
                         onMarkOrderCompleted = { order ->
                             groupOrders = groupOrders.map {
