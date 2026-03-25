@@ -123,17 +123,13 @@ object UpdateHelper {
             setDownloadingState(true, updateInfo)
             onProgress(0f)
 
-            val relativeUrl = updateInfo.downloadUrl.trim()
-            if (relativeUrl.isEmpty()) {
+            val rawDownloadUrl = updateInfo.downloadUrl.trim()
+            if (rawDownloadUrl.isEmpty()) {
                 Log.e(TAG, "下载失败: empty download url")
                 return@withContext null
             }
 
-            val downloadUrl = if (relativeUrl.startsWith("http://") || relativeUrl.startsWith("https://")) {
-                relativeUrl
-            } else {
-                DOWNLOAD_BASE_URL + relativeUrl.trimStart('/')
-            }
+            val downloadUrl = resolveProxiedDownloadUrl(rawDownloadUrl) ?: return@withContext null
 
             val response = client.newCall(Request.Builder().url(downloadUrl).build()).execute()
             if (!response.isSuccessful) {
@@ -244,6 +240,22 @@ object UpdateHelper {
         if (expectedMd5.isNullOrBlank()) return true
         val actualMd5 = calculateMd5(file) ?: return false
         return actualMd5.equals(expectedMd5.trim(), ignoreCase = true)
+    }
+
+    private fun resolveProxiedDownloadUrl(rawUrl: String): String? {
+        val trimmed = rawUrl.trim()
+        if (trimmed.isEmpty()) return null
+
+        val suffix = when {
+            trimmed.startsWith(DOWNLOAD_BASE_URL) -> trimmed.removePrefix(DOWNLOAD_BASE_URL)
+            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> {
+                trimmed.substringAfter("://").substringAfter("/", "")
+            }
+            else -> trimmed.trimStart('/')
+        }.trimStart('/')
+
+        if (suffix.isEmpty()) return null
+        return DOWNLOAD_BASE_URL + suffix
     }
 
     private fun calculateMd5(file: File): String? {
