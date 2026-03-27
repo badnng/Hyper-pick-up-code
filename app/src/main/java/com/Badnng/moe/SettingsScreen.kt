@@ -252,19 +252,14 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
             shadowElevation = 4.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
-                val context = LocalContext.current
-                val bitmap = remember {
-                    android.graphics.BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher_foreground)
-                }
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Logo",
-                        modifier = Modifier.size(90.dp)
-                    )
-                }
+                Image(
+                    painter = painterResource(id = R.drawable.abouttopicon),
+                    contentDescription = "Logo",
+                    modifier = Modifier.size(66.dp)
+                )
             }
         }
+
 
         Spacer(Modifier.height(16.dp))
         Text(text = "澎湃记", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
