@@ -17,13 +17,15 @@ class PermissionActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         val useShizuku = intent.getBooleanExtra("use_shizuku", false)
+        val useRoot = intent.getBooleanExtra("use_root", false)
         val triggeredByAccessibilityShortcut = intent.getBooleanExtra("triggered_by_accessibility_shortcut", false)
         
-        if (useShizuku) {
+        if (useShizuku || useRoot) {
             // Shizuku 模式：由于此 Activity 已通过 startActivityAndCollapse 拉起
             // 系统控制中心已自动收起。现在我们直接启动后台服务并退出 Activity。
             val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
-                putExtra("use_shizuku", true)
+                putExtra("use_shizuku", useShizuku)
+                putExtra("use_root", useRoot)
                 putExtra("triggered_by_accessibility_shortcut", triggeredByAccessibilityShortcut)
             }
             ContextCompat.startForegroundService(this, serviceIntent)

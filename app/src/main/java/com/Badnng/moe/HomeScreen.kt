@@ -33,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -203,37 +202,9 @@ fun HomeScreen(
     }
 
     val backgroundColor = MaterialTheme.colorScheme.background
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val secondaryContainerColor = MaterialTheme.colorScheme.secondaryContainer
     val isDarkPalette = backgroundColor.luminance() < 0.5f
     val usePureBlackHomeBackground = amoledPureBlack && isDarkPalette
-    val backgroundBrush = remember(
-        backgroundColor,
-        primaryColor,
-        secondaryContainerColor,
-        isDarkPalette,
-        usePureBlackHomeBackground
-    ) {
-        if (usePureBlackHomeBackground) {
-            Brush.verticalGradient(listOf(Color.Black, Color.Black))
-        } else if (isDarkPalette) {
-            Brush.verticalGradient(
-                listOf(
-                    backgroundColor,
-                    primaryColor.copy(alpha = 0.22f),
-                    backgroundColor
-                )
-            )
-        } else {
-            Brush.verticalGradient(
-                listOf(
-                    backgroundColor,
-                    primaryColor.copy(alpha = 0.12f),
-                    secondaryContainerColor.copy(alpha = 0.18f)
-                )
-            )
-        }
-    }
+    val homeBackgroundColor = if (usePureBlackHomeBackground) Color.Black else backgroundColor
     val backdrop = rememberLayerBackdrop {
         drawRect(backgroundColor)
         drawContent()
@@ -242,7 +213,7 @@ fun HomeScreen(
     var isSettingsSubPageOpen by remember { mutableStateOf(false) }
     val isUiHidden = isSettingsSubPageOpen || isManaging
 
-    Box(modifier = modifier.fillMaxSize().background(backgroundBrush)) {
+    Box(modifier = modifier.fillMaxSize().background(homeBackgroundColor)) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,

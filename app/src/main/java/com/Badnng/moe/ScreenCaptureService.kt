@@ -43,12 +43,27 @@ class ScreenCaptureService : Service() {
     private val accessibilityCaptureDelayMs = 950L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val useShizuku = intent?.getBooleanExtra("use_shizuku", false) ?: false
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        val currentMode = prefs.getString("capture_mode", "media_projection") ?: "media_projection"
+        val intentUseShizuku = intent?.getBooleanExtra("use_shizuku", false) ?: false
+        val intentUseRoot = intent?.getBooleanExtra("use_root", false) ?: false
+        val useRoot = when {
+            intentUseRoot -> true
+            intentUseShizuku -> false
+            currentMode == "root" -> true
+            else -> false
+        }
+        val useShizuku = when {
+            intentUseShizuku -> true
+            intentUseRoot -> false
+            currentMode == "shizuku" -> true
+            else -> false
+        }
         triggeredByAccessibilityShortcut = intent?.getBooleanExtra("triggered_by_accessibility_shortcut", false) ?: false
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val type = if (useShizuku) {
+                val type = if (useShizuku || useRoot) {
                     if (Build.VERSION.SDK_INT >= 34) {
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                     } else {
@@ -67,7 +82,14 @@ class ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        if (useShizuku) {
+        if (useRoot) {
+            if (!RootHelper.hasRootAccess()) {
+                Toast.makeText(applicationContext, "Root 不可用，无法执行截图", Toast.LENGTH_SHORT).show()
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            startRootCaptureSingleTry()
+        } else if (useShizuku) {
             startShizukuCaptureSingleTry()
         } else {
             val resultCode = intent?.getIntExtra("resultCode", Activity.RESULT_CANCELED)
@@ -118,6 +140,43 @@ class ScreenCaptureService : Service() {
                 }
             } catch (e: Exception) {
                 Log.e("CaptureLog", "Shizuku capture failed", e)
+                stopSelf()
+            } finally {
+                bitmap?.recycle()
+            }
+        }
+    }
+
+    private fun startRootCaptureSingleTry() {
+        scope.launch {
+            val captureDelay = if (triggeredByAccessibilityShortcut) {
+                accessibilityCaptureDelayMs
+            } else {
+                normalCaptureDelayMs
+            }
+            delay(captureDelay)
+            val pkg = getForegroundPackageName(applicationContext)
+            val appName = pkg?.let { getAppName(applicationContext, it) }
+
+            var bitmap: Bitmap? = null
+
+            try {
+                bitmap = RootHelper.captureScreenshot()
+                if (bitmap != null) {
+                    val cropped = cropStatusBar(bitmap)
+                    recognizeAndStop(cropped, appName, pkg, triggeredByAccessibilityShortcut)
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            applicationContext,
+                            "Root 截图失败，请确认 Root 权限可用",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    stopSelf()
+                }
+            } catch (e: Exception) {
+                Log.e("CaptureLog", "Root capture failed", e)
                 stopSelf()
             } finally {
                 bitmap?.recycle()
@@ -391,9 +450,6 @@ class ScreenCaptureService : Service() {
                     ).show()
                 }
             } finally {
-                if (triggeredByAccessibilityShortcut) {
-                    AccessibilityShortcutHelper.disableServiceWithShizuku(applicationContext)
-                }
                 try {
                     helper?.close()
                 } catch (e: Exception) {
@@ -421,6 +477,7 @@ class ScreenCaptureService : Service() {
         }
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("\u6b63\u5728\u626b\u63cf\u5c4f\u5e55")
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .build()
     }

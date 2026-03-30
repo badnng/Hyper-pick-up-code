@@ -71,6 +71,7 @@ import com.Badnng.moe.UpdateDialog
 import com.Badnng.moe.UpdateProgressDialog
 import com.Badnng.moe.BackupHelper
 import com.Badnng.moe.AccessibilityShortcutHelper
+import com.Badnng.moe.RootHelper
 import com.Badnng.moe.OrderDatabase
 import java.io.File
 
@@ -1111,7 +1112,45 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
     var captureMode by remember { mutableStateOf(prefs.getString("capture_mode", "media_projection") ?: "media_projection") }
     var volumeKeyShortcutEnabled by remember { mutableStateOf(prefs.getBoolean("volume_key_shortcut_enabled", false)) }
     var shizukuReady by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { while (true) { shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }; if (!shizukuReady && captureMode == "shizuku") { captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() }; if (!shizukuReady && volumeKeyShortcutEnabled) { volumeKeyShortcutEnabled = false; prefs.edit().putBoolean("volume_key_shortcut_enabled", false).apply() }; delay(1500) } }
+    var rootReady by remember { mutableStateOf(false) }
+
+    val currentShortcutBackend = remember(captureMode, shizukuReady, rootReady) {
+        when (captureMode) {
+            "shizuku" -> if (shizukuReady) "shizuku" else null
+            "root" -> if (rootReady) "root" else null
+            else -> null
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }
+            rootReady = withContext(Dispatchers.IO) { RootHelper.hasRootAccess() }
+            if (!shizukuReady && captureMode == "shizuku") {
+                captureMode = "media_projection"
+                prefs.edit().putString("capture_mode", "media_projection").apply()
+            }
+            if (!rootReady && captureMode == "root") {
+                captureMode = "media_projection"
+                prefs.edit().putString("capture_mode", "media_projection").apply()
+            }
+            if (captureMode == "media_projection" && volumeKeyShortcutEnabled) {
+                Thread {
+                    if (rootReady) {
+                        AccessibilityShortcutHelper.disableServiceWithRoot(context)
+                    } else if (shizukuReady) {
+                        AccessibilityShortcutHelper.disableServiceWithShizuku(context)
+                    }
+                }.start()
+                volumeKeyShortcutEnabled = false
+                prefs.edit().putBoolean("volume_key_shortcut_enabled", false).apply()
+            } else if (!shizukuReady && !rootReady && volumeKeyShortcutEnabled) {
+                volumeKeyShortcutEnabled = false
+                prefs.edit().putBoolean("volume_key_shortcut_enabled", false).apply()
+            }
+            delay(1500)
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1122,29 +1161,65 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
     ) {
         Spacer(Modifier.height(16.dp))
         Text("选择截图技术方案", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        CaptureModeItem(title = "共享屏幕 (MediaProjection)", description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认", selected = captureMode == "media_projection", onClick = { performHaptic(); captureMode = "media_projection"; prefs.edit().putString("capture_mode", "media_projection").apply() })
+        CaptureModeItem(
+            title = "共享屏幕 (MediaProjection)",
+            description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认",
+            selected = captureMode == "media_projection",
+            onClick = {
+                performHaptic()
+                captureMode = "media_projection"
+                prefs.edit().putString("capture_mode", "media_projection").apply()
+                if (volumeKeyShortcutEnabled) {
+                    Thread {
+                        if (rootReady) {
+                            AccessibilityShortcutHelper.disableServiceWithRoot(context)
+                        } else if (shizukuReady) {
+                            AccessibilityShortcutHelper.disableServiceWithShizuku(context)
+                        }
+                    }.start()
+                    volumeKeyShortcutEnabled = false
+                    prefs.edit().putBoolean("volume_key_shortcut_enabled", false).apply()
+                }
+            }
+        )
         CaptureModeItem(title = "Shizuku 免授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { performHaptic(); captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
+        CaptureModeItem(title = "Root 免授权", description = if (rootReady) "通过 Root 可实现免授权后台截图识别" else "Root 不可用，此选项当前不可用。", selected = captureMode == "root", enabled = rootReady, onClick = { if (rootReady) { performHaptic(); captureMode = "root"; prefs.edit().putString("capture_mode", "root").apply() } })
         Surface(
             onClick = {
-                if (shizukuReady) {
+                if (currentShortcutBackend != null) {
                     performHaptic()
                     val targetEnabled = !volumeKeyShortcutEnabled
-                    val success = if (targetEnabled) {
-                        AccessibilityShortcutHelper.configureShortcutWithShizuku(context)
+                    if (targetEnabled) {
+                        prefs.edit().putBoolean("skip_next_accessibility_connect", true).apply()
                     } else {
-                        AccessibilityShortcutHelper.disableServiceWithShizuku(context)
+                        prefs.edit().putBoolean("skip_next_accessibility_connect", false).apply()
+                    }
+                    val success = when (currentShortcutBackend) {
+                        "root" -> if (targetEnabled) {
+                            AccessibilityShortcutHelper.configureShortcutWithRoot(context)
+                        } else {
+                            AccessibilityShortcutHelper.disableServiceWithRoot(context)
+                        }
+                        "shizuku" -> if (targetEnabled) {
+                            AccessibilityShortcutHelper.configureShortcutWithShizuku(context)
+                        } else {
+                            AccessibilityShortcutHelper.disableServiceWithShizuku(context)
+                        }
+                        else -> false
                     }
                     if (success) {
                         volumeKeyShortcutEnabled = targetEnabled
                         prefs.edit().putBoolean("volume_key_shortcut_enabled", targetEnabled).apply()
+                    } else {
+                        prefs.edit().putBoolean("skip_next_accessibility_connect", false).apply()
                     }
                 }
             },
             shape = RoundedCornerShape(15.dp),
-            color = if (shizukuReady) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
+            color = if (currentShortcutBackend != null) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
             modifier = Modifier.fillMaxWidth(),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (shizukuReady) 0.65f else 0.35f)),
-            enabled = shizukuReady
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (currentShortcutBackend != null) 0.65f else 0.35f)),
+            enabled = currentShortcutBackend != null
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -1156,18 +1231,23 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
                         text = "音量键快捷触发",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (shizukuReady) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        color = if (currentShortcutBackend != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                     Text(
-                        text = if (shizukuReady) "通过 Shizuku 一键配置无障碍快捷方式，启用后可使用音量键快捷触发截图识别" else "需要 Shizuku 已运行并授权后才可启用",
+                        text = when {
+                            captureMode == "root" && rootReady -> "通过 Root 一键配置无障碍快捷方式，启用后可使用音量键快捷触发截图识别"
+                            captureMode == "shizuku" && shizukuReady -> "通过 Shizuku 一键配置无障碍快捷方式，启用后可使用音量键快捷触发截图识别"
+                            captureMode == "media_projection" -> "请先选择 Root 或 Shizuku 截图方案后再启用"
+                            else -> "当前方案不可用，请检查 Root/Shizuku 状态"
+                        },
                         fontSize = 12.sp,
-                        color = if (shizukuReady) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        color = if (currentShortcutBackend != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
                 }
                 Switch(
                     checked = volumeKeyShortcutEnabled,
                     onCheckedChange = null,
-                    enabled = shizukuReady
+                    enabled = currentShortcutBackend != null
                 )
             }
         }

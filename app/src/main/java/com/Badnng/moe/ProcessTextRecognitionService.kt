@@ -82,7 +82,7 @@ class ProcessTextRecognitionService : Service() {
         }
         return androidx.core.app.NotificationCompat.Builder(this, channelId)
             .setContentTitle("正在识别文字")
-            .setSmallIcon(android.R.drawable.ic_menu_edit)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .build()
     }

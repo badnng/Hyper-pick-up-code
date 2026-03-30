@@ -218,7 +218,7 @@ class ShareRecognitionService : Service() {
         }
         return androidx.core.app.NotificationCompat.Builder(this, channelId)
             .setContentTitle("\u6b63\u5728\u8bc6\u522b\u622a\u56fe")
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .build()
     }
