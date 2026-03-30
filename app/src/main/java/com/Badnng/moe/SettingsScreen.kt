@@ -434,7 +434,8 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                 Surface(
                     shape = RoundedCornerShape(15.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -495,7 +496,8 @@ fun AboutSettingsContent(performHaptic: () -> Unit) {
                 Surface(
                     shape = RoundedCornerShape(15.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -618,7 +620,8 @@ fun OssItem(name: String, desc: String, url: String, performHaptic: () -> Unit) 
         },
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -785,7 +788,8 @@ fun StorageSettingsContent(performHaptic: () -> Unit, prefs: android.content.Sha
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StorageLegendRow(
@@ -874,7 +878,12 @@ fun StorageLegendRow(color: Color, label: String, size: String, description: Str
 
 @Composable
 fun StorageActionCard(title: String, description: String, size: String, onClear: () -> Unit) {
-    Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+    ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -914,6 +923,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
     var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
     var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "system") ?: "system") }
     var monetEnabled by remember { mutableStateOf(prefs.getBoolean("monet_enabled", true)) }
+    var amoledPureBlack by remember { mutableStateOf(prefs.getBoolean("amoled_pure_black", false)) }
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
     var showOnboardingOnNextLaunch by remember { mutableStateOf(prefs.getBoolean("show_onboarding_on_next_launch", false)) }
     var customHue by remember { mutableFloatStateOf(260f) }
@@ -933,7 +943,11 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
         PreferenceSection(title = "底栏位置") { Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("left" to "靠左", "center" to "居中", "right" to "靠右").forEach { (key, label) -> ChoiceChip(label = label, selected = navAlignment == key, onClick = { performHaptic(); navAlignment = key; prefs.edit().putString("nav_alignment", key).apply() }, modifier = Modifier.weight(1f)) } } }
 
         PreferenceSection(title = "交互反馈") {
-            Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) {
+            Surface(
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+            ) {
                 PreferenceSwitchItem(
                     title = "震动反馈",
                     description = "开启后点击按钮、切换分类时会有触感反馈",
@@ -947,12 +961,78 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
             }
         }
 
-        PreferenceSection(title = "外观设置") { Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) { PreferenceSwitchItem(title = "莫奈取色 (Dynamic Color)", description = "开启后主题色将跟随系统壁纸自动变化", checked = monetEnabled, onCheckedChange = { performHaptic(); monetEnabled = it; prefs.edit().putBoolean("monet_enabled", it).apply() }) } }
+        PreferenceSection(title = "外观设置") {
+            Surface(
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+            ) {
+                PreferenceSwitchItem(
+                    title = "莫奈取色 (Dynamic Color)",
+                    description = "开启后主题色将跟随系统壁纸自动变化",
+                    checked = monetEnabled,
+                    onCheckedChange = {
+                        performHaptic()
+                        monetEnabled = it
+                        prefs.edit().putBoolean("monet_enabled", it).apply()
+                    }
+                )
+            }
+        }
         AnimatedVisibility(visible = !monetEnabled, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { PreferenceSection(title = "自定义主题色") { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("滑动调节色相", style = MaterialTheme.typography.bodySmall); Slider(value = customHue, onValueChange = { customHue = it }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth()); val previewColor = remember(customHue) { Color.hsv(customHue, 0.7f, 0.9f) }; Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(previewColor).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)); Button(onClick = { performHaptic(); selectedColorInt = previewColor.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }, shape = RoundedCornerShape(15.dp), modifier = Modifier.weight(1f).height(56.dp)) { Text("应用颜色") } } ; Text("MD3 建议色", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)); val md3Colors = listOf(0xFF6750A4, 0xFF006A60, 0xFF984061, 0xFF005AC1, 0xFF605D62, 0xFF3B6939); Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { md3Colors.forEach { colorLong -> val color = Color(colorLong); Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(color).border(width = if (selectedColorInt == color.toArgb()) 3.dp else 0.dp, color = MaterialTheme.colorScheme.primary, shape = CircleShape).clickable { performHaptic(); selectedColorInt = color.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }) } } } } }
-        PreferenceSection(title = "显示模式") { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统").forEach { (key, label) -> Row(modifier = Modifier.fillMaxWidth().clickable { performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = themeMode == key, onClick = { performHaptic(); themeMode = key; prefs.edit().putString("theme_mode", key).apply() }); Spacer(Modifier.width(12.dp)); Text(label, fontSize = 16.sp) } } } }
+        PreferenceSection(title = "显示模式") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统").forEach { (key, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                performHaptic()
+                                themeMode = key
+                                prefs.edit().putString("theme_mode", key).apply()
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = themeMode == key,
+                            onClick = {
+                                performHaptic()
+                                themeMode = key
+                                prefs.edit().putString("theme_mode", key).apply()
+                            }
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(label, fontSize = 16.sp)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(15.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.padding(top = 8.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+                ) {
+                    PreferenceSwitchItem(
+                        title = "Amoled 纯黑深色",
+                        description = "仅在深色模式生效，让背景和表面接近纯黑",
+                        checked = amoledPureBlack,
+                        onCheckedChange = {
+                            performHaptic()
+                            amoledPureBlack = it
+                            prefs.edit().putBoolean("amoled_pure_black", it).apply()
+                        }
+                    )
+                }
+            }
+        }
 
         PreferenceSection(title = "引导设置") {
-            Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) {
+            Surface(
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+            ) {
                 PreferenceSwitchItem(
                     title = "下次启动时打开引导页面",
                     description = "开启后，彻底停止App再启动会显示引导页面，完成引导后自动关闭",
@@ -968,7 +1048,11 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit) {
 
         PreferenceSection(title = "联网更新") {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) {
+                Surface(
+                    shape = RoundedCornerShape(15.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+                ) {
                     PreferenceSwitchItem(
                         title = "联网更新",
                         description = "仅用于检测App新版本并下载，不用于其他用途",
@@ -1059,6 +1143,7 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
             shape = RoundedCornerShape(15.dp),
             color = if (shizukuReady) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
             modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (shizukuReady) 0.65f else 0.35f)),
             enabled = shizukuReady
         ) {
             Row(
@@ -1172,7 +1257,8 @@ fun PermissionSettingsContent(performHaptic: () -> Unit) {
                 // 说明卡片
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -1197,7 +1283,8 @@ fun PermissionSettingsContent(performHaptic: () -> Unit) {
                 // 基础设置
                 Surface(
                     shape = RoundedCornerShape(15.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
                 ) {
                     PreferenceSwitchItem(
                         title = "启用保活",
@@ -1252,7 +1339,8 @@ fun PermissionSettingsContent(performHaptic: () -> Unit) {
                 Surface(
                     shape = RoundedCornerShape(15.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
@@ -1351,7 +1439,12 @@ fun PreferenceSwitchItem(title: String, description: String, checked: Boolean, o
 
 @Composable
 fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(15.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null, modifier = modifier) {
+    val chipBorder = if (selected) {
+        BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+    } else {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+    }
+    Surface(onClick = onClick, shape = RoundedCornerShape(15.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), border = chipBorder, modifier = modifier) {
         Box(modifier = Modifier.padding(vertical = 14.dp), contentAlignment = Alignment.Center) { Text(label, color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, fontSize = 15.sp) }
     }
 }
@@ -1366,7 +1459,12 @@ fun PreferenceSection(title: String, content: @Composable () -> Unit) {
 
 @Composable
 fun PermissionItem(title: String, description: String, isGranted: Boolean, actionButton: @Composable (() -> Unit)? = null) {
-    Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+    ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(text = title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -1380,7 +1478,12 @@ fun PermissionItem(title: String, description: String, isGranted: Boolean, actio
 
 @Composable
 fun CaptureModeItem(title: String, description: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
-    Surface(onClick = { if (enabled) onClick() }, shape = RoundedCornerShape(15.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else if (!enabled) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), border = if (selected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null, modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.5f)) {
+    val modeBorder = if (selected) {
+        BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+    } else {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (enabled) 0.7f else 0.35f))
+    }
+    Surface(onClick = { if (enabled) onClick() }, shape = RoundedCornerShape(15.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else if (!enabled) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), border = modeBorder, modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.5f)) {
         Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
@@ -1393,7 +1496,12 @@ fun CaptureModeItem(title: String, description: String, selected: Boolean, enabl
 
 @Composable
 fun SettingsListItem(title: String, description: String?, onClick: () -> Unit) {
-    Surface(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(15.dp)).clickable(onClick = onClick), shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(15.dp)).clickable(onClick = onClick),
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+    ) {
         ListItem(headlineContent = { Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium) }, supportingContent = if (description != null) { { Text(text = description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)) } } else null, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
     }
 }
@@ -1434,7 +1542,8 @@ fun KeepAliveSettingsContent(performHaptic: () -> Unit) {
         // 说明卡片
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -1459,7 +1568,8 @@ fun KeepAliveSettingsContent(performHaptic: () -> Unit) {
         PreferenceSection(title = "基础设置") {
             Surface(
                 shape = RoundedCornerShape(15.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
             ) {
                 PreferenceSwitchItem(
                     title = "启用保活",
@@ -1516,7 +1626,8 @@ fun KeepAliveSettingsContent(performHaptic: () -> Unit) {
             Surface(
                 shape = RoundedCornerShape(15.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -1596,7 +1707,8 @@ fun VendorKeepAliveItem(vendor: String, steps: List<String>, performHaptic: () -
         onClick = { performHaptic(); expanded = !expanded },
         shape = RoundedCornerShape(15.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(

@@ -1,21 +1,23 @@
 package com.Badnng.moe
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import kotlinx.coroutines.launch
 
 @Composable
 fun UpdateDialog(
@@ -23,6 +25,9 @@ fun UpdateDialog(
     onDismiss: () -> Unit,
     onInstall: () -> Unit
 ) {
+    val largeFont = LocalDensity.current.fontScale >= 1.2f
+    val maxDialogHeight = LocalConfiguration.current.screenHeightDp.dp * 0.8f
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -31,6 +36,9 @@ fun UpdateDialog(
         )
     ) {
         Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = maxDialogHeight),
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp
@@ -50,38 +58,63 @@ fun UpdateDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = updateInfo.releaseNotes,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 20.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = updateInfo.releaseNotes,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp)
+                if (largeFont) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("暂不更新")
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("暂不更新", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Button(
+                            onClick = onInstall,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("立即更新", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
-
-                    Button(
-                        onClick = onInstall,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp)
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("立即更新")
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("暂不更新")
+                        }
+
+                        Button(
+                            onClick = onInstall,
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("立即更新")
+                        }
                     }
                 }
             }
@@ -97,6 +130,8 @@ fun UpdateProgressDialog(
     onResume: () -> Unit,
     onCancel: () -> Unit
 ) {
+    val largeFont = LocalDensity.current.fontScale >= 1.2f
+
     Dialog(
         onDismissRequest = {},
         properties = DialogProperties(
@@ -144,28 +179,47 @@ fun UpdateProgressDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onCancel,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp)
+                if (largeFont) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("后台更新")
-                    }
+                        OutlinedButton(
+                            onClick = onCancel,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("后台更新", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
 
-                    Button(
-                        onClick = if (isPaused) onResume else onPause,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp)
+                        Button(
+                            onClick = if (isPaused) onResume else onPause,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(if (isPaused) "继续" else "暂停", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(if (isPaused) "继续" else "暂停")
+                        OutlinedButton(
+                            onClick = onCancel,
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("后台更新")
+                        }
+
+                        Button(
+                            onClick = if (isPaused) onResume else onPause,
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(if (isPaused) "继续" else "暂停")
+                        }
                     }
                 }
             }

@@ -14,6 +14,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -130,6 +131,7 @@ fun CaptureScreen(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CaptureScreenContent(
     incompleteOrders: List<OrderEntity>,
@@ -876,20 +878,31 @@ fun OrderGroupCard(
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Spacer(Modifier.height(0.dp))
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                FilledTonalButton(
-                                    onClick = { performHaptic(); onMarkAllCompleted() },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(15.dp)
-                                ) {
-                                    Text("全部完成")
-                                }
-                                OutlinedButton(
-                                    onClick = { performHaptic(); onDeleteGroup() },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                                    shape = RoundedCornerShape(15.dp)
-                                ) {
-                                    Text("删除组")
+                                if (!group.isCompleted) {
+                                    FilledTonalButton(
+                                        onClick = { performHaptic(); onMarkAllCompleted() },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(15.dp)
+                                    ) {
+                                        Text("全部完成")
+                                    }
+                                    OutlinedButton(
+                                        onClick = { performHaptic(); onDeleteGroup() },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                        shape = RoundedCornerShape(15.dp)
+                                    ) {
+                                        Text("删除组")
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { performHaptic(); onDeleteGroup() },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                        shape = RoundedCornerShape(15.dp)
+                                    ) {
+                                        Text("删除组")
+                                    }
                                 }
                             }
 

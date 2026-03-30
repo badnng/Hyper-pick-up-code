@@ -20,6 +20,7 @@ fun 澎湃记Theme(
     // 使用 State 封装配置，并添加监听器实现实时刷新
     var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "system")) }
     var monetEnabled by remember { mutableStateOf(prefs.getBoolean("monet_enabled", true)) }
+    var amoledPureBlack by remember { mutableStateOf(prefs.getBoolean("amoled_pure_black", false)) }
     var seedColorInt by remember { mutableIntStateOf(prefs.getInt("theme_color", Color(0xFF6750A4).toArgb())) }
 
     // 监听 SharedPreferences 的变化
@@ -28,6 +29,7 @@ fun 澎湃记Theme(
             when (key) {
                 "theme_mode" -> themeMode = p.getString(key, "system")
                 "monet_enabled" -> monetEnabled = p.getBoolean(key, true)
+                "amoled_pure_black" -> amoledPureBlack = p.getBoolean(key, false)
                 "theme_color" -> seedColorInt = p.getInt(key, Color(0xFF6750A4).toArgb())
             }
         }
@@ -43,7 +45,7 @@ fun 澎湃记Theme(
         else -> isSystemInDarkTheme()
     }
 
-    val colorScheme = when {
+    val baseColorScheme = when {
         monetEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
@@ -55,6 +57,16 @@ fun 澎湃记Theme(
                 lightColorScheme(primary = seedColor, secondaryContainer = seedColor.copy(alpha = 0.1f))
             }
         }
+    }
+
+    val colorScheme = if (darkTheme && amoledPureBlack) {
+        baseColorScheme.copy(
+            background = Color.Black,
+            surface = Color.Black,
+            surfaceVariant = Color.Black
+        )
+    } else {
+        baseColorScheme
     }
 
     MaterialTheme(
