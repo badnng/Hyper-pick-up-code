@@ -240,17 +240,33 @@ class TextRecognitionHelper(private val context: Context) {
             }
         }
 
-        val foodKeywords = listOf("取餐号", "取餐码", "取茶号", "券码", "订单号", "取性码", "取養号")
+        val foodKeywords = listOf("取单码", "取单号", "取餐号", "取餐码", "取茶号", "取货码", "券码", "订单号", "取性码", "取養号")
         val hasFoodKeywords = mergedText.contains("取餐") || mergedText.contains("取茶") ||
                 mergedText.contains("验证码") || mergedText.contains("券码") ||
                 mergedText.contains("订单") || mergedText.contains("准备完毕") ||
-                mergedText.contains("领取") || mergedText.contains("取養")
+                mergedText.contains("领取") || mergedText.contains("取養") ||
+                mergedText.contains("取单") || mergedText.contains("取货")
 
         var targetKeywordRect: android.graphics.Rect? = null
 
         // 第一步：精确从关键词后截取
         for (block in blocks) {
             val text = block.text.replace(" ", "").replace("\n", "")
+            val keywordPattern = "(取单码|取单号|取餐号|取餐码|取茶号|取货码|券码|订单号|取性码|取養号)"
+            val forwardMatch = Regex("$keywordPattern[:：]?([A-Z0-9]{3,10})").find(text)
+            if (forwardMatch != null) {
+                val code = forwardMatch.groupValues[2]
+                if (!isInvalidFoodCode(code, text, detectedBrand)) {
+                    return code
+                }
+            }
+            val reverseMatch = Regex("([A-Z0-9]{3,10})[:：]?$keywordPattern").find(text)
+            if (reverseMatch != null) {
+                val code = reverseMatch.groupValues[1]
+                if (!isInvalidFoodCode(code, text, detectedBrand)) {
+                    return code
+                }
+            }
             val matchedKeyword = foodKeywords.firstOrNull { text.contains(it) } ?: continue
             targetKeywordRect = block.boundingBox
             val afterKeyword = text.substringAfter(matchedKeyword).trimStart(':', '：', ' ')
@@ -282,6 +298,13 @@ class TextRecognitionHelper(private val context: Context) {
             val text = block.text.replace(" ", "").replace("\n", "")
             pattern.findAll(text).mapNotNull { match ->
                 val value = match.value
+                if (value.length == 3 && value.all { it.isDigit() }) {
+                    val aroundStart = (match.range.first - 6).coerceAtLeast(0)
+                    val aroundEnd = (match.range.last + 6).coerceAtMost(text.lastIndex)
+                    val around = text.substring(aroundStart, aroundEnd + 1)
+                    val nearKeyword = foodKeywords.any { around.contains(it) }
+                    if (!nearKeyword) return@mapNotNull null
+                }
                 if (isInvalidFoodCode(value, text, detectedBrand)) return@mapNotNull null
                 var weight = (block.boundingBox?.width() ?: 0) * value.length
                 if (detectedBrand == "肯德基" || detectedBrand == "麦当劳") {
@@ -516,11 +539,24 @@ class TextRecognitionHelper(private val context: Context) {
     }
 
     private fun extractFoodCodeFromText(mergedText: String, detectedBrand: String?): String? {
-        val foodKeywords = listOf("取餐号", "取餐码", "取茶号", "券码", "订单号", "取性码", "取養号")
+        val foodKeywords = listOf("取单码", "取单号", "取餐号", "取餐码", "取茶号", "取货码", "券码", "订单号", "取性码", "取養号")
         val hasFoodKeywords = mergedText.contains("取餐") || mergedText.contains("取茶") ||
-                mergedText.contains("验证码") || mergedText.contains("券码") ||
-                mergedText.contains("订单") || mergedText.contains("准备完毕") ||
-                mergedText.contains("领取") || mergedText.contains("取養")
+            mergedText.contains("验证码") || mergedText.contains("券码") ||
+            mergedText.contains("订单") || mergedText.contains("准备完毕") ||
+            mergedText.contains("领取") || mergedText.contains("取養") ||
+            mergedText.contains("取单") || mergedText.contains("取货")
+
+        val keywordPattern = "(取单码|取单号|取餐号|取餐码|取茶号|取货码|券码|订单号|取性码|取養号)"
+        val forwardMatch = Regex("$keywordPattern[:：]?([A-Z0-9]{3,10})").find(mergedText)
+        if (forwardMatch != null) {
+            val code = forwardMatch.groupValues[2]
+            if (!isInvalidFoodCode(code, mergedText, detectedBrand)) return code
+        }
+        val reverseMatch = Regex("([A-Z0-9]{3,10})[:：]?$keywordPattern").find(mergedText)
+        if (reverseMatch != null) {
+            val code = reverseMatch.groupValues[1]
+            if (!isInvalidFoodCode(code, mergedText, detectedBrand)) return code
+        }
 
         // 第一步：精确从关键词后截取
         val matchedKeyword = foodKeywords.firstOrNull { mergedText.contains(it) }
@@ -539,6 +575,13 @@ class TextRecognitionHelper(private val context: Context) {
         val pattern = Regex("(?<![a-zA-Z0-9])([A-Z0-9]{3,10})(?![a-zA-Z0-9])")
         val candidates = pattern.findAll(mergedText).mapNotNull { match ->
             val value = match.value
+            if (value.length == 3 && value.all { it.isDigit() }) {
+                val aroundStart = (match.range.first - 6).coerceAtLeast(0)
+                val aroundEnd = (match.range.last + 6).coerceAtMost(mergedText.lastIndex)
+                val around = mergedText.substring(aroundStart, aroundEnd + 1)
+                val nearKeyword = foodKeywords.any { around.contains(it) }
+                if (!nearKeyword) return@mapNotNull null
+            }
             if (isInvalidFoodCode(value, mergedText, detectedBrand)) return@mapNotNull null
             var weight = value.length
             if (detectedBrand == "肯德基" || detectedBrand == "麦当劳") {

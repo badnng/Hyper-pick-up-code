@@ -1,5 +1,8 @@
 package com.Badnng.moe.screens
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -30,6 +34,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import com.Badnng.moe.OrderEntity
 import com.Badnng.moe.OrderGroup
@@ -45,6 +50,7 @@ fun GroupDetailScreen(
     onMarkAllCompleted: () -> Unit,
     onMarkOrderCompleted: (OrderEntity) -> Unit
 ) {
+    val context = LocalContext.current
     var showFullScreen by remember { mutableStateOf(false) }
     val completedCount = orders.count { it.isCompleted }
     val totalCount = orders.size
@@ -99,6 +105,31 @@ fun GroupDetailScreen(
                     InfoItem("完成进度", "$completedCount/$totalCount")
                     InfoItem("来源应用", group.sourceApp ?: "无数据")
                     InfoItem("来源包名", group.sourcePackage ?: "暂无记录")
+                }
+            }
+
+            if (group.orderType == "快递") {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("身份码快捷入口", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { openTaobaoIdentityEntry(context) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("打开淘宝身份码")
+                    }
+                    OutlinedButton(
+                        onClick = { openPddIdentityEntry(context) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("打开拼多多身份码")
+                    }
                 }
             }
 
@@ -179,6 +210,56 @@ fun GroupDetailScreen(
         FullScreenImageDialog(imagePath = group.screenshotPath) {
             showFullScreen = false
         }
+    }
+}
+
+private fun openTaobaoIdentityEntry(context: Context) {
+    val pkg = "com.taobao.taobao"
+    val lastmile = "https://pages-fast.m.taobao.com/wow/z/uniapp/1100333/last-mile-fe/m-end-school-tab/home"
+    val candidates = listOf(
+        "tbopen://m.taobao.com/tbopen/index.html?h5Url=" + Uri.encode(lastmile)
+    )
+    for (u in candidates) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW, u.toUri())
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            return
+        } catch (_: Exception) {
+        }
+    }
+    try {
+        val i = Intent(Intent.ACTION_VIEW, lastmile.toUri())
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        i.setClassName(pkg, "com.taobao.browser.BrowserActivity")
+        context.startActivity(i)
+    } catch (_: Exception) {
+    }
+}
+
+private fun openPddIdentityEntry(context: Context) {
+    val pkg = "com.xunmeng.pinduoduo"
+    val schemes = listOf(
+        "pinduoduo://com.xunmeng.pinduoduo/mdkd/package",
+        "pinduoduo://com.xunmeng.pinduoduo/",
+        "pinduoduo://"
+    )
+    for (u in schemes) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW, u.toUri())
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            return
+        } catch (_: Exception) {
+        }
+    }
+    try {
+        val i = context.packageManager.getLaunchIntentForPackage(pkg)
+        if (i != null) {
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+        }
+    } catch (_: Exception) {
     }
 }
 

@@ -1,6 +1,8 @@
 package com.Badnng.moe
 
 import android.content.res.Configuration
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import androidx.compose.ui.graphics.asImageBitmap
 import com.Badnng.moe.ui.theme.澎湃记Theme
@@ -123,6 +126,17 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
     val isExpress = order.orderType == "快递"
     val label = if (isExpress) "取件码" else "取餐码"
     val scope = rememberCoroutineScope()
+    val markCompleted: () -> Unit = {
+        val orderId = order.id
+        val completedTime = System.currentTimeMillis()
+        val database = OrderDatabase.getDatabase(context)
+        val notificationHelper = NotificationHelper(context)
+        scope.launch {
+            database.orderDao().markAsCompleted(orderId, completedTime)
+            notificationHelper.cancelNotification(orderId)
+            onDismiss()
+        }
+    }
     
     // 动画状态
     var animationPlayed by remember { mutableStateOf(false) }
@@ -395,22 +409,7 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                     
                     // 已完成按钮
                     OutlinedButton(
-                        onClick = {
-                            // 标记订单为已完成
-                            val orderId = order.id
-                            val completedTime = System.currentTimeMillis()
-                            val database = OrderDatabase.getDatabase(context)
-                            val notificationHelper = NotificationHelper(context)
-                            
-                            // 更新数据库
-                            scope.launch {
-                                database.orderDao().markAsCompleted(orderId, completedTime)
-                                // 取消通知
-                                notificationHelper.cancelNotification(orderId)
-                                // 关闭弹窗
-                                onDismiss()
-                            }
-                        },
+                        onClick = markCompleted,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -418,6 +417,29 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                         )
                     ) {
                         Text("已完成", fontSize = 16.sp)
+                    }
+                }
+
+                if (isExpress) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { openTaobaoIdentityEntry(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("打开淘宝身份码")
+                        }
+                        OutlinedButton(
+                            onClick = { openPddIdentityEntry(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("打开拼多多身份码")
+                        }
                     }
                 }
             }
@@ -608,22 +630,7 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                     
                     // 已完成按钮
                     OutlinedButton(
-                        onClick = {
-                            // 标记订单为已完成
-                            val orderId = order.id
-                            val completedTime = System.currentTimeMillis()
-                            val database = OrderDatabase.getDatabase(context)
-                            val notificationHelper = NotificationHelper(context)
-                            
-                            // 更新数据库
-                            scope.launch {
-                                database.orderDao().markAsCompleted(orderId, completedTime)
-                                // 取消通知
-                                notificationHelper.cancelNotification(orderId)
-                                // 关闭弹窗
-                                onDismiss()
-                            }
-                        },
+                        onClick = markCompleted,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -633,7 +640,80 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                         Text("已完成", fontSize = 16.sp)
                     }
                 }
+
+                if (isExpress) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { openTaobaoIdentityEntry(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("打开淘宝身份码")
+                        }
+                        OutlinedButton(
+                            onClick = { openPddIdentityEntry(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("打开拼多多身份码")
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+private fun openTaobaoIdentityEntry(context: android.content.Context) {
+    val pkg = "com.taobao.taobao"
+    val lastmile = "https://pages-fast.m.taobao.com/wow/z/uniapp/1100333/last-mile-fe/m-end-school-tab/home"
+    val candidates = listOf(
+        "tbopen://m.taobao.com/tbopen/index.html?h5Url=" + Uri.encode(lastmile)
+    )
+    for (u in candidates) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW, u.toUri())
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            return
+        } catch (_: Exception) {
+        }
+    }
+    try {
+        val i = Intent(Intent.ACTION_VIEW, lastmile.toUri())
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        i.setClassName(pkg, "com.taobao.browser.BrowserActivity")
+        context.startActivity(i)
+    } catch (_: Exception) {
+    }
+}
+
+private fun openPddIdentityEntry(context: android.content.Context) {
+    val pkg = "com.xunmeng.pinduoduo"
+    val schemes = listOf(
+        "pinduoduo://com.xunmeng.pinduoduo/mdkd/package",
+        "pinduoduo://com.xunmeng.pinduoduo/",
+        "pinduoduo://"
+    )
+    for (u in schemes) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW, u.toUri())
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            return
+        } catch (_: Exception) {
+        }
+    }
+    try {
+        val i = context.packageManager.getLaunchIntentForPackage(pkg)
+        if (i != null) {
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+        }
+    } catch (_: Exception) {
     }
 }

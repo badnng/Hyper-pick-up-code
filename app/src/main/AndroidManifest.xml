@@ -78,6 +78,15 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
 
         <activity
+            android:name=".IdentityChooserActivity"
+            android:label="身份码选择"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:exported="false"
+            android:taskAffinity=".quickview" />
+
+        <activity
             android:name=".ShareReceiverActivity"
             android:label="识别截图"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"

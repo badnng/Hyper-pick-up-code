@@ -86,6 +86,20 @@ class NotificationHelper(private val context: Context) {
             .setContentIntent(viewPendingIntent)
             .setStyle(Notification.BigTextStyle().bigText("$label: ${order.takeoutCode}"))
             .addAction(Notification.Action.Builder(null, "已完成", completePendingIntent).build())
+
+        if (isExpress) {
+            val identityChooserIntent = Intent(context, IdentityChooserActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("from_notification", true)
+            }
+            val identityChooserPendingIntent = PendingIntent.getActivity(
+                context,
+                order.id.hashCode() + 3000,
+                identityChooserIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(Notification.Action.Builder(null, "身份码", identityChooserPendingIntent).build())
+        }
             
         if (Build.VERSION.SDK_INT >= 35) {
             val extras = Bundle()
@@ -136,7 +150,6 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 全部完成意图
         val completeAllIntent = Intent(context, NotificationReceiver::class.java).apply {
             action = "ACTION_MARK_GROUP_COMPLETED"
             putExtra("group_id", group.id)
@@ -166,6 +179,20 @@ class NotificationHelper(private val context: Context) {
             .setContentIntent(groupDetailPendingIntent)
             .setStyle(Notification.BigTextStyle().bigText("$contentText\n已完成 $completedCount/$totalCount"))
             .addAction(Notification.Action.Builder(null, "全部完成", completeAllPendingIntent).build())
+
+        if (isExpress) {
+            val identityChooserIntent = Intent(context, IdentityChooserActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("from_notification", true)
+            }
+            val identityChooserPendingIntent = PendingIntent.getActivity(
+                context,
+                group.id.hashCode() + 2000,
+                identityChooserIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(Notification.Action.Builder(null, "身份码", identityChooserPendingIntent).build())
+        }
 
         if (Build.VERSION.SDK_INT >= 35) {
             val extras = Bundle()
