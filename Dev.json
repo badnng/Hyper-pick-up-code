@@ -1,7 +1,7 @@
 {
-  "versionCode": 2026033111,
-  "versionName": "26.3.31.C01-Dev",
-  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n26.3.31.C01-Dev版本更新如下：\n1.修复 字体超过100以上时UI出现错误的问题\n2.修复 双音量键快捷触发关闭时，无障碍快捷方式还是无法顺带关闭的问题\n3.添加 首页背景支持莫奈取色\n4.添加 Amoled深色模式\n5.添加 Root模式实现",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.3.31.C01-Dev/app-release.apk",
-  "md5": "ea3623b6a4c2ca507e11d8c6ce0c7aa1"
+  "versionCode": 2026040111,
+  "versionName": "26.4.1.C01-Dev",
+  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n26.4.1.C01-Dev版本更新如下：\n1.添加 打开拼多多/淘宝身份码功能 （快递）\n2.优化 正则分类的最终结果",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.4.1.C01-Dev/app-release.apk",
+  "md5": "03a495beeb7b79c69d59786e2e5d4593"
 }
