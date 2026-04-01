@@ -117,6 +117,21 @@ fun HomeScreen(
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
+    val bottomBarWidth = if (navAlignment == "center") 275.dp else 250.dp
+    val fontScale = LocalDensity.current.fontScale
+    val largeFont = fontScale >= 1.2f
+    val bottomBarHeight = if (largeFont) 72.dp else 64.dp
+    val fabAboveBottomBarPadding = bottomBarHeight + 70.dp
+    val fabHorizontalPadding = when (navAlignment) {
+        "left", "right", "center" -> 24.dp
+        else -> 24.dp
+    }
+    val fabColumnAlignment = if (navAlignment == "left") Alignment.Start else Alignment.End
+    val identityContainerOffsetX = 0.dp
+    val fabContentAlignment = when (navAlignment) {
+        "left" -> Alignment.BottomStart
+        else -> Alignment.BottomEnd
+    }
 
     LaunchedEffect(detailOrder) {
         detailOrder?.let {
@@ -219,15 +234,13 @@ fun HomeScreen(
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                val fontScale = LocalDensity.current.fontScale
-                val largeFont = fontScale >= 1.2f
                 val alignment = when (navAlignment) {
                     "left" -> Alignment.BottomStart
                     "right" -> Alignment.BottomEnd
                     else -> Alignment.BottomCenter
                 }
-                val barWidth = if (navAlignment == "center") 275.dp else 250.dp
-                val barHeight = if (largeFont) 72.dp else 64.dp
+                val barWidth = bottomBarWidth
+                val barHeight = bottomBarHeight
 
                 // 核心修复：使用 AnimatedVisibility 彻底移除隐藏时的底栏，防止点击穿透
                 AnimatedVisibility(
@@ -260,7 +273,7 @@ fun HomeScreen(
                                     icon = { val s by animateDpAsState(if (pagerState.currentPage == 0) 28.dp else 24.dp); Icon(Icons.Default.Home, null, Modifier.size(s)) },
                                     label = { Text("主页", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                     selected = pagerState.currentPage == 0,
-                                    alwaysShowLabel = !largeFont,
+                                    alwaysShowLabel = true,
                                     onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
                                     colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                                 )
@@ -268,7 +281,7 @@ fun HomeScreen(
                                     icon = { val s by animateDpAsState(if (pagerState.currentPage == 1) 28.dp else 24.dp); Icon(Icons.Default.List, null, Modifier.size(s)) },
                                     label = { Text("日志", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                     selected = pagerState.currentPage == 1,
-                                    alwaysShowLabel = !largeFont,
+                                    alwaysShowLabel = true,
                                     onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
                                     colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                                 )
@@ -276,7 +289,7 @@ fun HomeScreen(
                                     icon = { val s by animateDpAsState(if (pagerState.currentPage == 2) 28.dp else 24.dp); Icon(Icons.Default.Settings, null, Modifier.size(s)) },
                                     label = { Text("设置", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                     selected = pagerState.currentPage == 2,
-                                    alwaysShowLabel = !largeFont,
+                                    alwaysShowLabel = true,
                                     onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
                                     colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                                 )
@@ -286,21 +299,7 @@ fun HomeScreen(
                 }
             },
             floatingActionButton = {
-                AnimatedVisibility(
-                    visible = pagerState.currentPage == 0 && !isUiHidden,
-                    enter = scaleIn() + fadeIn(),
-                    exit = scaleOut() + fadeOut()
-                ) {
-                    FloatingActionButton(
-                        onClick = { performHaptic(); showBottomSheet = true },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = Color.White,
-                        shape = RoundedCornerShape(15.dp),
-                        modifier = Modifier.padding(bottom = 8.dp, end = 24.dp)
-                    ) {
-                        Icon(Icons.Default.Add, "添加", Modifier.size(32.dp))
-                    }
-                }
+                {}
             }
         ) { _ ->
             Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
@@ -314,6 +313,114 @@ fun HomeScreen(
                         })
                         1 -> LogScreen(modifier = Modifier.fillMaxSize())
                         2 -> SettingsScreen(modifier = Modifier.fillMaxSize(), onSubPageStatusChange = { isSettingsSubPageOpen = it })
+                    }
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = pagerState.currentPage == 0 && !isUiHidden,
+            enter = scaleIn() + fadeIn(),
+            exit = scaleOut() + fadeOut(),
+            modifier = Modifier.align(fabContentAlignment)
+        ) {
+            Box(
+                modifier = Modifier
+                    .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+                    .padding(horizontal = fabHorizontalPadding)
+                    .padding(bottom = fabAboveBottomBarPadding)
+            ) {
+                Column(
+                    horizontalAlignment = fabColumnAlignment,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        onClick = { performHaptic(); showBottomSheet = true },
+                        shape = RoundedCornerShape(15.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp
+                    ) {
+                        Box(
+                            modifier = Modifier.size(56.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Add, "添加", Modifier.size(32.dp), tint = Color.White)
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(15.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        tonalElevation = 8.dp,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                        modifier = Modifier
+                            .width(104.dp)
+                            .offset(x = identityContainerOffsetX)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                onClick = {
+                                    performHaptic()
+                                    openTaobaoIdentityEntry(context)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.size(42.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.QrCode,
+                                        contentDescription = "淘宝身份码",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(end = 5.dp, bottom = 5.dp)
+                                            .size(8.dp)
+                                            .background(Color(0xFFFF8A00), RoundedCornerShape(50))
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                onClick = {
+                                    performHaptic()
+                                    openPddIdentityEntry(context)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.size(42.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.QrCode,
+                                        contentDescription = "拼多多身份码",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(end = 5.dp, bottom = 5.dp)
+                                            .size(8.dp)
+                                            .background(Color(0xFFE53935), RoundedCornerShape(50))
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -383,6 +490,56 @@ fun HomeScreen(
                 }
             })
         }
+    }
+}
+
+private fun openTaobaoIdentityEntry(context: Context) {
+    val pkg = "com.taobao.taobao"
+    val lastmile = "https://pages-fast.m.taobao.com/wow/z/uniapp/1100333/last-mile-fe/m-end-school-tab/home"
+    val candidates = listOf(
+        "tbopen://m.taobao.com/tbopen/index.html?h5Url=" + Uri.encode(lastmile)
+    )
+    for (u in candidates) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW, Uri.parse(u))
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            return
+        } catch (_: Exception) {
+        }
+    }
+    try {
+        val i = Intent(Intent.ACTION_VIEW, Uri.parse(lastmile))
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        i.setClassName(pkg, "com.taobao.browser.BrowserActivity")
+        context.startActivity(i)
+    } catch (_: Exception) {
+    }
+}
+
+private fun openPddIdentityEntry(context: Context) {
+    val pkg = "com.xunmeng.pinduoduo"
+    val schemes = listOf(
+        "pinduoduo://com.xunmeng.pinduoduo/mdkd/package",
+        "pinduoduo://com.xunmeng.pinduoduo/",
+        "pinduoduo://"
+    )
+    for (u in schemes) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW, Uri.parse(u))
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            return
+        } catch (_: Exception) {
+        }
+    }
+    try {
+        val i = context.packageManager.getLaunchIntentForPackage(pkg)
+        if (i != null) {
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+        }
+    } catch (_: Exception) {
     }
 }
 

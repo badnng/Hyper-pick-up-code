@@ -44,6 +44,7 @@ import com.Badnng.moe.ui.theme.澎湃记Theme
 class IdentityChooserActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
         setContent {
             澎湃记Theme {
                 IdentityChooserScreen(

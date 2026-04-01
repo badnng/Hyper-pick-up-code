@@ -18,6 +18,10 @@ class TextRecognitionHelper(private val context: Context) {
 
     private val drinkBrands = listOf("星巴克", "瑞幸", "喜茶", "奈雪", "霸王茶姬", "茶百道", "蜜雪冰城", "一点点", "古茗", "Manner", "山楂奶绿", "取茶", "奶茶", "茶颜悦色")
     private val foodBrands = listOf("麦当劳", "肯德基", "KFC", "汉堡王", "塔斯汀", "老乡鸡", "华莱士")
+    private val expressBrandKeywords = listOf(
+        "邮政", "中国邮政", "申通", "中通", "圆通", "韵达", "顺丰", "极兔", "德邦",
+        "菜鸟", "驿站", "丰巢", "包裹"
+    )
     private val homePageKeywords = listOf("我的", "首页", "会员码", "到店取餐", "点单", "会员", "我的订单")
 
     /**
@@ -111,7 +115,11 @@ class TextRecognitionHelper(private val context: Context) {
         var category = "餐食"
         if (drinkBrands.contains(detectedBrand) || mergedText.contains("奶茶") || mergedText.contains("咖啡")) {
             category = "饮品"
-        } else if (mergedText.contains("取件") || mergedText.contains("取性") || mergedText.contains("快递") || mergedText.contains("包裹") || mergedText.contains("待取件") || mergedText.contains("丰巢")) {
+        } else if (
+            mergedText.contains("取件") || mergedText.contains("取性") || mergedText.contains("快递") ||
+            mergedText.contains("包裹") || mergedText.contains("待取件") || mergedText.contains("丰巢") ||
+            expressBrandKeywords.any { mergedText.contains(it) }
+        ) {
             category = "快递"
         }
 
@@ -176,7 +184,10 @@ class TextRecognitionHelper(private val context: Context) {
             Log.d("RecognitionMonitor", "dashMatch3=${dashMatch3?.value} dashMatch2=${dashMatch2?.value} numMatch=${numMatch?.value} alphaNumMatch=${alphaNumMatch?.value} alphaMatch=${alphaMatch?.value}")
             
             val match = dashMatch3 ?: dashMatch2 ?: numMatch ?: alphaNumMatch ?: alphaMatch
-            if (match != null && !isInvalidExpressCode(match.value)) {
+            if (match != null &&
+                !isInvalidExpressCode(match.value) &&
+                !isLikelyPhoneTail(match.value, text)
+            ) {
                 return match.value
             }
         }
@@ -184,7 +195,8 @@ class TextRecognitionHelper(private val context: Context) {
         // 第二步：兜底——在含快递关键词的文本中按权重筛选
         val hasExpressKeyword = mergedText.contains("取件码") || mergedText.contains("取性码") ||
                 mergedText.contains("请凭") || mergedText.contains("靖凭")
-        if (!hasExpressKeyword) return null
+        val hasExpressBrand = expressBrandKeywords.any { mergedText.contains(it) }
+        if (!hasExpressKeyword && !hasExpressBrand) return null
         val candidates = blocks.flatMap { block ->
             val text = block.text.replace(" ", "").replace("\n", "")
             // 🚀 优化：支持更多格式的快递取件码正则表达式
@@ -200,6 +212,7 @@ class TextRecognitionHelper(private val context: Context) {
             pattern.findAll(text).mapNotNull { match ->
                 val value = match.value
                 if (isInvalidExpressCode(value)) return@mapNotNull null
+                if (isLikelyPhoneTail(value, text)) return@mapNotNull null
                 var weight = (block.boundingBox?.width() ?: 0) * value.length
                 // 给带连字符的格式更高权重
                 if (value.contains("-")) weight *= 20
@@ -218,6 +231,21 @@ class TextRecognitionHelper(private val context: Context) {
         if (Regex("^\\d{2}-\\d{2,6}$").matches(value)) return true
         // 过滤超长快递单号（快递取件码一般不超过12位）
         if (value.length > 12) return true
+        return false
+    }
+
+    private fun isLikelyPhoneTail(value: String, contextText: String): Boolean {
+        // 仅拦截纯数字4位，避免误伤常见连字符取件码
+        if (value.length != 4 || !value.all { it.isDigit() }) return false
+
+        val escaped = Regex.escape(value)
+        if (Regex("\\*{2,}$escaped").containsMatchIn(contextText)) return true
+
+        val phoneContextPattern = Regex(
+            "(本人|手机|手机号|电话|联系|收件人|尾号)[^\\n]{0,12}(\\*{0,6})$escaped"
+        )
+        if (phoneContextPattern.containsMatchIn(contextText)) return true
+
         return false
     }
 
@@ -459,8 +487,11 @@ class TextRecognitionHelper(private val context: Context) {
         var category = "餐食"
         if (drinkBrands.contains(detectedBrand) || mergedText.contains("奶茶") || mergedText.contains("咖啡")) {
             category = "饮品"
-        } else if (mergedText.contains("取件") || mergedText.contains("取性") || mergedText.contains("快递") ||
-            mergedText.contains("包裹") || mergedText.contains("待取件") || mergedText.contains("丰巢")) {
+        } else if (
+            mergedText.contains("取件") || mergedText.contains("取性") || mergedText.contains("快递") ||
+            mergedText.contains("包裹") || mergedText.contains("待取件") || mergedText.contains("丰巢") ||
+            expressBrandKeywords.any { mergedText.contains(it) }
+        ) {
             category = "快递"
         }
 
@@ -489,6 +520,7 @@ class TextRecognitionHelper(private val context: Context) {
         val expressKeywords = listOf("取件码", "取性码", "请凭", "靖凭", "凭")
         val hasExpressKeyword = mergedText.contains("取件码") || mergedText.contains("取性码") ||
                 mergedText.contains("请凭") || mergedText.contains("靖凭")
+        val hasExpressBrand = expressBrandKeywords.any { mergedText.contains(it) }
 
         // 第一步：精确从关键词后截取
         val matchedKeyword = expressKeywords.firstOrNull { mergedText.contains(it) }
@@ -508,13 +540,16 @@ class TextRecognitionHelper(private val context: Context) {
             val alphaMatch = Regex("[A-Z0-9-]{3,12}").find(afterKeyword)
             
             val match = dashMatch3 ?: dashMatch2 ?: numMatch ?: alphaNumMatch ?: alphaMatch
-            if (match != null && !isInvalidExpressCode(match.value)) {
+            if (match != null &&
+                !isInvalidExpressCode(match.value) &&
+                !isLikelyPhoneTail(match.value, mergedText)
+            ) {
                 return match.value
             }
         }
 
         // 第二步：兜底——按权重筛选
-        if (!hasExpressKeyword) return null
+        if (!hasExpressKeyword && !hasExpressBrand) return null
         // 🚀 优化：支持更多格式的快递取件码正则表达式
         val pattern = Regex("(?<![a-zA-Z0-9-])(" +
             "[0-9]{4,8}|" +  // 纯数字 4-8 位
@@ -528,6 +563,7 @@ class TextRecognitionHelper(private val context: Context) {
         val candidates = pattern.findAll(mergedText).mapNotNull { match ->
             val value = match.value
             if (isInvalidExpressCode(value)) return@mapNotNull null
+            if (isLikelyPhoneTail(value, mergedText)) return@mapNotNull null
             var weight = value.length
             // 给带连字符的格式更高权重
             if (value.contains("-")) weight *= 20
@@ -638,7 +674,7 @@ class TextRecognitionHelper(private val context: Context) {
         
         for (match in allMatches) {
             val code = match.groupValues[1]
-            if (!isInvalidExpressCode(code)) {
+            if (!isInvalidExpressCode(code) && !isLikelyPhoneTail(code, mergedText)) {
                 // 查找这个取件码对应的快递品牌
                 val brand = findBrandForCode(code, mergedText, match.range)
                 
@@ -676,7 +712,7 @@ class TextRecognitionHelper(private val context: Context) {
                     val codeMatch = codePattern.find(nearbyText)
                     if (codeMatch != null) {
                         val code = codeMatch.groupValues[1]
-                        if (!isInvalidExpressCode(code)) {
+                        if (!isInvalidExpressCode(code) && !isLikelyPhoneTail(code, mergedText)) {
                             val pickupLocation = findPickupLocation(mergedText, textBlocks)
                             val order = RecognitionResult(
                                 code = code,
@@ -691,6 +727,29 @@ class TextRecognitionHelper(private val context: Context) {
                         }
                     }
                 }
+            }
+        }
+
+        // 方法3：无“取件码”关键词时，基于快递品牌上下文提取连字符/数字码
+        if (orders.size < 2 && expressBrandKeywords.any { mergedText.contains(it) }) {
+            val fallbackPattern = Regex("(?<![A-Z0-9-])([0-9]{1,2}-[0-9]{1,2}-[0-9]{3,5}|[A-Z0-9]{1,4}-[A-Z0-9]{3,8}|[0-9]{4,8})(?![A-Z0-9-])")
+            val fallbackMatches = fallbackPattern.findAll(mergedText).toList()
+            for (m in fallbackMatches) {
+                val code = m.groupValues[1]
+                if (isInvalidExpressCode(code)) continue
+                if (isLikelyPhoneTail(code, mergedText)) continue
+                val brand = findBrandForCode(code, mergedText, m.range)
+                val pickupLocation = findPickupLocation(mergedText, textBlocks)
+                orders.add(
+                    RecognitionResult(
+                        code = code,
+                        qr = null,
+                        type = "快递",
+                        brand = brand,
+                        fullText = rawFullText,
+                        pickupLocation = pickupLocation
+                    )
+                )
             }
         }
         

@@ -24,12 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +46,7 @@ import java.io.File
 class OrderQuickViewActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
 
         val orderId = intent.getStringExtra("order_id") ?: ""
         val fromNotification = intent.getBooleanExtra("from_notification", false)
@@ -84,8 +83,7 @@ fun OrderQuickViewScreen(
     
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .then(if (isLandscape) Modifier.padding(WindowInsets.systemBars.asPaddingValues()) else Modifier),
+            .fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         // 背景遮罩层，点击关闭
@@ -115,7 +113,7 @@ fun OrderQuickViewScreen(
                 }
             )
         } else {
-            CircularProgressIndicator(color = Color.White)
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -125,6 +123,10 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val isExpress = order.orderType == "快递"
     val label = if (isExpress) "取件码" else "取餐码"
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val hintTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+    val isDarkPalette = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val qrBackgroundColor = if (isDarkPalette) Color.White else Color.Transparent
     val scope = rememberCoroutineScope()
     val markCompleted: () -> Unit = {
         val orderId = order.id
@@ -198,7 +200,7 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                 alpha = alpha
             ),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         if (isLandscape) {
@@ -246,7 +248,7 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                         Text(
                             text = label,
                             fontSize = 12.sp,
-                            color = Color.Gray,
+                            color = secondaryTextColor,
                             letterSpacing = 1.2.sp
                         )
                         Spacer(modifier = Modifier.height(6.dp))
@@ -288,7 +290,7 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                         Text(
                             text = "请向商家出示此码",
                             fontSize = 13.sp,
-                            color = Color.Gray.copy(alpha = 0.6f),
+                            color = hintTextColor,
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -339,6 +341,7 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                                     modifier = Modifier
                                         .size(200.dp)
                                         .clip(RoundedCornerShape(12.dp))
+                                        .background(qrBackgroundColor)
                                 )
                             } else {
                                 Box(
@@ -476,7 +479,7 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                 Text(
                     text = label,
                     fontSize = 12.sp,
-                    color = Color.Gray,
+                    color = secondaryTextColor,
                     letterSpacing = 1.2.sp
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -516,7 +519,7 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                 Text(
                     text = "请向商家出示此码",
                     fontSize = 12.sp,
-                    color = Color.Gray.copy(alpha = 0.6f),
+                    color = hintTextColor,
                     fontWeight = FontWeight.Medium
                 )
 
@@ -562,6 +565,7 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
                             modifier = Modifier
                                 .size(250.dp)
                                 .clip(RoundedCornerShape(12.dp))
+                                .background(qrBackgroundColor)
                         )
                     } else {
                         Box(

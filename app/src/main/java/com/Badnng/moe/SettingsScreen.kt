@@ -1111,10 +1111,25 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
     val context = LocalContext.current; val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var captureMode by remember { mutableStateOf(prefs.getString("capture_mode", "media_projection") ?: "media_projection") }
     var volumeKeyShortcutEnabled by remember { mutableStateOf(prefs.getBoolean("volume_key_shortcut_enabled", false)) }
+    var mediaProjectionNoPromptEnabled by remember { mutableStateOf(prefs.getBoolean("media_projection_no_prompt_enabled", false)) }
     var shizukuReady by remember { mutableStateOf(false) }
     var rootReady by remember { mutableStateOf(false) }
+    val mediaProjectionNoPromptConflictActive = captureMode == "media_projection" && mediaProjectionNoPromptEnabled
 
-    val currentShortcutBackend = remember(captureMode, shizukuReady, rootReady) {
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            when (key) {
+                "capture_mode" -> captureMode = p.getString("capture_mode", "media_projection") ?: "media_projection"
+                "media_projection_no_prompt_enabled" -> mediaProjectionNoPromptEnabled = p.getBoolean("media_projection_no_prompt_enabled", false)
+                "volume_key_shortcut_enabled" -> volumeKeyShortcutEnabled = p.getBoolean("volume_key_shortcut_enabled", false)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    val currentShortcutBackend = remember(captureMode, shizukuReady, rootReady, mediaProjectionNoPromptConflictActive) {
+        if (mediaProjectionNoPromptConflictActive) return@remember null
         when (captureMode) {
             "shizuku" -> if (shizukuReady) "shizuku" else null
             "root" -> if (rootReady) "root" else null
@@ -1134,7 +1149,7 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
                 captureMode = "media_projection"
                 prefs.edit().putString("capture_mode", "media_projection").apply()
             }
-            if (captureMode == "media_projection" && volumeKeyShortcutEnabled) {
+            if ((captureMode == "media_projection" || mediaProjectionNoPromptConflictActive) && volumeKeyShortcutEnabled) {
                 Thread {
                     if (rootReady) {
                         AccessibilityShortcutHelper.disableServiceWithRoot(context)
@@ -1160,9 +1175,9 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         Spacer(Modifier.height(16.dp))
-        Text("选择截图技术方案", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        Text("截图技术方案", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         CaptureModeItem(
-            title = "共享屏幕 (MediaProjection)",
+            title = "共享屏幕",
             description = "默认方案，设备兼容性高，但每次使用磁贴需要屏幕共享授权确认",
             selected = captureMode == "media_projection",
             onClick = {
@@ -1182,8 +1197,69 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
                 }
             }
         )
-        CaptureModeItem(title = "Shizuku 免授权", description = if (shizukuReady) "通过 Shizuku 后可实现免授权后台截图识别（推荐）" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { performHaptic(); captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
+        CaptureModeItem(title = "纯 Shizuku 模式", description = if (shizukuReady) "通过 Shizuku 直接截图识别，无需共享屏幕授权弹窗" else "Shizuku 未就绪，此选项当前不可用。", selected = captureMode == "shizuku", enabled = shizukuReady, onClick = { if (shizukuReady) { performHaptic(); captureMode = "shizuku"; prefs.edit().putString("capture_mode", "shizuku").apply() } })
         CaptureModeItem(title = "Root 免授权", description = if (rootReady) "通过 Root 可实现免授权后台截图识别" else "Root 不可用，此选项当前不可用。", selected = captureMode == "root", enabled = rootReady, onClick = { if (rootReady) { performHaptic(); captureMode = "root"; prefs.edit().putString("capture_mode", "root").apply() } })
+
+        Text("Shizuku 相关设置", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        Surface(
+            onClick = {
+                if (captureMode == "media_projection" && shizukuReady) {
+                    performHaptic()
+                    val targetEnabled = !mediaProjectionNoPromptEnabled
+                    val success = AccessibilityShortcutHelper.setProjectMediaAppOpsWithShizuku(context, targetEnabled)
+                    if (success) {
+                        mediaProjectionNoPromptEnabled = targetEnabled
+                        prefs.edit().putBoolean("media_projection_no_prompt_enabled", targetEnabled).apply()
+                        if (targetEnabled && volumeKeyShortcutEnabled) {
+                            Thread {
+                                if (rootReady) {
+                                    AccessibilityShortcutHelper.disableServiceWithRoot(context)
+                                } else if (shizukuReady) {
+                                    AccessibilityShortcutHelper.disableServiceWithShizuku(context)
+                                }
+                            }.start()
+                            volumeKeyShortcutEnabled = false
+                            prefs.edit().putBoolean("volume_key_shortcut_enabled", false).apply()
+                        }
+                    }
+                }
+            },
+            shape = RoundedCornerShape(15.dp),
+            color = if (captureMode == "media_projection" && shizukuReady) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (captureMode == "media_projection" && shizukuReady) 0.65f else 0.35f)),
+            enabled = captureMode == "media_projection" && shizukuReady
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "共享屏幕免授权弹窗",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (captureMode == "media_projection" && shizukuReady) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                    Text(
+                        text = when {
+                            captureMode != "media_projection" -> "仅在共享屏幕模式下可用"
+                            !shizukuReady -> "需要 Shizuku 运行并授权后才可开启"
+                            else -> "开启后将跳过共享屏幕授权弹窗（与音量键快捷触发互斥）"
+                        },
+                        fontSize = 12.sp,
+                        color = if (captureMode == "media_projection" && shizukuReady) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                }
+                Switch(
+                    checked = mediaProjectionNoPromptEnabled,
+                    onCheckedChange = null,
+                    enabled = captureMode == "media_projection" && shizukuReady
+                )
+            }
+        }
+
         Surface(
             onClick = {
                 if (currentShortcutBackend != null) {
@@ -1235,6 +1311,7 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit) {
                     )
                     Text(
                         text = when {
+                            mediaProjectionNoPromptConflictActive -> "与“共享屏幕免授权弹窗”互斥"
                             captureMode == "root" && rootReady -> "通过 Root 一键配置无障碍快捷方式，启用后可使用音量键快捷触发截图识别"
                             captureMode == "shizuku" && shizukuReady -> "通过 Shizuku 一键配置无障碍快捷方式，启用后可使用音量键快捷触发截图识别"
                             captureMode == "media_projection" -> "请先选择 Root 或 Shizuku 截图方案后再启用"

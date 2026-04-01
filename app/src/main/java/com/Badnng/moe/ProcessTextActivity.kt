@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 class ProcessTextActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
 
         // 获取用户选中的文字
         val selectedText = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()

@@ -42,6 +42,29 @@ object AccessibilityShortcutHelper {
         return enabled.split(':').any { it == getServiceComponent(context) }
     }
 
+    fun setProjectMediaAppOpsWithShizuku(context: Context, allow: Boolean): Boolean {
+        if (!isShizukuReady()) return false
+        val mode = if (allow) "allow" else "default"
+        return try {
+            val process = newProcess(
+                arrayOf(
+                    "cmd",
+                    "appops",
+                    "set",
+                    "--user",
+                    "0",
+                    context.packageName,
+                    "PROJECT_MEDIA",
+                    mode
+                )
+            )
+            process.waitFor() == 0
+        } catch (e: Exception) {
+            Log.e(TAG, "set PROJECT_MEDIA failed, mode=$mode", e)
+            false
+        }
+    }
+
     fun configureShortcutWithShizuku(context: Context): Boolean {
         if (!isShizukuReady()) return false
         backupCurrentSettings(context, ::runSettingsGet)

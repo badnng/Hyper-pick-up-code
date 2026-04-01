@@ -3,6 +3,7 @@ package com.Badnng.moe
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -11,7 +12,6 @@ import android.util.Log
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
@@ -31,6 +31,12 @@ class MainActivity : ComponentActivity() {
     var intentToProcess by mutableStateOf<Intent?>(null)
     private lateinit var projectionManager: MediaProjectionManager
     private var isFromNotification = false
+    private lateinit var settingsPrefs: SharedPreferences
+    private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "theme_mode" || key == "amoled_pure_black") {
+            EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
+        }
+    }
 
     private val captureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK && result.data != null) {
@@ -48,7 +54,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
+        settingsPrefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)
 
         LogManager.startCollecting()
 
@@ -111,6 +119,18 @@ class MainActivity : ComponentActivity() {
         intentToProcess = intent
         // 检查是否从通知进入
         isFromNotification = intent?.getBooleanExtra("from_notification", false) == true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
+    }
+
+    override fun onDestroy() {
+        if (::settingsPrefs.isInitialized) {
+            settingsPrefs.unregisterOnSharedPreferenceChangeListener(settingsListener)
+        }
+        super.onDestroy()
     }
 
     override fun onUserLeaveHint() {

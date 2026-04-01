@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 class PermissionActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
         
         val useShizuku = intent.getBooleanExtra("use_shizuku", false)
         val useRoot = intent.getBooleanExtra("use_root", false)

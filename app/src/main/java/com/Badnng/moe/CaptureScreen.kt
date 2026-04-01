@@ -44,6 +44,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -780,6 +781,18 @@ fun OrderGroupCard(
 ) {
     val context = LocalContext.current
     val viewModel: OrderViewModel = viewModel()
+    val isPureBlackPalette = MaterialTheme.colorScheme.background.luminance() < 0.02f &&
+        MaterialTheme.colorScheme.surfaceVariant.luminance() < 0.02f
+    val groupCardColor = if (isPureBlackPalette) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    } else {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+    }
+    val groupCardBorder = if (isPureBlackPalette) {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f))
+    } else {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+    }
     var isExpanded by rememberSaveable(group.id) { mutableStateOf(initiallyExpanded) }
     LaunchedEffect(initiallyExpanded) {
         if (initiallyExpanded) {
@@ -850,8 +863,8 @@ fun OrderGroupCard(
                     onClick()  // 点击卡片主体区域 -> 导航到组详情页面
                 }
             },
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+            colors = CardDefaults.cardColors(containerColor = groupCardColor),
+            border = groupCardBorder,
             shape = RoundedCornerShape(15.dp)
         ) {
             Column(
@@ -1043,6 +1056,13 @@ fun OrderCard(
     onNavigateToDetail: (Any) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val isPureBlackPalette = MaterialTheme.colorScheme.background.luminance() < 0.02f &&
+        MaterialTheme.colorScheme.surfaceVariant.luminance() < 0.02f
+    val orderCardColor = if (isPureBlackPalette) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    }
     val timeStr = remember(order.createdAt) { val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()); sdf.format(Date(order.createdAt)) }
     val brandIcon = remember(order.brandName, order.orderType) {
         val resName = when (order.brandName) {
@@ -1059,8 +1079,14 @@ fun OrderCard(
 
     Card(
         modifier = modifier.fillMaxWidth().clickable { onNavigateToDetail(order) },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-        border = BorderStroke(2.dp, highlightColor),
+        colors = CardDefaults.cardColors(containerColor = orderCardColor),
+        border = if (isHighlighted) {
+            BorderStroke(2.dp, highlightColor)
+        } else if (isPureBlackPalette) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f))
+        } else {
+            BorderStroke(2.dp, highlightColor)
+        },
         shape = RoundedCornerShape(15.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

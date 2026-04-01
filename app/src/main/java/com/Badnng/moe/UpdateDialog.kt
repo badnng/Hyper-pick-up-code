@@ -1,6 +1,8 @@
 package com.Badnng.moe
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -26,7 +28,9 @@ fun UpdateDialog(
     onInstall: () -> Unit
 ) {
     val largeFont = LocalDensity.current.fontScale >= 1.2f
-    val maxDialogHeight = LocalConfiguration.current.screenHeightDp.dp * 0.8f
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+    val maxDialogHeight = screenHeight * 0.8f
+    val maxReleaseNotesHeight = screenHeight * 0.6f
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -41,7 +45,8 @@ fun UpdateDialog(
                 .heightIn(max = maxDialogHeight),
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
+            tonalElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
         ) {
             Column(
                 modifier = Modifier
@@ -61,7 +66,13 @@ fun UpdateDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
+                        .heightIn(max = maxReleaseNotesHeight)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(
+                            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .padding(12.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
@@ -142,7 +153,8 @@ fun UpdateProgressDialog(
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
+            tonalElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
         ) {
             Column(
                 modifier = Modifier

@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 class ShareReceiverActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
 
         Log.d("ShareReceiver", "Share received")
 
