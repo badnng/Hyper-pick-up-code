@@ -1,7 +1,7 @@
 {
-  "versionCode": 2026040111,
-  "versionName": "26.4.1.C01-Dev",
-  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n26.4.1.C01-Dev版本更新如下：\n1.添加 打开拼多多/淘宝身份码功能 （快递）\n2.优化 正则分类的最终结果",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.4.1.C01-Dev/app-release.apk",
-  "md5": "03a495beeb7b79c69d59786e2e5d4593"
+  "versionCode": 2026040211,
+  "versionName": "26.4.2.C01-Dev",
+  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n26.4.2.C01-Dev版本更新如下：\n1.添加 Shizuku服务停止/重启手机时，截图免授权弹窗依然生效的特性（需测试）\n\n2.优化 部分页面在纯黑背景下的可见度\n\n3.修改 部分页面的文字叙述\n\n4.优化 更新卡片的显示\n\n5.修复 部分UI未进行适配纯黑/深色模式\n\n6.添加 引导页面第二步 我知道了 按钮延迟15秒可点\n\n7.添加 主页页面打开拼多多和淘宝身份码\n\n8.优化 主页+号的显示效果\n\n9.修改 小白条沉浸的实现方案（小窗模式也可沉浸）",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.4.2.C01-Dev/app-release.apk",
+  "md5": "10fcb6a1d346ad22bdcdfff414340646"
 }
