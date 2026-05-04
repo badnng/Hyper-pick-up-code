@@ -20,6 +20,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.Badnng.moe.helper.BatteryOptimizationHelper
 import com.Badnng.moe.ui.component.PermissionItem
 import com.Badnng.moe.ui.component.PreferenceSection
 import com.Badnng.moe.ui.component.PreferenceSwitchItem
@@ -31,17 +35,29 @@ fun KeepAliveSettingsContent(performHaptic: () -> Unit) {
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var keepAliveEnabled by remember { mutableStateOf(prefs.getBoolean("keep_alive_enabled", false)) }
     var isIgnoringBattery by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     // 检测电池优化白名单状态
     fun checkBatteryOptimization() {
-        val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        isIgnoringBattery = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+        isIgnoringBattery = BatteryOptimizationHelper.isGranted(context)
     }
 
     LaunchedEffect(Unit) {
         while (true) {
             checkBatteryOptimization()
             delay(2000)
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                checkBatteryOptimization()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 

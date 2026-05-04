@@ -41,11 +41,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import com.Badnng.moe.helper.RootHelper
 import com.Badnng.moe.helper.AccessibilityShortcutHelper
+import com.Badnng.moe.helper.BatteryOptimizationHelper
 import com.Badnng.moe.service.CaptureTileService
 import rikka.shizuku.Shizuku
 
@@ -74,17 +78,34 @@ fun OnboardingScreen(onComplete: () -> Unit) {
     var shizukuReady by remember { mutableStateOf(false) }
     var rootReady by remember { mutableStateOf(false) }
     var featuresAckCountdown by remember { mutableIntStateOf(15) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun refreshPermissionStates() {
+        hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        isIgnoringBattery = BatteryOptimizationHelper.isGranted(context)
+        hasUsageStatsPermission = checkUsageStatsPermission(context)
+    }
 
     // 定期检查权限状态
     LaunchedEffect(Unit) {
         // Root 不需要高频检测；只检查一次 su 是否存在，避免在未使用时频繁触发 Magisk 提示。
         rootReady = withContext(Dispatchers.IO) { RootHelper.isSuAvailable() }
         while (true) {
-            hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled()
-            isIgnoringBattery = checkBatteryOptimization(context)
-            hasUsageStatsPermission = checkUsageStatsPermission(context)
+            refreshPermissionStates()
             shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }
             delay(1500)
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshPermissionStates()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -995,13 +1016,7 @@ private fun checkUsageStatsPermission(context: Context): Boolean {
 }
 
 private fun checkBatteryOptimization(context: Context): Boolean {
-    @Suppress("DEPRECATION")
-    return try {
-        val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        powerManager.isIgnoringBatteryOptimizations(context.packageName)
-    } catch (e: Exception) {
-        false
-    }
+    return BatteryOptimizationHelper.isGranted(context)
 }
 
 private fun isShizukuReady(): Boolean {

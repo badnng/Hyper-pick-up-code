@@ -24,8 +24,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.Badnng.moe.R
 import com.Badnng.moe.helper.AccessibilityShortcutHelper
+import com.Badnng.moe.helper.BatteryOptimizationHelper
 import com.Badnng.moe.ui.component.PermissionItem
 import com.Badnng.moe.ui.component.PreferenceSection
 import com.Badnng.moe.ui.component.PreferenceSwitchItem
@@ -43,14 +47,31 @@ fun PermissionSettingsContent(performHaptic: () -> Unit) {
     var shizukuReady by remember { mutableStateOf(false) }
     var keepAliveEnabled by remember { mutableStateOf(prefs.getBoolean("keep_alive_enabled", false)) }
     var isIgnoringBattery by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun refreshPermissionStates() {
+        hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        hasUsageStatsPermission = checkUsageStatsPermission(context)
+        isIgnoringBattery = BatteryOptimizationHelper.isGranted(context)
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
-            hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled()
-            hasUsageStatsPermission = checkUsageStatsPermission(context)
+            refreshPermissionStates()
             shizukuReady = withContext(Dispatchers.IO) { isShizukuReady() }
-            isIgnoringBattery = checkBatteryOptimization(context)
             delay(1500)
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshPermissionStates()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -282,6 +303,5 @@ private fun checkUsageStatsPermission(context: Context): Boolean {
 }
 
 private fun checkBatteryOptimization(context: Context): Boolean {
-    val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-    return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    return BatteryOptimizationHelper.isGranted(context)
 }

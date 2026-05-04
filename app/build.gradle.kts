@@ -67,16 +67,18 @@ android {
     }
 
     buildTypes {
+        val resolvedReleaseSigning = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+
         getByName("release") {
             isMinifyEnabled = true
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = resolvedReleaseSigning
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro")
         }
         getByName("debug") {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = resolvedReleaseSigning
         }
     }
 
