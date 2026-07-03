@@ -32,7 +32,9 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: Linux-gradle-cache
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       - name: Decode Keystore
         if: startsWith(github.ref, 'refs/tags/')
@@ -60,23 +62,6 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         run: ./gradlew assembleDebug --no-daemon -Porg.gradle.user.home=$HOME/.gradle
 
-      - name: Clear all caches
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "清理所有已有缓存..."
-          CACHE_IDS=$(gh api repos/${{ github.repository }}/actions/caches --paginate --jq '.actions_caches[].id' 2>/dev/null || echo "")
-          if [ -n "$CACHE_IDS" ]; then
-            echo "$CACHE_IDS" | while read id; do
-              echo "删除缓存 ID: $id"
-              gh api -X DELETE repos/${{ github.repository }}/actions/caches/$id || true
-            done
-            echo "所有缓存已清理"
-          else
-            echo "没有需要清理的缓存"
-          fi
-
       - name: Save Gradle cache
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/cache/save@v4
@@ -84,7 +69,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: Linux-gradle-cache
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
 
       # ─── 以下仅 tag 推送时执行 ───
 
