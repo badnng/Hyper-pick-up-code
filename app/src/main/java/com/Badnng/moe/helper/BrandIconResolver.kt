@@ -17,7 +17,14 @@ object BrandIconResolver {
         "肯德基" to R.drawable.ic_kfc, "KFC" to R.drawable.ic_kfc,
         "瑞幸" to R.drawable.ic_luckin, "喜茶" to R.drawable.ic_heytea,
         "星巴克" to R.drawable.ic_starbucks, "霸王茶姬" to R.drawable.ic_chagee,
-        "古茗" to R.drawable.ic_goodme, "蜜雪冰城" to R.drawable.ic_mixue
+        "古茗" to R.drawable.ic_goodme, "蜜雪冰城" to R.drawable.ic_mixue,
+        "库迪" to R.drawable.ic_cotti, "茶百道" to R.drawable.ic_chabaidao,
+        "奈雪" to R.drawable.ic_naixue, "奈雪的茶" to R.drawable.ic_naixue,
+        "汉堡王" to R.drawable.ic_burger_king, "塔斯汀" to R.drawable.ic_tastien,
+        "顺丰" to R.drawable.ic_sf_express, "菜鸟" to R.drawable.ic_cainiao,
+        "丰巢" to R.drawable.ic_hive_box, "中国邮政" to R.drawable.ic_china_post,
+        "沪上阿姨" to R.drawable.ic_hushang_ayi, "CoCo" to R.drawable.ic_coco,
+        "华莱士" to R.drawable.ic_wallace, "老乡鸡" to R.drawable.ic_lao_xiang_ji
     )
 
     private val bitmapCache = android.util.LruCache<String, Bitmap>(50)

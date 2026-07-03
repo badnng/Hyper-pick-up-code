@@ -192,6 +192,19 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
             "霸王茶姬" -> "ic_chagee"
             "古茗" -> "ic_goodme"
             "蜜雪冰城" -> "ic_mixue"
+            "库迪" -> "ic_cotti"
+            "茶百道" -> "ic_chabaidao"
+            "奈雪", "奈雪的茶" -> "ic_naixue"
+            "汉堡王" -> "ic_burger_king"
+            "塔斯汀" -> "ic_tastien"
+            "顺丰" -> "ic_sf_express"
+            "菜鸟" -> "ic_cainiao"
+            "丰巢" -> "ic_hive_box"
+            "中国邮政" -> "ic_china_post"
+            "沪上阿姨" -> "ic_hushang_ayi"
+            "CoCo" -> "ic_coco"
+            "华莱士" -> "ic_wallace"
+            "老乡鸡" -> "ic_lao_xiang_ji"
             else -> null
         }
         val resId = if (resName != null) context.resources.getIdentifier(resName, "drawable", context.packageName) else 0
