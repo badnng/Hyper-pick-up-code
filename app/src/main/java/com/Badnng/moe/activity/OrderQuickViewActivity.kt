@@ -53,6 +53,8 @@ import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Location
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 class OrderQuickViewActivity : ComponentActivity() {
@@ -324,7 +326,12 @@ private fun LandscapeContent(
 
             // 分隔线
             if (isMiuix) {
-                VerticalDivider(modifier = Modifier.height(200.dp), color = MiuixTheme.colorScheme.outline.copy(alpha = 0.5f))
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(200.dp)
+                        .background(MiuixTheme.colorScheme.outline.copy(alpha = 0.5f))
+                )
             } else {
                 VerticalDivider(modifier = Modifier.height(200.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             }
@@ -468,7 +475,7 @@ private fun PickupLocation(order: OrderEntity, primaryColor: Color, secondaryTex
         Spacer(modifier = Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             if (isMiuix) {
-                MiuixIcon(Icons.Default.LocationOn, null, modifier = Modifier.size(14.dp), tint = primaryColor.copy(alpha = 0.7f))
+                MiuixIcon(MiuixIcons.Regular.Location, null, modifier = Modifier.size(14.dp), tint = primaryColor.copy(alpha = 0.7f))
                 Spacer(modifier = Modifier.width(4.dp))
                 MiuixText(text = order.pickupLocation!!, style = MiuixTheme.textStyles.body2, color = secondaryTextColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
             } else {

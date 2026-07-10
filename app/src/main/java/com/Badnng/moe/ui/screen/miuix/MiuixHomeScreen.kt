@@ -3,6 +3,7 @@ package com.Badnng.moe.ui.screen.miuix
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -19,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -42,16 +44,11 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.material.icons.Icons
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.icon.extended.Settings
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FileUpload
+import top.yukonga.miuix.kmp.icon.extended.UploadCloud
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -85,22 +82,30 @@ import androidx.navigation3.ui.NavDisplayTransitionEffects
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.data.db.OrderDatabase
+import com.Badnng.moe.ui.LocalAppUi
+import com.Badnng.moe.ui.miuix.MIUIX_FLOATING_NAV_BAR_STYLE_KEY
+import com.Badnng.moe.ui.miuix.MiuixFloatingNavigationBarStyle
+import com.Badnng.moe.ui.miuix.liquid.IosLiquidGlassNavigationBar
 import com.Badnng.moe.ui.screen.rememberSaveablePagerState
 import com.Badnng.moe.ui.screen.settings.SettingsPage
 import com.Badnng.moe.viewmodel.OrderViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlin.math.roundToInt
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import androidx.compose.runtime.collectAsState
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
+import top.yukonga.miuix.kmp.basic.FloatingNavigationBarDefaults
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
+import top.yukonga.miuix.kmp.basic.NavigationBarDefaults
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
+import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
@@ -132,14 +137,30 @@ fun MiuixHomeScreen(
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
     var useFloatingNavBar by remember { mutableStateOf(prefs.getBoolean("use_floating_nav_bar", false)) }
+    var floatingNavBarStyle by remember {
+        mutableStateOf(
+            MiuixFloatingNavigationBarStyle.fromPreference(
+                prefs.getString(MIUIX_FLOATING_NAV_BAR_STYLE_KEY, null)
+            )
+        )
+    }
     var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
+    var predictiveBackEnabled by remember {
+        mutableStateOf(prefs.getBoolean("predictive_back_enabled", true))
+    }
 
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             when (key) {
                 "haptic_enabled" -> hapticEnabled = p.getBoolean(key, true)
                 "use_floating_nav_bar" -> useFloatingNavBar = p.getBoolean(key, false)
+                MIUIX_FLOATING_NAV_BAR_STYLE_KEY -> {
+                    floatingNavBarStyle = MiuixFloatingNavigationBarStyle.fromPreference(
+                        p.getString(key, null)
+                    )
+                }
                 "nav_alignment" -> navAlignment = p.getString(key, "center") ?: "center"
+                "predictive_back_enabled" -> predictiveBackEnabled = p.getBoolean(key, true)
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -156,7 +177,9 @@ fun MiuixHomeScreen(
                     intentToProcess = intentToProcess,
                     hapticEnabled = hapticEnabled,
                     useFloatingNavBar = useFloatingNavBar,
+                    floatingNavBarStyle = floatingNavBarStyle,
                     navAlignment = navAlignment,
+                    allowAppExit = backStack.size == 1,
                     externalPagerState = pagerState,
                     onNavigateToSettingsSubPage = { page ->
                         backStack.add(HomeRoute.SettingsSubPage(page))
@@ -227,22 +250,28 @@ fun MiuixHomeScreen(
         entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
         entryProvider = homeEntryProvider,
     )
-
     NavDisplay(
         entries = entries,
         onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
-        transitionEffects = NavDisplayTransitionEffects.Default,
+        transitionEffects = remember {
+            NavDisplayTransitionEffects(blockInputDuringTransition = true)
+        },
     )
+
+    BackHandler(enabled = !predictiveBackEnabled && backStack.size > 1) {
+        backStack.removeLastOrNull()
+    }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun MiuixMainContent(
     modifier: Modifier,
     intentToProcess: Intent?,
     hapticEnabled: Boolean,
     useFloatingNavBar: Boolean,
+    floatingNavBarStyle: MiuixFloatingNavigationBarStyle,
     navAlignment: String = "center",
+    allowAppExit: Boolean,
     externalPagerState: androidx.compose.foundation.pager.PagerState? = null,
     onNavigateToSettingsSubPage: (SettingsPage) -> Unit,
     onNavigateToOrderDetail: (String) -> Unit = {},
@@ -252,6 +281,9 @@ private fun MiuixMainContent(
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     val pagerState = externalPagerState ?: rememberSaveablePagerState(pageCount = { 3 })
     val currentPage by remember { androidx.compose.runtime.derivedStateOf { pagerState.currentPage } }
+    val navigationTargetPage by remember {
+        androidx.compose.runtime.derivedStateOf { pagerState.targetPage }
+    }
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val viewModel: OrderViewModel = viewModel()
@@ -294,6 +326,12 @@ private fun MiuixMainContent(
 
     val configuration = LocalConfiguration.current
     val isLargeScreen = configuration.screenWidthDp >= 700
+    val isIosLikeFloatingBar = floatingNavBarStyle == MiuixFloatingNavigationBarStyle.IosLike
+    val effectiveNavAlignment = if (isIosLikeFloatingBar && !isLargeScreen) {
+        "center"
+    } else {
+        currentNavAlignment
+    }
     val navAdaptiveActive = isLargeScreen && largeScreenNavAdaptiveEnabled && useFloatingNavBar
 
     // 规则页长按菜单状态
@@ -312,7 +350,9 @@ private fun MiuixMainContent(
     val isFolded = foldingFeature?.state == FoldingFeature.State.HALF_OPENED
 
     // 主页面按返回键时，从最近任务移除卡片
-    androidx.activity.compose.BackHandler(enabled = !isEditMode && !isManaging) {
+    androidx.activity.compose.BackHandler(
+        enabled = allowAppExit && !isEditMode && !isManaging
+    ) {
         activity?.finishAndRemoveTask()
     }
 
@@ -322,7 +362,7 @@ private fun MiuixMainContent(
         }
     }
 
-    val targetBottomBarBias = when (currentNavAlignment) {
+    val targetBottomBarBias = when (effectiveNavAlignment) {
         "left" -> -1f
         "right" -> 1f
         else -> 0f
@@ -332,7 +372,7 @@ private fun MiuixMainContent(
         animationSpec = spring(dampingRatio = 0.92f, stiffness = 260f),
         label = "bottomBarBias"
     )
-    val targetFloatingBarOffsetX = when (currentNavAlignment) {
+    val targetFloatingBarOffsetX = when (effectiveNavAlignment) {
         "left" -> (-5).dp
         "right" -> 5.dp
         else -> 0.dp
@@ -342,16 +382,63 @@ private fun MiuixMainContent(
         animationSpec = spring(dampingRatio = 0.92f, stiffness = 260f),
         label = "floatingBarOffsetX"
     )
+    val floatingBarVerticalOffset = if (isLargeScreen) {
+        MiuixHomeBottomLayoutDefaults.LargeScreenFloatingBarVerticalOffset
+    } else {
+        MiuixHomeBottomLayoutDefaults.FloatingBarVerticalOffset
+    }
+    val density = LocalDensity.current
+    val safeBottomInset = with(density) {
+        WindowInsets.safeDrawing.getBottom(this).toDp()
+    }
+    var rootBottomInRootPx by remember { mutableIntStateOf(0) }
+    var navigationBarTopInRootPx by remember(useFloatingNavBar, floatingNavBarStyle) {
+        mutableIntStateOf(-1)
+    }
+    val estimatedNavigationBarTopFromBottom = when {
+        !useFloatingNavBar -> {
+            safeBottomInset + NavigationBarDefaults.ItemHeight + NavigationBarDefaults.BottomPadding
+        }
+        isIosLikeFloatingBar -> {
+            val bottomSpacing = if (safeBottomInset > 0.dp) {
+                safeBottomInset + MiuixHomeBottomLayoutDefaults.IosLikeBottomSpacing
+            } else {
+                MiuixHomeBottomLayoutDefaults.IosLikeNoInsetBottomSpacing
+            }
+            bottomSpacing + MiuixHomeBottomLayoutDefaults.IosLikeBarHeight
+        }
+        else -> {
+            (safeBottomInset - floatingBarVerticalOffset).coerceAtLeast(0.dp) +
+                FloatingNavigationBarDefaults.IconSize +
+                FloatingNavigationBarDefaults.IconPadding +
+                FloatingNavigationBarDefaults.IconPadding
+        }
+    }
+    val measuredNavigationBarTopFromBottom =
+        (rootBottomInRootPx - navigationBarTopInRootPx)
+            .takeIf { rootBottomInRootPx > 0 && navigationBarTopInRootPx >= 0 && it > 0 }
+            ?.let { with(density) { it.toDp() } }
+    val bottomLayoutInfo = MiuixHomeBottomLayoutInfo(
+        safeBottomInset = safeBottomInset,
+        navigationBarTopFromBottom = measuredNavigationBarTopFromBottom
+            ?: estimatedNavigationBarTopFromBottom
+    )
 
     // 模糊效果
     val backdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
     val blurEnabled = backdrop != null
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coordinates ->
+                rootBottomInRootPx = coordinates.boundsInRoot().bottom.roundToInt()
+            }
+    ) {
         // Scaffold 内容层（layerBackdrop 只应用到内容，不包含底栏）
         Scaffold(
             modifier = Modifier.fillMaxSize(),
-        ) { innerPadding ->
+        ) { _ ->
             Box(modifier = (if (backdrop != null) Modifier.fillMaxSize().layerBackdrop(backdrop) else Modifier.fillMaxSize())
                 .pointerInput(navAdaptiveActive, pagerState.currentPage) {
                     if (!navAdaptiveActive) return@pointerInput
@@ -413,17 +500,17 @@ private fun MiuixMainContent(
                     androidx.compose.runtime.key(page) {
                         when (page) {
                             0 -> MiuixCaptureScreen(
-                                padding = innerPadding,
+                                bottomLayoutInfo = bottomLayoutInfo,
                                 onScrollStateChange = { isScrollingDown = it },
                                 onEditModeChange = { isEditMode = it },
                                 onAddClick = { showBottomSheet = true },
-                                navAlignment = navAlignment,
+                                navAlignment = effectiveNavAlignment,
                                 useFloatingNavBar = useFloatingNavBar,
                                 onNavigateToOrderDetail = onNavigateToOrderDetail,
                                 onNavigateToGroupDetail = onNavigateToGroupDetail
                             )
                             1 -> MiuixRulesScreen(
-                                padding = innerPadding,
+                                bottomLayoutInfo = bottomLayoutInfo,
                                 onShowMenu = { position, rename, delete, export ->
                                     rulesMenuPosition = position
                                     rulesMenuRename = rename
@@ -433,7 +520,7 @@ private fun MiuixMainContent(
                                 }
                             )
                             2 -> MiuixSettingsScreen(
-                                padding = innerPadding,
+                                bottomLayoutInfo = bottomLayoutInfo,
                                 onNavigateToSubPage = onNavigateToSettingsSubPage
                             )
                         }
@@ -467,7 +554,14 @@ private fun MiuixMainContent(
                     Modifier.fillMaxWidth()
                 }
             ) {
-                NavigationBar(modifier = Modifier.fillMaxWidth(), color = barColor) {
+                NavigationBar(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { coordinates ->
+                            navigationBarTopInRootPx = coordinates.boundsInRoot().top.roundToInt()
+                        },
+                    color = barColor
+                ) {
                     NavigationBarItem(
                         selected = currentPage == 0,
                         onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
@@ -496,75 +590,117 @@ private fun MiuixMainContent(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            val floatingBarColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer
-            val isDark = isInDarkTheme
-            val floatingHighlight = remember(isDark) {
-                if (isDark) Highlight.GlassStrokeMiddleDark else Highlight.GlassStrokeMiddleLight
-            }
-            val floatingBarModifier = if (blurEnabled && backdrop != null) {
-                Modifier.textureBlur(
-                    backdrop = backdrop,
-                    shape = RoundedCornerShape(FloatingToolbarDefaults.CornerRadius),
-                    blurRadius = 25f,
-                    colors = BlurDefaults.blurColors(
-                        blendColors = listOf(
-                            BlendColorEntry(color = MiuixTheme.colorScheme.surfaceContainer.copy(0.6f)),
-                        ),
-                    ),
-                    highlight = floatingHighlight,
-                )
+            if (isIosLikeFloatingBar) {
+                val navigationItems = remember {
+                    listOf(
+                        NavigationItem(label = "主页", icon = Icons.Default.Home),
+                        NavigationItem(label = "规则", icon = MiuixIcons.Regular.Edit),
+                        NavigationItem(label = "设置", icon = MiuixIcons.Regular.Settings),
+                    )
+                }
+                val iosBarModifier = if (isLargeScreen) {
+                    Modifier.widthIn(max = MiuixHomeBottomLayoutDefaults.IosLikeLargeScreenMaxWidth)
+                } else {
+                    Modifier
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset(x = if (isLargeScreen) animatedFloatingBarOffsetX else 0.dp),
+                    contentAlignment = BiasAlignment(
+                        if (isLargeScreen) animatedBottomBarBias else 0f,
+                        1f,
+                    )
+                ) {
+                    IosLiquidGlassNavigationBar(
+                        items = navigationItems,
+                        selectedIndex = navigationTargetPage,
+                        onItemClick = { page ->
+                            performHaptic()
+                            coroutineScope.launch { pagerState.animateScrollToPage(page) }
+                        },
+                        backdrop = backdrop,
+                        isBlurActive = blurEnabled,
+                        isDark = isInDarkTheme,
+                        modifier = iosBarModifier.onGloballyPositioned { coordinates ->
+                            navigationBarTopInRootPx = coordinates.boundsInRoot().top.roundToInt()
+                        },
+                    )
+                }
             } else {
-                Modifier
-            }
-            val animatedHorizontalAlignment = remember(animatedBottomBarBias) {
-                object : Alignment.Horizontal {
-                    override fun align(size: Int, space: Int, layoutDirection: LayoutDirection): Int {
-                        val start = 0
-                        val center = (space - size) / 2
-                        val end = space - size
-                        return when {
-                            animatedBottomBarBias < 0f -> (center + (center - start) * animatedBottomBarBias).toInt()
-                            animatedBottomBarBias > 0f -> (center + (end - center) * animatedBottomBarBias).toInt()
-                            else -> center
+                val floatingBarColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer
+                val isDark = isInDarkTheme
+                val floatingHighlight = remember(isDark) {
+                    if (isDark) Highlight.GlassStrokeMiddleDark else Highlight.GlassStrokeMiddleLight
+                }
+                val floatingBarModifier = if (blurEnabled && backdrop != null) {
+                    Modifier.textureBlur(
+                        backdrop = backdrop,
+                        shape = RoundedCornerShape(FloatingToolbarDefaults.CornerRadius),
+                        blurRadius = 25f,
+                        colors = BlurDefaults.blurColors(
+                            blendColors = listOf(
+                                BlendColorEntry(color = MiuixTheme.colorScheme.surfaceContainer.copy(0.6f)),
+                            ),
+                        ),
+                        highlight = floatingHighlight,
+                    )
+                } else {
+                    Modifier
+                }
+                val animatedHorizontalAlignment = remember(animatedBottomBarBias) {
+                    object : Alignment.Horizontal {
+                        override fun align(size: Int, space: Int, layoutDirection: LayoutDirection): Int {
+                            val start = 0
+                            val center = (space - size) / 2
+                            val end = space - size
+                            return when {
+                                animatedBottomBarBias < 0f -> (center + (center - start) * animatedBottomBarBias).toInt()
+                                animatedBottomBarBias > 0f -> (center + (end - center) * animatedBottomBarBias).toInt()
+                                else -> center
+                            }
                         }
                     }
                 }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
-                    .padding(horizontal = 24.dp)
-                    .offset(
-                        x = animatedFloatingBarOffsetX,
-                        y = 10.dp
-                    ),
-                contentAlignment = Alignment.BottomCenter
-            ) {
-                FloatingNavigationBar(
-                    modifier = floatingBarModifier,
-                    color = floatingBarColor,
-                    horizontalAlignment = animatedHorizontalAlignment,
-                    horizontalOutSidePadding = 24.dp
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                        .padding(horizontal = 24.dp)
+                        .offset(
+                            x = animatedFloatingBarOffsetX,
+                            y = floatingBarVerticalOffset
+                        ),
+                    contentAlignment = Alignment.BottomCenter
                 ) {
-                    FloatingNavigationBarItem(
-                        selected = currentPage == 0,
-                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                        icon = Icons.Default.Home,
-                        label = "主页"
-                    )
-                    FloatingNavigationBarItem(
-                        selected = currentPage == 1,
-                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
-                        icon = MiuixIcons.Regular.Edit,
-                        label = "规则"
-                    )
-                    FloatingNavigationBarItem(
-                        selected = currentPage == 2,
-                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
-                        icon = MiuixIcons.Regular.Settings,
-                        label = "设置"
-                    )
+                    FloatingNavigationBar(
+                        modifier = floatingBarModifier
+                            .onGloballyPositioned { coordinates ->
+                                navigationBarTopInRootPx = coordinates.boundsInRoot().top.roundToInt()
+                            },
+                        color = floatingBarColor,
+                        horizontalAlignment = animatedHorizontalAlignment,
+                        horizontalOutSidePadding = 24.dp
+                    ) {
+                        FloatingNavigationBarItem(
+                            selected = currentPage == 0,
+                            onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
+                            icon = Icons.Default.Home,
+                            label = "主页"
+                        )
+                        FloatingNavigationBarItem(
+                            selected = currentPage == 1,
+                            onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
+                            icon = MiuixIcons.Regular.Edit,
+                            label = "规则"
+                        )
+                        FloatingNavigationBarItem(
+                            selected = currentPage == 2,
+                            onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
+                            icon = MiuixIcons.Regular.Settings,
+                            label = "设置"
+                        )
+                    }
                 }
             }
         }
@@ -696,10 +832,10 @@ private fun MiuixMainContent(
                                     }
                             ) {
                                 val (icon, label, color) = when (item) {
-                                    "rename" -> Triple(Icons.Default.Edit, "重命名", MiuixTheme.colorScheme.onSurface)
-                                    "export" -> Triple(Icons.Default.FileUpload, "导出规则", MiuixTheme.colorScheme.onSurface)
-                                    "delete" -> Triple(Icons.Default.Delete, "删除", MiuixTheme.colorScheme.error)
-                                    else -> Triple(Icons.Default.Edit, "", Color.Unspecified)
+                                    "rename" -> Triple(MiuixIcons.Regular.Edit, "重命名", MiuixTheme.colorScheme.onSurface)
+                                    "export" -> Triple(MiuixIcons.Regular.UploadCloud, "导出规则", MiuixTheme.colorScheme.onSurface)
+                                    "delete" -> Triple(MiuixIcons.Regular.Delete, "删除", MiuixTheme.colorScheme.error)
+                                    else -> Triple(MiuixIcons.Regular.Edit, "", Color.Unspecified)
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
@@ -741,11 +877,13 @@ private fun MiuixSettingsSubPageDirect(
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     val haptic = LocalHapticFeedback.current
+    val appUi = LocalAppUi.current
     val performHaptic = {
         if (prefs.getBoolean("haptic_enabled", true)) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
+    var showSystemApps by remember(page) { mutableStateOf(false) }
 
     // 模糊效果 - 和示例项目 NavigateTestPage 一致的实现
     val blurSupported = top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported()
@@ -785,6 +923,15 @@ private fun MiuixSettingsSubPageDirect(
                                     contentDescription = "返回"
                                 )
                             }
+                        },
+                        actions = {
+                            if (page == SettingsPage.NotificationApps) {
+                                appUi.notificationAppsTopBarAction(
+                                    showSystemApps,
+                                    { showSystemApps = it },
+                                    performHaptic
+                                )
+                            }
                         }
                     )
                 }
@@ -805,7 +952,11 @@ private fun MiuixSettingsSubPageDirect(
                         SettingsPage.KeepAlive -> com.Badnng.moe.ui.screen.settings.KeepAliveSettingsContent(performHaptic, topBarHeight, scrollState)
                         SettingsPage.Storage -> com.Badnng.moe.ui.screen.settings.StorageSettingsContent(performHaptic, prefs, topBarHeight + 26.dp, scrollState)
                         SettingsPage.Sponsor -> com.Badnng.moe.ui.screen.settings.SponsorSettingsContent(topBarHeight, scrollState)
-                        SettingsPage.NotificationApps -> com.Badnng.moe.ui.screen.settings.NotificationAppsSettingsContent(performHaptic, topBarHeight + 8.dp)
+                        SettingsPage.NotificationApps -> com.Badnng.moe.ui.screen.settings.NotificationAppsSettingsContent(
+                            performHaptic = performHaptic,
+                            topPadding = topBarHeight + 8.dp,
+                            showSystemApps = showSystemApps
+                        )
                         SettingsPage.Credits -> com.Badnng.moe.ui.screen.settings.CreditsSettingsContent(performHaptic, topBarHeight, scrollState)
                         SettingsPage.Main -> {}
                         else -> {}

@@ -35,7 +35,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun MiuixSettingsScreen(
-    padding: PaddingValues,
+    bottomLayoutInfo: MiuixHomeBottomLayoutInfo,
     onNavigateToSubPage: (SettingsPage) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -59,7 +59,7 @@ fun MiuixSettingsScreen(
                 .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
             contentPadding = PaddingValues(
                 top = innerPadding.calculateTopPadding(),
-                bottom = padding.calculateBottomPadding() + 100.dp
+                bottom = bottomLayoutInfo.pageContentBottomPadding
             )
         ) {
             item {
@@ -114,7 +114,7 @@ fun MiuixSettingsScreen(
         VerticalScrollBar(
             adapter = rememberScrollBarAdapter(lazyListState),
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            trackPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 100.dp),
+            trackPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = bottomLayoutInfo.pageContentBottomPadding),
         )
         }
     }

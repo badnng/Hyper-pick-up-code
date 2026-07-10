@@ -39,18 +39,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.NotificationAdd
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.QrCode
-import androidx.compose.material.icons.filled.SettingsSuggest
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -62,7 +51,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
@@ -70,6 +61,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -101,6 +93,16 @@ import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Add
+import top.yukonga.miuix.kmp.icon.extended.Alarm
+import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Delete
+import top.yukonga.miuix.kmp.icon.extended.ExpandMore
+import top.yukonga.miuix.kmp.icon.extended.Location
+import top.yukonga.miuix.kmp.icon.extended.ListView
+import top.yukonga.miuix.kmp.icon.extended.Ok
+import top.yukonga.miuix.kmp.icon.extended.Scan
 import top.yukonga.miuix.kmp.basic.VerticalScrollBar
 import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
 import top.yukonga.miuix.kmp.basic.TopAppBar
@@ -119,7 +121,7 @@ import java.util.Locale
 
 @Composable
 fun MiuixCaptureScreen(
-    padding: PaddingValues,
+    bottomLayoutInfo: MiuixHomeBottomLayoutInfo,
     onScrollStateChange: (Boolean) -> Unit = {},
     onEditModeChange: (Boolean) -> Unit = {},
     onAddClick: () -> Unit = {},
@@ -172,6 +174,31 @@ fun MiuixCaptureScreen(
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var selectedGroupIds by remember { mutableStateOf(setOf<Long>()) }
 
+    val density = LocalDensity.current
+    var editActionToolbarHeightPx by remember { mutableIntStateOf(0) }
+    var editSelectionToolbarHeightPx by remember { mutableIntStateOf(0) }
+    val editActionToolbarHeight = if (editActionToolbarHeightPx > 0) {
+        with(density) { editActionToolbarHeightPx.toDp() }
+    } else {
+        MiuixHomeBottomLayoutDefaults.EstimatedEditToolbarHeight
+    }
+    val editSelectionToolbarHeight = if (editSelectionToolbarHeightPx > 0) {
+        with(density) { editSelectionToolbarHeightPx.toDp() }
+    } else {
+        MiuixHomeBottomLayoutDefaults.EstimatedEditToolbarHeight
+    }
+    val editActionBottomPadding = bottomLayoutInfo.editActionBottomPadding
+    val editSelectionBottomPadding = editActionBottomPadding +
+        editActionToolbarHeight +
+        MiuixHomeBottomLayoutDefaults.EditToolbarGap
+    val editContentBottomPadding = editSelectionBottomPadding +
+        editSelectionToolbarHeight +
+        MiuixHomeBottomLayoutDefaults.ContentSpacing
+    val pageContentBottomPadding = if (isEditMode) {
+        editContentBottomPadding
+    } else {
+        bottomLayoutInfo.pageContentBottomPadding
+    }
 
     // 监听广播刷新
     DisposableEffect(Unit) {
@@ -219,9 +246,9 @@ fun MiuixCaptureScreen(
                                 }
                             }) {
                                 Icon(
-                                    if (isEditMode) Icons.Default.Close else Icons.Default.SettingsSuggest,
+                                    if (isEditMode) MiuixIcons.Regular.Close else MiuixIcons.Regular.ListView,
                                     contentDescription = "管理",
-                                    tint = if (isEditMode) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.primary
+                                    tint = Color.White
                                 )
                             }
                         }
@@ -294,7 +321,7 @@ fun MiuixCaptureScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(
                 top = innerPadding.calculateTopPadding() + 8.dp,
-                bottom = padding.calculateBottomPadding() + 100.dp,
+                bottom = pageContentBottomPadding,
                 start = 16.dp,
                 end = 16.dp
             )
@@ -532,7 +559,7 @@ fun MiuixCaptureScreen(
         VerticalScrollBar(
             adapter = rememberScrollBarAdapter(lazyListState),
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            trackPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 100.dp),
+            trackPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = pageContentBottomPadding),
         )
         }
     }
@@ -545,9 +572,10 @@ fun MiuixCaptureScreen(
         visible = isEditMode,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically(),
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 140.dp)
+        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = editSelectionBottomPadding)
     ) {
         FloatingToolbar(
+            modifier = Modifier.onSizeChanged { editSelectionToolbarHeightPx = it.height },
             color = MiuixTheme.colorScheme.surfaceVariant,
             cornerRadius = 16.dp,
         ) {
@@ -650,9 +678,10 @@ fun MiuixCaptureScreen(
         visible = isEditMode && (selectedIds.isNotEmpty() || selectedGroupIds.isNotEmpty()),
         enter = fadeIn(),
         exit = fadeOut(),
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 72.dp)
+        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = editActionBottomPadding)
     ) {
         FloatingToolbar(
+            modifier = Modifier.onSizeChanged { editActionToolbarHeightPx = it.height },
             color = MiuixTheme.colorScheme.primaryContainer,
             cornerRadius = 16.dp,
         ) {
@@ -669,7 +698,7 @@ fun MiuixCaptureScreen(
                         selectedGroupIds = emptySet()
                     }) {
                         Icon(
-                            imageVector = Icons.Default.Done,
+                            imageVector = MiuixIcons.Regular.Ok,
                             contentDescription = "完成",
                             tint = Color.White,
                         )
@@ -680,7 +709,7 @@ fun MiuixCaptureScreen(
                     showDeleteConfirm = true
                 }) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
+                        imageVector = MiuixIcons.Regular.Delete,
                         contentDescription = "删除",
                         tint = Color.White,
                     )
@@ -693,17 +722,29 @@ fun MiuixCaptureScreen(
     // 悬浮底栏开启时：竖排，跟随底栏位置
     // 悬浮底栏关闭时：横排，靠右
     val isVertical = useFloatingNavBar
-    val toolbarAlignment = if (useFloatingNavBar && navAlignment == "left") {
-        Alignment.BottomStart
+    val targetToolbarBias = when {
+        !useFloatingNavBar -> 1f
+        navAlignment == "left" -> -1f
+        else -> 1f
+    }
+    val animatedToolbarBias by animateFloatAsState(
+        targetValue = targetToolbarBias,
+        animationSpec = spring(dampingRatio = 0.92f, stiffness = 260f),
+        label = "homeToolbarBias"
+    )
+    val toolbarAlignment = if (useFloatingNavBar) {
+        BiasAlignment(animatedToolbarBias, 1f)
     } else {
         Alignment.BottomEnd
     }
-    val toolbarPadding = if (useFloatingNavBar && navAlignment == "left") {
-        PaddingValues(start = 24.dp, bottom = 120.dp)
-    } else if (useFloatingNavBar) {
-        PaddingValues(end = 24.dp, bottom = 120.dp)
+    val toolbarPadding = if (useFloatingNavBar) {
+        PaddingValues(
+            start = 24.dp,
+            end = 24.dp,
+            bottom = bottomLayoutInfo.toolbarBottomPadding
+        )
     } else {
-        PaddingValues(end = 16.dp, bottom = 120.dp)
+        PaddingValues(end = 16.dp, bottom = bottomLayoutInfo.toolbarBottomPadding)
     }
 
     AnimatedVisibility(
@@ -725,7 +766,7 @@ fun MiuixCaptureScreen(
                 ) {
                 IconButton(onClick = { performHaptic(); onAddClick() }) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = MiuixIcons.Regular.Add,
                         contentDescription = "添加",
                         tint = Color.White
                     )
@@ -733,7 +774,7 @@ fun MiuixCaptureScreen(
                 IconButton(onClick = { performHaptic(); openTaobaoIdentityEntry(context) }) {
                     Box {
                         Icon(
-                            imageVector = Icons.Default.QrCode,
+                            imageVector = MiuixIcons.Regular.Scan,
                             contentDescription = "淘宝身份码",
                             tint = Color.White
                         )
@@ -748,7 +789,7 @@ fun MiuixCaptureScreen(
                 IconButton(onClick = { performHaptic(); openPddIdentityEntry(context) }) {
                     Box {
                         Icon(
-                            imageVector = Icons.Default.QrCode,
+                            imageVector = MiuixIcons.Regular.Scan,
                             contentDescription = "拼多多身份码",
                             tint = Color.White
                         )
@@ -768,7 +809,7 @@ fun MiuixCaptureScreen(
                 ) {
                     IconButton(onClick = { performHaptic(); onAddClick() }) {
                         Icon(
-                            imageVector = Icons.Default.Add,
+                            imageVector = MiuixIcons.Regular.Add,
                             contentDescription = "添加",
                             tint = Color.White
                         )
@@ -776,7 +817,7 @@ fun MiuixCaptureScreen(
                     IconButton(onClick = { performHaptic(); openTaobaoIdentityEntry(context) }) {
                         Box {
                             Icon(
-                                imageVector = Icons.Default.QrCode,
+                                imageVector = MiuixIcons.Regular.Scan,
                                 contentDescription = "淘宝身份码",
                                 tint = Color.White
                             )
@@ -791,7 +832,7 @@ fun MiuixCaptureScreen(
                     IconButton(onClick = { performHaptic(); openPddIdentityEntry(context) }) {
                         Box {
                             Icon(
-                                imageVector = Icons.Default.QrCode,
+                                imageVector = MiuixIcons.Regular.Scan,
                                 contentDescription = "拼多多身份码",
                                 tint = Color.White
                             )
@@ -901,7 +942,7 @@ private fun MiuixOrderGroupCard(
             if (!location.isNullOrBlank()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.LocationOn,
+                        imageVector = MiuixIcons.Regular.Location,
                         contentDescription = null,
                         modifier = Modifier.size(14.dp),
                         tint = MiuixTheme.colorScheme.primary.copy(alpha = 0.7f)
@@ -945,7 +986,7 @@ private fun MiuixOrderGroupCard(
                         targetValue = if (isExpanded) 180f else 0f
                     )
                     Icon(
-                        Icons.Default.ExpandMore,
+                        MiuixIcons.Regular.ExpandMore,
                         contentDescription = null,
                         tint = MiuixTheme.colorScheme.primary,
                         modifier = Modifier
@@ -1066,7 +1107,7 @@ private fun MiuixOrderGroupCard(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Alarm,
+                                    imageVector = MiuixIcons.Regular.Alarm,
                                     contentDescription = "定时",
                                     modifier = Modifier.size(20.dp),
                                     tint = Color.White
@@ -1184,7 +1225,7 @@ private fun MiuixOrderCard(
                             Spacer(modifier = Modifier.height(6.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Default.LocationOn,
+                                    imageVector = MiuixIcons.Regular.Location,
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp),
                                     tint = MiuixTheme.colorScheme.primary.copy(alpha = 0.7f)
@@ -1205,7 +1246,7 @@ private fun MiuixOrderCard(
                 if (!order.qrCodeData.isNullOrEmpty()) {
                     IconButton(onClick = { /* TODO: 显示QR码 */ }) {
                         Icon(
-                            imageVector = Icons.Default.QrCode,
+                            imageVector = MiuixIcons.Regular.Scan,
                             contentDescription = "二维码",
                             modifier = Modifier.size(24.dp),
                             tint = MiuixTheme.colorScheme.primary.copy(alpha = 0.8f)
@@ -1302,7 +1343,7 @@ private fun MiuixOrderCard(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Alarm,
+                            imageVector = MiuixIcons.Regular.Alarm,
                             contentDescription = "定时",
                             modifier = Modifier.size(20.dp),
                             tint = Color.White

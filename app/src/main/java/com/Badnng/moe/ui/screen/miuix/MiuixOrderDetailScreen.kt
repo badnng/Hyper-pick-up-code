@@ -10,16 +10,12 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Copy
+import top.yukonga.miuix.kmp.icon.extended.ExpandLess
+import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -218,10 +214,14 @@ private fun MiuixFullTextCodeBlock(text: String?) {
                 )
                 Row {
                     IconButton(onClick = { text?.let { clipboardManager.setText(AnnotatedString(it)) } }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.ContentCopy, null, Modifier.size(16.dp))
+                        Icon(MiuixIcons.Regular.Copy, null, Modifier.size(16.dp))
                     }
                     IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
-                        Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(20.dp))
+                        Icon(
+                            if (expanded) MiuixIcons.Regular.ExpandLess else MiuixIcons.Regular.ExpandMore,
+                            null,
+                            Modifier.size(20.dp)
+                        )
                     }
                 }
             }

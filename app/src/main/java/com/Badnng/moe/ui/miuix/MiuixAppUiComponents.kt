@@ -10,9 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +23,9 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonLocation
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
@@ -146,7 +146,7 @@ fun MiuixPermissionItem(
                     color = MiuixTheme.colorScheme.onSurface
                 )
                 Icon(
-                    imageVector = if (isGranted) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                    imageVector = if (isGranted) MiuixIcons.Regular.Ok else MiuixIcons.Regular.Close,
                     contentDescription = null,
                     tint = if (isGranted) Color(0xFF4CAF50) else Color(0xFFF44336),
                     modifier = Modifier.size(28.dp)

@@ -27,6 +27,8 @@ data class AppUi(
     val choiceChip: @Composable (label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) -> Unit,
     // 独立开关项
     val preferenceSwitchItem: @Composable (title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) -> Unit,
+    // 通知识别应用页顶栏菜单
+    val notificationAppsTopBarAction: @Composable (showSystemApps: Boolean, onShowSystemAppsChange: (Boolean) -> Unit, performHaptic: () -> Unit) -> Unit,
 )
 
 val LocalAppUi = staticCompositionLocalOf<AppUi> { error("No AppUi provided") }

@@ -72,11 +72,6 @@ import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop as rememberMiuixBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop as miuixLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.blur.drawBackdrop
-import top.yukonga.miuix.kmp.basic.NavigationBar as MiuixNavigationBar
-import top.yukonga.miuix.kmp.basic.NavigationBarItem as MiuixNavigationBarItem
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBar as MiuixFloatingNavigationBar
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem as MiuixFloatingNavigationBarItem
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import kotlinx.coroutines.launch
@@ -165,8 +160,10 @@ fun HomeScreen(
     }
     // 关键修复：hapticEnabled 现在是实时响应的状态
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
+    var predictiveBackEnabled by remember {
+        mutableStateOf(prefs.getBoolean("predictive_back_enabled", true))
+    }
     var amoledPureBlack by remember { mutableStateOf(prefs.getBoolean("amoled_pure_black", false)) }
-    var useFloatingNavBar by remember { mutableStateOf(prefs.getBoolean("use_floating_nav_bar", false)) }
     val configuration = LocalConfiguration.current
     val isLargeScreen = configuration.screenWidthDp >= 700
 
@@ -210,10 +207,10 @@ fun HomeScreen(
             when (key) {
                 "nav_alignment" -> navAlignment = p.getString(key, "center") ?: "center"
                 "haptic_enabled" -> hapticEnabled = p.getBoolean(key, true)
+                "predictive_back_enabled" -> predictiveBackEnabled = p.getBoolean(key, true)
                 "amoled_pure_black" -> amoledPureBlack = p.getBoolean(key, false)
                 "large_screen_nav_adaptive_enabled" -> largeScreenNavAdaptiveEnabled =
                     p.getBoolean(key, true)
-                "use_floating_nav_bar" -> useFloatingNavBar = p.getBoolean(key, false)
             }
             if (key == "nav_alignment") {
                 val updated = p.getString(key, "center") ?: "center"
@@ -279,7 +276,9 @@ fun HomeScreen(
     }
 
 
-    PredictiveBackHandler(enabled = detailOrder != null || detailGroup != null) { backEvent: Flow<androidx.activity.BackEventCompat> ->
+    PredictiveBackHandler(
+        enabled = predictiveBackEnabled && (detailOrder != null || detailGroup != null)
+    ) { backEvent: Flow<androidx.activity.BackEventCompat> ->
         isPredictiveBackInProgress = true
         try {
             backEvent.collect { event ->
@@ -300,6 +299,16 @@ fun HomeScreen(
         } finally {
             isPredictiveBackInProgress = false
             backProgress = 0f
+        }
+    }
+
+    BackHandler(
+        enabled = !predictiveBackEnabled && (detailOrder != null || detailGroup != null)
+    ) {
+        if (detailGroup != null) {
+            detailGroup = null
+        } else {
+            detailOrder = null
         }
     }
 
@@ -389,112 +398,53 @@ fun HomeScreen(
                     enter = fadeIn() + slideInVertically { it },
                     exit = fadeOut() + slideOutVertically { it }
                 ) {
-                    if (isMiuix) {
-                        // Miuix 模式：全宽 NavigationBar + 半透明背景
-                        if (useFloatingNavBar) {
-                            // 悬浮底栏
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
-                                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                                contentAlignment = BiasAlignment(animatedBottomBarBias, 1f)
-                            ) {
-                                MiuixFloatingNavigationBar {
-                                    MiuixFloatingNavigationBarItem(
-                                        selected = pagerState.currentPage == 0,
-                                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                                        icon = Icons.Default.Home,
-                                        label = "主页"
-                                    )
-                                    MiuixFloatingNavigationBarItem(
-                                        selected = pagerState.currentPage == 1,
-                                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
-                                        icon = Icons.Default.Tune,
-                                        label = "规则"
-                                    )
-                                    MiuixFloatingNavigationBarItem(
-                                        selected = pagerState.currentPage == 2,
-                                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
-                                        icon = Icons.Default.Settings,
-                                        label = "设置"
-                                    )
-                                }
-                            }
-                        } else {
-                            // 全宽底栏
-                            MiuixNavigationBar(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                MiuixNavigationBarItem(
-                                    selected = pagerState.currentPage == 0,
-                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                                    icon = Icons.Default.Home,
-                                    label = "主页"
-                                )
-                                MiuixNavigationBarItem(
-                                    selected = pagerState.currentPage == 1,
-                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
-                                    icon = Icons.Default.Tune,
-                                    label = "规则"
-                                )
-                                MiuixNavigationBarItem(
-                                    selected = pagerState.currentPage == 2,
-                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
-                                    icon = Icons.Default.Settings,
-                                    label = "设置"
-                                )
-                            }
-                        }
-                    } else {
-                        // MD3E 模式：悬浮药丸底栏 + Kyant Backdrop
-                        val alignment = BiasAlignment(animatedBottomBarBias, 1f)
+                    // MD3E 模式：悬浮药丸底栏 + Kyant Backdrop
+                    val alignment = BiasAlignment(animatedBottomBarBias, 1f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        contentAlignment = alignment
+                    ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
-                                .padding(horizontal = 24.dp, vertical = 16.dp),
-                            contentAlignment = alignment
+                                .width(bottomBarWidth)
+                                .height(bottomBarHeight)
+                                .border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
+                                .drawBackdrop(
+                                    backdrop = backdrop,
+                                    shape = { RoundedCornerShape(20.dp) },
+                                    effects = { vibrancy(); blur(16.dp.toPx()); lens(20.dp.toPx(), 40.dp.toPx()) },
+                                    onDrawSurface = { drawRect(Color.White.copy(alpha = 0.1f)) }
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(bottomBarWidth)
-                                    .height(bottomBarHeight)
-                                    .border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
-                                    .drawBackdrop(
-                                        backdrop = backdrop,
-                                        shape = { RoundedCornerShape(20.dp) },
-                                        effects = { vibrancy(); blur(16.dp.toPx()); lens(20.dp.toPx(), 40.dp.toPx()) },
-                                        onDrawSurface = { drawRect(Color.White.copy(alpha = 0.1f)) }
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                NavigationBar(containerColor = Color.Transparent, modifier = Modifier.fillMaxSize(), windowInsets = WindowInsets(0, 0, 0, 0)) {
-                                    NavigationBarItem(
-                                        icon = { val s by animateDpAsState(if (pagerState.currentPage == 0) 28.dp else 24.dp); Icon(Icons.Default.Home, null, Modifier.size(s)) },
-                                        label = { Text("主页", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                        selected = pagerState.currentPage == 0,
-                                        alwaysShowLabel = true,
-                                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                                        colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                                    )
-                                    NavigationBarItem(
-                                        icon = { val s by animateDpAsState(if (pagerState.currentPage == 1) 28.dp else 24.dp); Icon(Icons.Default.Tune, null, Modifier.size(s)) },
-                                        label = { Text("规则", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                        selected = pagerState.currentPage == 1,
-                                        alwaysShowLabel = true,
-                                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
-                                        colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                                    )
-                                    NavigationBarItem(
-                                        icon = { val s by animateDpAsState(if (pagerState.currentPage == 2) 28.dp else 24.dp); Icon(Icons.Default.Settings, null, Modifier.size(s)) },
-                                        label = { Text("设置", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                        selected = pagerState.currentPage == 2,
-                                        alwaysShowLabel = true,
-                                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
-                                        colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                                    )
-                                }
+                            NavigationBar(containerColor = Color.Transparent, modifier = Modifier.fillMaxSize(), windowInsets = WindowInsets(0, 0, 0, 0)) {
+                                NavigationBarItem(
+                                    icon = { val s by animateDpAsState(if (pagerState.currentPage == 0) 28.dp else 24.dp); Icon(Icons.Default.Home, null, Modifier.size(s)) },
+                                    label = { Text("主页", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    selected = pagerState.currentPage == 0,
+                                    alwaysShowLabel = true,
+                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
+                                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                )
+                                NavigationBarItem(
+                                    icon = { val s by animateDpAsState(if (pagerState.currentPage == 1) 28.dp else 24.dp); Icon(Icons.Default.Tune, null, Modifier.size(s)) },
+                                    label = { Text("规则", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    selected = pagerState.currentPage == 1,
+                                    alwaysShowLabel = true,
+                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
+                                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                )
+                                NavigationBarItem(
+                                    icon = { val s by animateDpAsState(if (pagerState.currentPage == 2) 28.dp else 24.dp); Icon(Icons.Default.Settings, null, Modifier.size(s)) },
+                                    label = { Text("设置", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    selected = pagerState.currentPage == 2,
+                                    alwaysShowLabel = true,
+                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
+                                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                )
                             }
                         }
                     }

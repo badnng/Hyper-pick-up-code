@@ -3,6 +3,7 @@ package com.Badnng.moe.service
 import android.app.Notification
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -174,12 +175,19 @@ class NotificationListenerRecognitionService : NotificationListenerService() {
     companion object {
         data class AppInfo(val packageName: String, val label: String)
 
-        fun getAllInstalledApps(context: Context): List<AppInfo> {
+        fun getAllInstalledApps(
+            context: Context,
+            includeSystemApps: Boolean = false
+        ): List<AppInfo> {
             val pm = context.packageManager
             val selfPkg = context.packageName
+            val systemAppFlags = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
             return pm.getInstalledApplications(0)
                 .filter { it.packageName != selfPkg }
-                .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+                .filter { app ->
+                    pm.getLaunchIntentForPackage(app.packageName) != null ||
+                            includeSystemApps && (app.flags and systemAppFlags) != 0
+                }
                 .map { AppInfo(it.packageName, pm.getApplicationLabel(it).toString()) }
                 .sortedBy { it.label.lowercase() }
         }

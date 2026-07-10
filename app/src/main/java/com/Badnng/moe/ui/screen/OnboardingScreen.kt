@@ -104,35 +104,26 @@ fun OnboardingScreen(onComplete: () -> Unit) {
     ) {
 
         // 顶部标题栏 + 进度条 + 内容区域
-        val isMiuix = com.Badnng.moe.ui.miuix.rememberMiuixStyle()
         Column(modifier = Modifier.fillMaxSize()) {
             // 顶部标题栏
-            if (isMiuix) {
-                top.yukonga.miuix.kmp.basic.TopAppBar(
-                    title = "欢迎使用澎湃记",
-                    subtitle = if (currentStep == OnboardingStep.Permissions) "第 1 步：权限设置" else "第 2 步：功能介绍",
-                    color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.surface
-                )
-            } else {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = "欢迎使用澎湃记",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (currentStep == OnboardingStep.Permissions) "第 1 步：权限设置" else "第 2 步：功能介绍",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-                )
-            }
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            text = "欢迎使用澎湃记",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (currentStep == OnboardingStep.Permissions) "第 1 步：权限设置" else "第 2 步：功能介绍",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
 
             // 进度指示器（带动画）
             val animatedProgress by animateFloatAsState(

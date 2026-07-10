@@ -7,6 +7,7 @@ import android.content.SharedPreferences
 import android.graphics.drawable.Icon
 import android.os.Build
 import androidx.activity.BackEventCompat
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.Badnng.moe.R
 import com.Badnng.moe.service.CaptureTileService
+import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.component.GroupPosition
 import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
@@ -49,10 +51,12 @@ import top.yukonga.miuix.kmp.shader.isRenderEffectSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
+import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.basic.TopAppBar as MiuixTopAppBar
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text as MiuixText
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Back
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -80,6 +84,9 @@ fun SettingsScreen(
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var uiStyle by remember { mutableStateOf(prefs.getString("ui_style", "md3e") ?: "md3e") }
+    var predictiveBackEnabled by remember {
+        mutableStateOf(prefs.getBoolean("predictive_back_enabled", true))
+    }
     val isMiuix = uiStyle == "miuix"
 
     val performHaptic = {
@@ -109,13 +116,18 @@ fun SettingsScreen(
 
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-            if (key == "ui_style") uiStyle = p.getString(key, "md3e") ?: "md3e"
+            when (key) {
+                "ui_style" -> uiStyle = p.getString(key, "md3e") ?: "md3e"
+                "predictive_back_enabled" -> predictiveBackEnabled = p.getBoolean(key, true)
+            }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
-    PredictiveBackHandler(enabled = pageStack.isNotEmpty()) { backEvent: Flow<BackEventCompat> ->
+    PredictiveBackHandler(
+        enabled = predictiveBackEnabled && pageStack.isNotEmpty()
+    ) { backEvent: Flow<BackEventCompat> ->
         isPredictiveBackInProgress = true
         try {
             backEvent.collect { event ->
@@ -131,6 +143,10 @@ fun SettingsScreen(
             isPredictiveBackInProgress = false
             backProgress = 0f
         }
+    }
+
+    BackHandler(enabled = !predictiveBackEnabled && pageStack.isNotEmpty()) {
+        navigateBack()
     }
 
     val currentScale = if (isPredictiveBackInProgress) 1f - (backProgress * 0.08f) else 1f
@@ -304,6 +320,8 @@ fun SubPage(
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    val appUi = LocalAppUi.current
+    var showSystemApps by remember(page) { mutableStateOf(false) }
 
     if (isMiuix) {
         // Miuix 模式：使用 Miuix Scaffold + TopAppBar（自动处理大标题滚动动画）
@@ -315,8 +333,17 @@ fun SubPage(
                     scrollBehavior = miuixScrollBehavior,
                     color = MiuixTheme.colorScheme.surface,
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                        MiuixIconButton(onClick = onBack) {
+                            MiuixIcon(MiuixIcons.Regular.Back, "返回")
+                        }
+                    },
+                    actions = {
+                        if (page == SettingsPage.NotificationApps) {
+                            appUi.notificationAppsTopBarAction(
+                                showSystemApps,
+                                { showSystemApps = it },
+                                performHaptic
+                            )
                         }
                     }
                 )
@@ -337,7 +364,11 @@ fun SubPage(
                     SettingsPage.Storage -> StorageSettingsContent(performHaptic, prefs, 0.dp, scrollState)
                     SettingsPage.About -> AboutSettingsContent(performHaptic, 0.dp, scrollState, onNavigateToCredits = { onNavigate(SettingsPage.Credits) })
                     SettingsPage.Sponsor -> SponsorSettingsContent(0.dp, scrollState)
-                    SettingsPage.NotificationApps -> NotificationAppsSettingsContent(performHaptic, 0.dp)
+                    SettingsPage.NotificationApps -> NotificationAppsSettingsContent(
+                        performHaptic = performHaptic,
+                        topPadding = 0.dp,
+                        showSystemApps = showSystemApps
+                    )
                     SettingsPage.Credits -> CreditsSettingsContent(performHaptic, 0.dp, scrollState)
                     SettingsPage.Main -> {}
                 }
@@ -384,7 +415,11 @@ fun SubPage(
                 SettingsPage.Storage -> StorageSettingsContent(performHaptic, prefs, topContentPadding, scrollState)
                 SettingsPage.About -> AboutSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Sponsor -> SponsorSettingsContent(topContentPadding, scrollState)
-                SettingsPage.NotificationApps -> NotificationAppsSettingsContent(performHaptic, topContentPadding)
+                SettingsPage.NotificationApps -> NotificationAppsSettingsContent(
+                    performHaptic = performHaptic,
+                    topPadding = topContentPadding,
+                    showSystemApps = showSystemApps
+                )
                 SettingsPage.Credits -> CreditsSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Main -> {}
             }
@@ -421,6 +456,15 @@ fun SubPage(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
                         }
                     },
+                    actions = {
+                        if (page == SettingsPage.NotificationApps) {
+                            appUi.notificationAppsTopBarAction(
+                                showSystemApps,
+                                { showSystemApps = it },
+                                performHaptic
+                            )
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                 )
             }
@@ -436,6 +480,15 @@ fun SubPage(
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                        }
+                    },
+                    actions = {
+                        if (page == SettingsPage.NotificationApps) {
+                            appUi.notificationAppsTopBarAction(
+                                showSystemApps,
+                                { showSystemApps = it },
+                                performHaptic
+                            )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)

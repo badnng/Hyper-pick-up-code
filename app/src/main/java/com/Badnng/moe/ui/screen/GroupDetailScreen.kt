@@ -97,7 +97,6 @@ fun GroupDetailScreen(
         drawContent()
     }
     val canBlur = isRenderEffectSupported()
-    val isMiuix = com.Badnng.moe.ui.miuix.rememberMiuixStyle()
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // 内容层
@@ -108,7 +107,7 @@ fun GroupDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(if (isMiuix) 100.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp))
+            Spacer(modifier = Modifier.height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp))
             Spacer(modifier = Modifier.height(16.dp))
 
             Surface(
@@ -264,26 +263,7 @@ fun GroupDetailScreen(
     }
 
     // 毛玻璃 TopAppBar 覆盖层
-    if (isMiuix) {
-        top.yukonga.miuix.kmp.basic.TopAppBar(
-            title = group.name,
-            color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.surface,
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                }
-            },
-            actions = {
-                if (completedCount < totalCount) {
-                    TextButton(onClick = onMarkAllCompleted) {
-                        Icon(Icons.Default.Done, null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("全部完成")
-                    }
-                }
-            }
-        )
-    } else if (canBlur) {
+    if (canBlur) {
         Box(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier

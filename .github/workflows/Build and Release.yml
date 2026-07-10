@@ -2,6 +2,9 @@ name: Build and Release
 
 on:
   push:
+    branches:
+      - master
+      - dev
     tags:
       - 'v*'
 
@@ -27,6 +30,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Restore Gradle cache
+        id: gradle_cache
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -58,12 +62,12 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace --info -Porg.gradle.user.home=$HOME/.gradle
 
-      - name: Build Debug APK (master)
+      - name: Build Debug APK
         if: "!startsWith(github.ref, 'refs/tags/')"
         run: ./gradlew assembleDebug --no-daemon -Porg.gradle.user.home=$HOME/.gradle
 
       - name: Save Gradle cache
-        if: startsWith(github.ref, 'refs/tags/')
+        if: success() && steps.gradle_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |

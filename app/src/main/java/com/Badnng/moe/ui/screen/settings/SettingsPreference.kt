@@ -1,6 +1,7 @@
 package com.Badnng.moe.ui.screen.settings
 
 import android.content.Context
+import android.os.VibratorManager
 import com.Badnng.moe.ui.theme.Md3Presets
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.graphics.Brush
@@ -68,6 +69,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
 import com.Badnng.moe.R
 import com.Badnng.moe.helper.SuperIslandHelper
+import com.Badnng.moe.ui.miuix.MIUIX_FLOATING_NAV_BAR_STYLE_KEY
+import com.Badnng.moe.ui.miuix.MiuixFloatingNavigationBarStyle
 import com.Badnng.moe.ui.component.CaptureModeItem
 import com.Badnng.moe.ui.component.ChoiceChip
 import com.Badnng.moe.ui.component.GroupPosition
@@ -78,7 +81,9 @@ import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsGroupSwitchItem
 import com.Badnng.moe.ui.component.SettingsListItem
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Promotions
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
@@ -94,6 +99,11 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
     val isFoldableDevice = remember(context) {
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_HINGE_ANGLE)
     }
+    val hasVibrator = remember(context) {
+        context.getSystemService(VibratorManager::class.java)
+            ?.defaultVibrator
+            ?.hasVibrator() == true
+    }
     var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
     var largeScreenNavAdaptiveEnabled by remember {
         mutableStateOf(prefs.getBoolean("large_screen_nav_adaptive_enabled", true))
@@ -102,6 +112,9 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
     var monetEnabled by remember { mutableStateOf(prefs.getBoolean("monet_enabled", true)) }
     var amoledPureBlack by remember { mutableStateOf(prefs.getBoolean("amoled_pure_black", false)) }
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
+    var predictiveBackEnabled by remember {
+        mutableStateOf(prefs.getBoolean("predictive_back_enabled", true))
+    }
     var showOnboardingOnNextLaunch by remember { mutableStateOf(prefs.getBoolean("show_onboarding_on_next_launch", false)) }
     var customHue by remember { mutableFloatStateOf(260f) }
     var selectedColorInt by remember { mutableIntStateOf(prefs.getInt("theme_color", Color(0xFF6750A4).toArgb())) }
@@ -113,6 +126,13 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
     var notificationListenerPermissionReady by remember { mutableStateOf(com.Badnng.moe.service.NotificationListenerRecognitionService.isNotificationListenerEnabled(context)) }
     var uiStyle by remember { mutableStateOf(prefs.getString("ui_style", "md3e") ?: "md3e") }
     var useFloatingNavBar by remember { mutableStateOf(prefs.getBoolean("use_floating_nav_bar", false)) }
+    var floatingNavBarStyle by remember {
+        mutableStateOf(
+            MiuixFloatingNavigationBarStyle.fromPreference(
+                prefs.getString(MIUIX_FLOATING_NAV_BAR_STYLE_KEY, null)
+            )
+        )
+    }
     var largeScreenNavAdaptive by remember { mutableStateOf(prefs.getBoolean("large_screen_nav_adaptive_enabled", true)) }
     var keyColorIndex by remember { mutableIntStateOf(prefs.getInt("key_color_index", 0)) }
 
@@ -159,7 +179,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
     ) {
         Spacer(Modifier.height(topPadding))
         if (isMiuix) {
-            SmallTitle(text = "底栏位置")
+            SmallTitle(text = "底栏设置")
             MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
                 SwitchPreference(
                     title = "悬浮底栏",
@@ -175,31 +195,69 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
-                    Column {
-                        SwitchPreference(
-                            title = "底栏自适应",
-                            summary = "大屏设备下滑切换底栏位置",
-                            checked = largeScreenNavAdaptive,
-                            onCheckedChange = {
-                                performHaptic()
-                                largeScreenNavAdaptive = it
-                                prefs.edit().putBoolean("large_screen_nav_adaptive_enabled", it).apply()
+                    OverlayDropdownPreference(
+                        title = "悬浮底栏样式",
+                        items = listOf("默认", "iOS-like"),
+                        selectedIndex = if (
+                            floatingNavBarStyle == MiuixFloatingNavigationBarStyle.IosLike
+                        ) 1 else 0,
+                        onSelectedIndexChange = { index ->
+                            performHaptic()
+                            floatingNavBarStyle = if (index == 1) {
+                                MiuixFloatingNavigationBarStyle.IosLike
+                            } else {
+                                MiuixFloatingNavigationBarStyle.Default
                             }
-                        )
+                            prefs.edit()
+                                .putString(
+                                    MIUIX_FLOATING_NAV_BAR_STYLE_KEY,
+                                    floatingNavBarStyle.preferenceValue
+                                )
+                                .apply()
+                        }
+                    )
+                }
+            }
+            AnimatedVisibility(
+                visible = useFloatingNavBar && (
+                    floatingNavBarStyle == MiuixFloatingNavigationBarStyle.Default || isLargeScreen
+                ),
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column {
+                    Spacer(Modifier.height(12.dp))
+                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+                        if (isLargeScreen) {
+                            SwitchPreference(
+                                title = "底栏自适应",
+                                summary = "大屏设备下滑切换底栏位置",
+                                checked = largeScreenNavAdaptive,
+                                onCheckedChange = {
+                                    performHaptic()
+                                    largeScreenNavAdaptive = it
+                                    prefs.edit().putBoolean("large_screen_nav_adaptive_enabled", it).apply()
+                                }
+                            )
+                        }
                         AnimatedVisibility(
-                            visible = !largeScreenNavAdaptive,
+                            visible = !isLargeScreen || !largeScreenNavAdaptive,
                             enter = expandVertically() + fadeIn(),
                             exit = shrinkVertically() + fadeOut()
                         ) {
                             OverlayDropdownPreference(
                                 title = "底栏位置",
                                 items = listOf("靠左", "居中", "靠右"),
-                                selectedIndex = when (navAlignment) { "left" -> 0; "center" -> 1; "right" -> 2; else -> 1 },
-                                onSelectedIndexChange = { idx ->
+                                selectedIndex = when (navAlignment) {
+                                    "left" -> 0
+                                    "right" -> 2
+                                    else -> 1
+                                },
+                                onSelectedIndexChange = { index ->
                                     performHaptic()
-                                    val v = listOf("left", "center", "right")[idx]
-                                    navAlignment = v
-                                    prefs.edit().putString("nav_alignment", v).apply()
+                                    val alignment = listOf("left", "center", "right")[index]
+                                    navAlignment = alignment
+                                    prefs.edit().putString("nav_alignment", alignment).apply()
                                 }
                             )
                         }
@@ -251,17 +309,30 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
             }
         }
 
-        PreferenceSection(title = "交互反馈") {
+        PreferenceSection(title = "交互设置") {
             SettingsGroup {
+                if (hasVibrator) {
+                    SettingsGroupSwitchItem(
+                        title = "震动反馈",
+                        description = "开启后点击按钮、切换分类时会有触感反馈",
+                        position = GroupPosition.First,
+                        checked = hapticEnabled,
+                        onCheckedChange = {
+                            hapticEnabled = it
+                            prefs.edit().putBoolean("haptic_enabled", it).apply()
+                            performHaptic()
+                        }
+                    )
+                }
                 SettingsGroupSwitchItem(
-                    title = "震动反馈",
-                    description = "开启后点击按钮、切换分类时会有触感反馈",
-                    position = GroupPosition.Single,
-                    checked = hapticEnabled,
+                    title = "预测性返回手势",
+                    description = "返回时显示跟随手势的缩放与位移动画",
+                    position = if (hasVibrator) GroupPosition.Last else GroupPosition.Single,
+                    checked = predictiveBackEnabled,
                     onCheckedChange = {
-                        hapticEnabled = it
-                        prefs.edit().putBoolean("haptic_enabled", it).apply()
                         performHaptic()
+                        predictiveBackEnabled = it
+                        prefs.edit().putBoolean("predictive_back_enabled", it).apply()
                     }
                 )
             }
@@ -665,13 +736,13 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                         colors = top.yukonga.miuix.kmp.basic.ButtonDefaults.buttonColorsPrimary(),
                     ) {
-                        Icon(
+                        MiuixIcon(
                             imageVector = MiuixIcons.Regular.Promotions,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
+                        MiuixText(
                             text = "测试超级岛通知",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
@@ -686,12 +757,12 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
+                            MiuixText(
                                 text = "⚠",
                                 fontSize = 20.sp
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(
+                            MiuixText(
                                 text = "小米超级岛功能仅接入，无白名单。如被非法滥用，与此应用无关，开发者不承担任何责任，也不会提供绕过方法。",
                                 fontSize = 13.sp,
                                 color = MiuixTheme.colorScheme.error,
@@ -753,30 +824,22 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                         )
                     }
 
-                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MiuixTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "⚠",
-                                fontSize = 20.sp
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "小米超级岛功能仅接入，无白名单。如被非法滥用，与此应用无关，开发者不承担任何责任，也不会提供绕过方法。",
-                                fontSize = 13.sp,
-                                color = MiuixTheme.colorScheme.error,
-                                lineHeight = 18.sp
-                            )
-                        }
-                    }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
+                    ) {
+                        Text(
+                            text = "⚠ 小米超级岛功能仅接入，无白名单。如被非法滥用，与此应用无关，开发者不承担任何责任，也不会提供绕过方法。",
+                            modifier = Modifier.padding(12.dp),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.error,
+                            lineHeight = 16.sp
+                        )
                     }
                 }
             }
+        }
 
         if (isMiuix) {
             SmallTitle(text = "联网更新")

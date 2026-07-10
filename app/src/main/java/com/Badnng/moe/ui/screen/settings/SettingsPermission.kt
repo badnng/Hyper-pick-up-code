@@ -42,6 +42,10 @@ import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Info
+import top.yukonga.miuix.kmp.icon.extended.Lock
+import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -110,7 +114,7 @@ fun PermissionSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
     val shizukuAction: (@Composable () -> Unit)? = if (!shizukuReady) {{
         if (isMiuix) {
             MiuixButton(onClick = { performHaptic(); if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, colors = MiuixButtonDefaults.buttonColorsPrimary(), modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                MiuixIcon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); MiuixText("如果Shizuku已运行请点我")
+                MiuixIcon(MiuixIcons.Regular.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); MiuixText("如果Shizuku已运行请点我")
             }
         } else {
             Button(onClick = { performHaptic(); if (Shizuku.pingBinder()) { try { Shizuku.requestPermission(1001) } catch (e: Exception) {} } }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
@@ -176,7 +180,7 @@ fun PermissionSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
                 if (isMiuix) {
                     MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
                         Row(modifier = Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            MiuixIcon(imageVector = Icons.Default.Info, contentDescription = null, tint = MiuixTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                            MiuixIcon(imageVector = MiuixIcons.Regular.Info, contentDescription = null, tint = MiuixTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(12.dp))
                             MiuixText(text = "开启后，应用在主页返回时会退出在后台并自动隐藏后台任务卡片。", fontSize = 13.sp, color = MiuixTheme.colorScheme.onPrimaryContainer, lineHeight = 18.sp)
                         }
@@ -207,7 +211,7 @@ fun PermissionSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
                             MiuixText(text = "1. 打开最近任务界面（多任务键或手势上滑悬停）\n2. 找到澎湃记卡片\n3. 长按卡片后点击卡片上的锁图标/下滑卡片使其变为锁定状态", fontSize = 13.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary, lineHeight = 20.sp)
                             Spacer(Modifier.height(8.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                MiuixIcon(imageVector = Icons.Default.Lock, contentDescription = null, tint = MiuixTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                MiuixIcon(imageVector = MiuixIcons.Regular.Lock, contentDescription = null, tint = MiuixTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 MiuixText(text = "锁定后卡片会显示锁图标，不会被一键清理", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.8f))
                             }

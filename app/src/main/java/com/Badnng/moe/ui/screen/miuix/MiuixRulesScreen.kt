@@ -28,7 +28,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,22 +48,30 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.VerticalScrollBar
 import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Add
+import top.yukonga.miuix.kmp.icon.extended.Delete
+import top.yukonga.miuix.kmp.icon.extended.ExpandMore
+import top.yukonga.miuix.kmp.icon.extended.Refresh
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.BufferedReader
 import java.util.*
 
 @Composable
 fun MiuixRulesScreen(
-    padding: androidx.compose.foundation.layout.PaddingValues,
+    bottomLayoutInfo: MiuixHomeBottomLayoutInfo,
     onShowMenu: ((position: androidx.compose.ui.geometry.Offset, rename: (() -> Unit)?, delete: (() -> Unit)?, export: (() -> Unit)?) -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -258,7 +266,7 @@ fun MiuixRulesScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(
                     top = innerPadding.calculateTopPadding(),
-                    bottom = padding.calculateBottomPadding() + 100.dp
+                    bottom = bottomLayoutInfo.pageContentBottomPadding
                 )
             ) {
                 // 本地规则标题
@@ -465,9 +473,9 @@ fun MiuixRulesScreen(
                                     enabled = !isUpdating
                                 ) {
                                     if (isUpdating) {
-                                        androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        InfiniteProgressIndicator(modifier = Modifier.size(18.dp))
                                     } else {
-                                        Icon(Icons.Default.Refresh, contentDescription = "更新", modifier = Modifier.size(20.dp))
+                                        Icon(MiuixIcons.Regular.Refresh, contentDescription = "更新", modifier = Modifier.size(20.dp))
                                     }
                                 }
                             },
@@ -527,7 +535,7 @@ fun MiuixRulesScreen(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
                             colors = ButtonDefaults.buttonColorsPrimary()
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(MiuixIcons.Regular.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("添加规则源")
                         }
@@ -565,7 +573,7 @@ fun MiuixRulesScreen(
                                     animationSpec = spring()
                                 )
                                 Icon(
-                                    imageVector = Icons.Default.ExpandMore,
+                                    imageVector = MiuixIcons.Regular.ExpandMore,
                                     contentDescription = null,
                                     modifier = Modifier.rotate(arrowRotation)
                                 )
@@ -648,7 +656,7 @@ fun MiuixRulesScreen(
                                     animationSpec = spring()
                                 )
                                 Icon(
-                                    imageVector = Icons.Default.ExpandMore,
+                                    imageVector = MiuixIcons.Regular.ExpandMore,
                                     contentDescription = null,
                                     modifier = Modifier.rotate(arrowRotation)
                                 )
@@ -704,7 +712,7 @@ fun MiuixRulesScreen(
                                                             )
                                                         } else {
                                                             Icon(
-                                                                Icons.Default.Add,
+                                                                MiuixIcons.Regular.Add,
                                                                 contentDescription = "选择图标",
                                                                 tint = MiuixTheme.colorScheme.onSurfaceVariantSummary
                                                             )
@@ -739,7 +747,7 @@ fun MiuixRulesScreen(
                                                             BrandIconResolver.saveCustomMappings(context, brandIconMappings)
                                                         }
                                                     ) {
-                                                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = Color.Red, modifier = Modifier.size(20.dp))
+                                                        Icon(MiuixIcons.Regular.Delete, contentDescription = "删除", tint = Color.Red, modifier = Modifier.size(20.dp))
                                                     }
                                                 }
                                             }
@@ -756,7 +764,7 @@ fun MiuixRulesScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                         colors = ButtonDefaults.buttonColorsPrimary()
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Icon(MiuixIcons.Regular.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text("添加规则")
                                     }
@@ -781,19 +789,32 @@ fun MiuixRulesScreen(
             VerticalScrollBar(
                 adapter = rememberScrollBarAdapter(lazyListState),
                 modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-                trackPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 100.dp),
+                trackPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = bottomLayoutInfo.pageContentBottomPadding),
             )
         }
     }
 
     // 恢复默认确认对话框
     if (showResetDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showResetDialog = false },
-            title = { Text("恢复默认规则") },
-            text = { Text("确定要删除所有自定义规则并恢复默认值吗？此操作不可撤销。") },
-            confirmButton = {
-                androidx.compose.material3.TextButton(
+        OverlayDialog(
+            title = "恢复默认规则",
+            summary = "确定要删除所有自定义规则并恢复默认值吗？此操作不可撤销。",
+            show = showResetDialog,
+            onDismissRequest = { showResetDialog = false }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                TextButton(
+                    text = "取消",
+                    onClick = {
+                        performHaptic()
+                        showResetDialog = false
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                Button(
                     onClick = {
                         performHaptic()
                         scope.launch {
@@ -807,15 +828,13 @@ fun MiuixRulesScreen(
                             Toast.makeText(context, "已恢复默认规则", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MiuixTheme.colorScheme.error)
-                ) { Text("确定") }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { performHaptic(); showResetDialog = false }) {
-                    Text("取消")
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors()
+                ) {
+                    Text("确定", color = MiuixTheme.colorScheme.error)
                 }
             }
-        )
+        }
     }
 
     // 添加/编辑在线源 WindowBottomSheet（始终在树中，由内部 showSheet 控制生命周期）
@@ -853,53 +872,64 @@ fun MiuixRulesScreen(
 
     // 导入重命名对话框
     if (pendingImportRules != null) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { pendingImportRules = null; pendingImportFileName = ""; pendingImportName = "" },
-            title = { Text("导入规则") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("规则名称", style = MiuixTheme.textStyles.body2)
-                    TextField(
-                        value = pendingImportName,
-                        onValueChange = { pendingImportName = it },
-                        label = "规则名称",
-                        modifier = Modifier.fillMaxWidth()
+        val isDuplicateName = localCustomSources.any { it.displayName == pendingImportName.trim() }
+        val dismissImportDialog = {
+            pendingImportRules = null
+            pendingImportFileName = ""
+            pendingImportName = ""
+        }
+        OverlayDialog(
+            title = "导入规则",
+            show = true,
+            onDismissRequest = dismissImportDialog
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("规则名称", style = MiuixTheme.textStyles.body2)
+                TextField(
+                    value = pendingImportName,
+                    onValueChange = { pendingImportName = it },
+                    label = "规则名称",
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    TextButton(
+                        text = "取消",
+                        onClick = {
+                            performHaptic()
+                            dismissImportDialog()
+                        },
+                        modifier = Modifier.weight(1f)
                     )
-                }
-            },
-            confirmButton = {
-                val isDuplicateName = localCustomSources.any { it.displayName == pendingImportName.trim() }
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        performHaptic()
-                        if (isDuplicateName) {
-                            Toast.makeText(context, "已存在同名规则「${pendingImportName.trim()}」", Toast.LENGTH_SHORT).show()
-                            return@TextButton
-                        }
-                        scope.launch {
-                            val rulesToImport = pendingImportRules ?: return@launch
-                            val newId = RecognitionRuleEngine.importLocalCustomSource(context, rulesToImport, pendingImportName.ifBlank { pendingImportFileName }, rulesToImport.jsonPackage)
-                            val (local, custom, online) = RecognitionRuleEngine.loadAllSourcesSystem(context)
-                            localConfig = local
-                            localCustomSources = custom
-                            onlineSources = online
-                            customSourceRules = customSourceRules + (newId to rulesToImport)
-                            rules = RecognitionRuleEngine.rules
-                            pendingImportRules = null
-                            pendingImportFileName = ""
-                            pendingImportName = ""
-                            Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    enabled = pendingImportName.isNotBlank() && !isDuplicateName
-                ) { Text("确定") }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { performHaptic(); pendingImportRules = null; pendingImportFileName = ""; pendingImportName = "" }) {
-                    Text("取消")
+                    Button(
+                        onClick = {
+                            performHaptic()
+                            scope.launch {
+                                val rulesToImport = pendingImportRules ?: return@launch
+                                val newId = RecognitionRuleEngine.importLocalCustomSource(context, rulesToImport, pendingImportName.ifBlank { pendingImportFileName }, rulesToImport.jsonPackage)
+                                val (local, custom, online) = RecognitionRuleEngine.loadAllSourcesSystem(context)
+                                localConfig = local
+                                localCustomSources = custom
+                                onlineSources = online
+                                customSourceRules = customSourceRules + (newId to rulesToImport)
+                                rules = RecognitionRuleEngine.rules
+                                pendingImportRules = null
+                                pendingImportFileName = ""
+                                pendingImportName = ""
+                                Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColorsPrimary(),
+                        enabled = pendingImportName.isNotBlank() && !isDuplicateName
+                    ) {
+                        Text("确定")
+                    }
                 }
             }
-        )
+        }
     }
 }
 
@@ -986,7 +1016,7 @@ private fun RuleSourceRow(
                     animationSpec = spring()
                 )
                 Icon(
-                    imageVector = Icons.Default.ExpandMore,
+                    imageVector = MiuixIcons.Regular.ExpandMore,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp).rotate(arrowRotation)
                 )

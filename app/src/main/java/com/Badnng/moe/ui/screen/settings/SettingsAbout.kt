@@ -62,6 +62,7 @@ import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Update
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -324,6 +325,54 @@ private fun MiuixAboutPage(
                 "dark" -> true
                 else -> isSystemInDarkTheme()
             }
+            val cardBlend = remember(isInDark) {
+                if (isInDark) {
+                    listOf(
+                        top.yukonga.miuix.kmp.blur.BlendColorEntry(
+                            Color(0x4DA9A9A9),
+                            top.yukonga.miuix.kmp.blur.BlurBlendMode.Luminosity,
+                        ),
+                        top.yukonga.miuix.kmp.blur.BlendColorEntry(
+                            Color(0x1A9C9C9C),
+                            top.yukonga.miuix.kmp.blur.BlurBlendMode.PlusDarker,
+                        ),
+                    )
+                } else {
+                    listOf(
+                        top.yukonga.miuix.kmp.blur.BlendColorEntry(
+                            Color(0x340034F9),
+                            top.yukonga.miuix.kmp.blur.BlurBlendMode.Overlay,
+                        ),
+                        top.yukonga.miuix.kmp.blur.BlendColorEntry(
+                            Color(0xB3FFFFFF),
+                            top.yukonga.miuix.kmp.blur.BlurBlendMode.HardLight,
+                        ),
+                    )
+                }
+            }
+            val aboutCardModifier = Modifier
+                .padding(horizontal = 12.dp)
+                .then(
+                    if (textBackdrop != null) {
+                        Modifier.textureBlur(
+                            backdrop = textBackdrop,
+                            shape = RoundedCornerShape(16.dp),
+                            blurRadius = 60f,
+                            colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
+                                blendColors = cardBlend,
+                                brightness = 0f,
+                                contrast = 1f,
+                                saturation = 1f,
+                            ),
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
+            val aboutCardColors = CardDefaults.defaultColors(
+                if (textBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
+                Color.Transparent,
+            )
             val logoBlend = remember(isInDark) {
                 if (isInDark) {
                     listOf(
@@ -372,8 +421,8 @@ private fun MiuixAboutPage(
                                 modifier = Modifier.fillParentMaxHeight().padding(bottom = innerPadding.calculateBottomPadding()),
                             ) {
                                 Card(
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                    colors = CardDefaults.defaultColors(MiuixTheme.colorScheme.surfaceContainer)
+                                    modifier = aboutCardModifier,
+                                    colors = aboutCardColors,
                                 ) {
                                     ArrowPreference(
                                         title = "项目地址",
@@ -394,8 +443,8 @@ private fun MiuixAboutPage(
                                 Spacer(modifier = Modifier.height(12.dp))
 
                                 Card(
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                    colors = CardDefaults.defaultColors(MiuixTheme.colorScheme.surfaceContainer)
+                                    modifier = aboutCardModifier,
+                                    colors = aboutCardColors,
                                 ) {
                                     MiuixAboutBackupSection(performHaptic = performHaptic)
                                 }
@@ -403,8 +452,8 @@ private fun MiuixAboutPage(
                                 Spacer(modifier = Modifier.height(12.dp))
 
                                 Card(
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                    colors = CardDefaults.defaultColors(MiuixTheme.colorScheme.surfaceContainer)
+                                    modifier = aboutCardModifier,
+                                    colors = aboutCardColors,
                                 ) {
                                     MiuixAboutLogSection(performHaptic = performHaptic)
                                 }
@@ -412,8 +461,8 @@ private fun MiuixAboutPage(
                                 Spacer(modifier = Modifier.height(12.dp))
 
                                 Card(
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                    colors = CardDefaults.defaultColors(MiuixTheme.colorScheme.surfaceContainer)
+                                    modifier = aboutCardModifier,
+                                    colors = aboutCardColors,
                                 ) {
                                     ArrowPreference(
                                         title = "致谢",
@@ -540,7 +589,7 @@ private fun MiuixAboutPage(
                                     InfiniteProgressIndicator(modifier = Modifier.size(18.dp), color = MiuixTheme.colorScheme.onPrimary)
                                     Spacer(Modifier.width(8.dp))
                                 } else {
-                                    MiuixIcon(Icons.Default.SystemUpdate, null, modifier = Modifier.size(18.dp))
+                                    MiuixIcon(MiuixIcons.Regular.Update, null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(8.dp))
                                 }
                                 MiuixText(if (isChecking) "检查中..." else "检查更新")
