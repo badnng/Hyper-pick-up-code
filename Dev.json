@@ -1,7 +1,7 @@
 {
-  "versionCode": 2026071111,
-  "versionName": "26.7.11.C01-Dev",
-  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n\n26.7.11.C01-Dev 版本更新如下：\n\n修复 Miuix 与 MD3E 组件样式喝醉酒一样融合在一块的问题\n修复 页面进入时进行打断无法返回上一页的问题\n修复 大屏设备底栏与工具栏间距异常的问题\n\n优化 设置选项在不同设备上的显示与设置效果\n优化 底栏布局在大屏设备上的显示效果\n优化 关于页面下的内容显示效果\n\n添加 通知识别可以显示系统应用\n添加 iOS-like 悬浮底栏 （Miuix）",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.7.11.C01-Dev/app-release.apk",
-  "md5": "3677effa7cd9a9c87f5611c4fe4b8c11"
+  "versionCode": 2026071211,
+  "versionName": "26.7.12.C01-Dev",
+  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n\n26.7.12.C01-Dev 版本更新如下：\n\n修复 首次安装时的MD3E的莫奈取色会影响到MiuixUI的颜色系统的问题\n修复 Bottom Sheet 打开后状态栏无法正常反色的问题\n修复 主页右上角图标在浅色背景下显示异常的问题\n修复 主页 Bottom Sheet 打开后底栏被隐藏的问题\n修复 MD3E 检测到新版本后自动开始下载的问题\n修复 MD3E 莫奈取色设置影响 Miuix 配色的问题\n修复 MD3E 下载进度始终停留在 0% 的问题\n\n添加 符合Hyper OS设计语言的 OOBE 初始设置引导\n添加 UI 切换时的过渡效果\n\n改动 首次安装时的默认UI为Miuix",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.7.12.C01-Dev/app-release.apk",
+  "md5": "97ca02c79c6629051eca07a00f034abc"
 }
