@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Interpolator derived from HyperCeiler provision at commit
+  7266aaa0d698ad10795381c5bf23651c2e1719d0.
+  Copyright (C) 2023-2026 HyperCeiler Contributions
+  SPDX-License-Identifier: AGPL-3.0-only
+-->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.37"
+    android:controlY1="0.0"
+    android:controlX2="0.63"
+    android:controlY2="1.0" />

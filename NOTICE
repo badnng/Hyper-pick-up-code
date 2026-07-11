@@ -1,0 +1,56 @@
+Hyper Note (澎湃记)
+Copyright (c) 2026 badnng
+
+Licensing
+=========
+
+The current combined work is distributed under the GNU Affero General
+Public License version 3 only (AGPL-3.0-only). See LICENSE for the full
+license text.
+
+Earlier versions of Hyper Note were released under the MIT License. The
+original MIT notice is retained in MIT_License.md. The current combined
+distribution is governed by the AGPL because it incorporates and adapts
+AGPL-licensed material described below.
+
+HyperCeiler attribution
+=======================
+
+This distribution contains material derived from HyperCeiler:
+
+  Source: https://github.com/ReChronoRain/HyperCeiler
+  Commit: 7266aaa0d698ad10795381c5bf23651c2e1719d0
+  Copyright (C) 2023-2026 HyperCeiler Contributions
+  License: AGPL-3.0-only
+
+The adapted material includes:
+
+  - library/provision/src/main/res/raw/glow.glsl, carried as
+    app/src/main/res/raw/oobe_glow.agsl with attribution headers;
+  - startup, page-transition, completion, and app-entry animation timing
+    and easing behavior from the provision module;
+  - the HyperOS background-blur strategy used by the startup and completion
+    screens;
+  - the startup arrow and button vector resources, native View layout weights,
+    per-view blur blend colors, MiPro font-family selection, and static
+    provision_logo_image_bg.webp fallback artwork;
+  - circular PixelCopy capture and the HyperOS ActivityOptions
+    makeScaleUpDown / makeScaleUpAnimationFromRoundedView invocation used
+    when entering the permission page;
+  - permission and basic-settings preview vectors, native page chrome
+    dimensions, and the 20-percent RenderEffect rendering strategy.
+
+These parts were adapted into native Android Views and Jetpack Compose.
+Hyper Note retains its own onboarding text, permissions, screenshot choices,
+feature descriptions, name, and application artwork.
+
+Names and marks
+===============
+
+The AGPL does not grant permission to use the names "澎湃记" or "Hyper Note",
+or the official project logo, to imply endorsement or official status.
+Modified or repackaged distributions must be clearly identified as
+unofficial and must not misrepresent their origin. This notice does not
+restrict commercial use or distribution otherwise permitted by the AGPL.
+
+Third-party libraries remain subject to their respective licenses.

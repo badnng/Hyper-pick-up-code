@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.Badnng.moe.ui.LocalIsMiuixUi
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -44,12 +45,15 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
 fun rememberMiuixStyle(): Boolean {
+    val providedStyle = LocalIsMiuixUi.current
+    if (providedStyle != null) return providedStyle
+
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    var uiStyle by remember { mutableStateOf(prefs.getString("ui_style", "md3e") ?: "md3e") }
+    var uiStyle by remember { mutableStateOf(prefs.getString("ui_style", "miuix") ?: "miuix") }
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-            if (key == "ui_style") uiStyle = p.getString(key, "md3e") ?: "md3e"
+            if (key == "ui_style") uiStyle = p.getString(key, "miuix") ?: "miuix"
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }

@@ -46,6 +46,7 @@ import com.Badnng.moe.ui.component.GroupPosition
 import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsListItem
+import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import top.yukonga.miuix.kmp.blur.BlurColors
 import top.yukonga.miuix.kmp.shader.isRenderEffectSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -83,11 +84,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    var uiStyle by remember { mutableStateOf(prefs.getString("ui_style", "md3e") ?: "md3e") }
     var predictiveBackEnabled by remember {
         mutableStateOf(prefs.getBoolean("predictive_back_enabled", true))
     }
-    val isMiuix = uiStyle == "miuix"
+    val isMiuix = rememberMiuixStyle()
 
     val performHaptic = {
         if (prefs.getBoolean("haptic_enabled", true)) {
@@ -117,7 +117,6 @@ fun SettingsScreen(
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             when (key) {
-                "ui_style" -> uiStyle = p.getString(key, "md3e") ?: "md3e"
                 "predictive_back_enabled" -> predictiveBackEnabled = p.getBoolean(key, true)
             }
         }

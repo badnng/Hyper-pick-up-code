@@ -3,6 +3,22 @@
 
     <style name="Theme.澎湃记" parent="android:Theme.Material.Light.NoActionBar" />
 
+    <style name="Theme.澎湃记.Home" parent="Theme.澎湃记">
+        <item name="android:windowBackground">@color/oobe_window_background</item>
+    </style>
+
+    <style name="Theme.澎湃记.Oobe" parent="Theme.澎湃记">
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:windowBackground">@color/oobe_window_background</item>
+    </style>
+
     <style name="Theme.澎湃记.Overlay">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>

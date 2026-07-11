@@ -32,3 +32,6 @@ data class AppUi(
 )
 
 val LocalAppUi = staticCompositionLocalOf<AppUi> { error("No AppUi provided") }
+
+/** Keeps a transitioning UI subtree pinned to the style it was composed with. */
+val LocalIsMiuixUi = staticCompositionLocalOf<Boolean?> { null }

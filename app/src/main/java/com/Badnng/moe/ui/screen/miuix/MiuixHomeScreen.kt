@@ -250,8 +250,9 @@ fun MiuixHomeScreen(
         entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
         entryProvider = homeEntryProvider,
     )
+    val displayedEntries = if (predictiveBackEnabled) entries else entries.takeLast(1)
     NavDisplay(
-        entries = entries,
+        entries = displayedEntries,
         onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
         transitionEffects = remember {
             NavDisplayTransitionEffects(blockInputDuringTransition = true)
@@ -529,7 +530,37 @@ private fun MiuixMainContent(
             } // Box layerBackdrop
         }
 
-        // 底栏：覆盖在 Scaffold 上方，支持模糊效果
+        // BottomSheet/菜单 全屏模糊背景（实时跟随 Sheet 拖拽进度）
+        // 先于底栏绘制，使底栏在弹窗打开期间保持可见。
+        val sheetProgress = com.Badnng.moe.ui.component.BlurState.progress.floatValue
+        val menuBlurAlpha by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (rulesMenuShow) 1f else 0f,
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 300),
+            label = "menuBlurAlpha"
+        )
+        val blurAlpha = maxOf(sheetProgress, menuBlurAlpha)
+        if (blurAlpha > 0.01f && backdrop != null) {
+            val isInDark = isInDarkTheme
+            val baseBrightness = if (isInDark) -0.3f else -0.5f
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f * blurAlpha))
+                    .textureBlur(
+                        backdrop = backdrop,
+                        shape = RectangleShape,
+                        blurRadius = 56f * blurAlpha,
+                        colors = BlurDefaults.blurColors(
+                            brightness = baseBrightness * blurAlpha,
+                            contrast = 1f + 0.2f * blurAlpha,
+                            saturation = 1f + 0.08f * blurAlpha,
+                        ),
+                    )
+                    .graphicsLayer(alpha = blurAlpha)
+            )
+        }
+
+        // 底栏：覆盖在 Scaffold 和模糊遮罩上方，支持模糊效果
         // 标准底栏（非悬浮）
         AnimatedVisibility(
             visible = !isEditMode && !isManaging && !useFloatingNavBar,
@@ -712,35 +743,6 @@ private fun MiuixMainContent(
             viewModel = addOrderViewModel,
             onDismiss = { showBottomSheet = false }
         )
-
-        // BottomSheet/菜单 全屏模糊背景（实时跟随 Sheet 拖拽进度）
-        val sheetProgress = com.Badnng.moe.ui.component.BlurState.progress.floatValue
-        val menuBlurAlpha by androidx.compose.animation.core.animateFloatAsState(
-            targetValue = if (rulesMenuShow) 1f else 0f,
-            animationSpec = androidx.compose.animation.core.tween(durationMillis = 300),
-            label = "menuBlurAlpha"
-        )
-        val blurAlpha = maxOf(sheetProgress, menuBlurAlpha)
-        if (blurAlpha > 0.01f && backdrop != null) {
-            val isInDark = isInDarkTheme
-            val baseBrightness = if (isInDark) -0.3f else -0.5f
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f * blurAlpha))
-                    .textureBlur(
-                        backdrop = backdrop,
-                        shape = RectangleShape,
-                        blurRadius = 56f * blurAlpha,
-                        colors = BlurDefaults.blurColors(
-                            brightness = baseBrightness * blurAlpha,
-                            contrast = 1f + 0.2f * blurAlpha,
-                            saturation = 1f + 0.08f * blurAlpha,
-                        ),
-                    )
-                    .graphicsLayer(alpha = blurAlpha)
-            )
-        }
 
         // 规则页长按菜单（模糊由上方共享处理）
         val animatedMenuAlpha by androidx.compose.animation.core.animateFloatAsState(

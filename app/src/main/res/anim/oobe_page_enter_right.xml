@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Page transition derived from HyperCeiler provision at commit
+  7266aaa0d698ad10795381c5bf23651c2e1719d0.
+  Copyright (C) 2023-2026 HyperCeiler Contributions
+  SPDX-License-Identifier: AGPL-3.0-only
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <translate
+        android:duration="350"
+        android:fromXDelta="100%p"
+        android:interpolator="@android:anim/accelerate_decelerate_interpolator"
+        android:toXDelta="0.0" />
+</set>

@@ -37,6 +37,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.LocalDismissState
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowBottomSheet
+import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
 
 @Composable
 fun MiuixScheduledNotificationSheet(
@@ -66,6 +67,7 @@ fun MiuixScheduledNotificationSheet(
         enableNestedScroll = true,
         onDismissRequest = { com.Badnng.moe.ui.component.BlurState.hide(); onDismiss() }
     ) {
+        NonPredictiveBackInterceptor()
         val dismiss = LocalDismissState.current
 
         Column(

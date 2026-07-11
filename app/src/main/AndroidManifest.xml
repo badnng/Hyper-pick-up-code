@@ -63,7 +63,7 @@
             android:name=".activity.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.澎湃记"
+            android:theme="@style/Theme.澎湃记.Home"
             android:resizeableActivity="true"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustPan"
@@ -73,6 +73,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".activity.OnboardingContentActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.澎湃记.Oobe"
+            android:windowSoftInputMode="adjustPan" />
+
+        <activity
+            android:name=".activity.OnboardingCompleteActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.澎湃记.Oobe"
+            android:windowSoftInputMode="adjustPan" />
 
         <activity
             android:name=".activity.PermissionActivity"

@@ -45,7 +45,10 @@ import com.Badnng.moe.helper.UpdateHelper
 import com.Badnng.moe.helper.UpdateInfo
 import com.Badnng.moe.ui.component.UpdateSheet
 import com.Badnng.moe.ui.component.UpdateProgressSheet
+import com.Badnng.moe.ui.component.GroupPosition
 import com.Badnng.moe.ui.component.PreferenceSection
+import com.Badnng.moe.ui.component.SettingsGroup
+import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsListItem
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import kotlinx.coroutines.launch
@@ -438,6 +441,20 @@ private fun MiuixAboutPage(
                                             uriHandler.openUri("https://github.com/badnng/Hyper-pick-up-code")
                                         }
                                     )
+                                    ArrowPreference(
+                                        title = "开源许可证",
+                                        endActions = {
+                                            MiuixText(
+                                                text = "AGPL-3.0",
+                                                fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                                            )
+                                        },
+                                        onClick = {
+                                            performHaptic()
+                                            uriHandler.openUri("https://github.com/badnng/Hyper-pick-up-code/blob/master/LICENSE")
+                                        }
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(12.dp))
@@ -723,16 +740,28 @@ private fun Md3eAboutPage(
 
         Spacer(Modifier.height(24.dp))
 
-        // 项目地址
+        // 项目与许可证
         PreferenceSection(title = "项目") {
-            SettingsListItem(
-                title = "项目地址",
-                description = "GitHub · badnng/Hyper-pick-up-code",
-                onClick = {
-                    performHaptic()
-                    uriHandler.openUri("https://github.com/badnng/Hyper-pick-up-code")
-                }
-            )
+            SettingsGroup {
+                SettingsGroupItem(
+                    title = "项目地址",
+                    description = "GitHub · badnng/Hyper-pick-up-code",
+                    position = GroupPosition.First,
+                    onClick = {
+                        performHaptic()
+                        uriHandler.openUri("https://github.com/badnng/Hyper-pick-up-code")
+                    }
+                )
+                SettingsGroupItem(
+                    title = "开源许可证",
+                    description = "GNU AGPL v3.0",
+                    position = GroupPosition.Last,
+                    onClick = {
+                        performHaptic()
+                        uriHandler.openUri("https://github.com/badnng/Hyper-pick-up-code/blob/master/LICENSE")
+                    }
+                )
+            }
         }
 
         Spacer(Modifier.height(32.dp))
@@ -760,6 +789,7 @@ private fun Md3eAboutPage(
             Triple("Paddle Lite", "使用深度识别算法在本地进行OCR识别", "https://www.paddlepaddle.org.cn/paddle/paddlelite"),
             Triple("Paddle4Android", "不需要学习原理即可一键在Android上引入OCR识别", "https://github.com/equationl/paddleocr4android"),
             Triple("Miuix", "多平台UI/效果实现的UI设计库", "https://github.com/compose-miuix-ui/miuix/"),
+            Triple("HyperCeiler", "首次使用引导的视觉效果与动画参考", "https://github.com/ReChronoRain/HyperCeiler"),
         )
         PreferenceSection(title = "开源项目") {
             credits.forEach { (name, description, url) ->
@@ -1169,6 +1199,7 @@ fun CreditsSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compo
         Triple("Paddle Lite", "使用深度识别算法在本地进行OCR识别", "https://www.paddlepaddle.org.cn/paddle/paddlelite"),
         Triple("Paddle4Android", "不需要学习原理即可一键在Android上引入OCR识别", "https://github.com/equationl/paddleocr4android"),
         Triple("Miuix", "多平台UI/效果实现的UI设计库", "https://github.com/compose-miuix-ui/miuix/"),
+        Triple("HyperCeiler", "首次使用引导的视觉效果与动画参考", "https://github.com/ReChronoRain/HyperCeiler"),
     )
 
     if (isMiuix) {

@@ -34,6 +34,7 @@ import top.yukonga.miuix.kmp.theme.LocalDismissState
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.MiuixIndication
 import top.yukonga.miuix.kmp.window.WindowBottomSheet
+import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
 
 // ═══════════════════════════════════════════
 //  兼容层：自动切换 Miuix / MD3E
@@ -52,7 +53,7 @@ fun UpdateSheet(
     val isMiuix = rememberMiuixStyle()
     if (isMiuix) {
         MiuixUpdateSheet(show = show, updateInfo = updateInfo, onDismiss = onDismiss, onInstall = onInstall)
-    } else {
+    } else if (show) {
         Md3eUpdateDialog(updateInfo = updateInfo, onDismiss = onDismiss, onInstall = onInstall)
     }
 }
@@ -74,7 +75,7 @@ fun UpdateProgressSheet(
     val isMiuix = rememberMiuixStyle()
     if (isMiuix) {
         MiuixUpdateProgressSheet(show = show, updateInfo = updateInfo, progress = progress, isPaused = isPaused, onPause = onPause, onResume = onResume, onDismiss = onDismiss)
-    } else {
+    } else if (show) {
         Md3eUpdateProgressDialog(progress = progress ?: 0f, isPaused = isPaused, onPause = onPause, onResume = onResume, onDismiss = onDismiss)
     }
 }
@@ -135,6 +136,7 @@ private fun MiuixUpdateSheet(
         onDismissRequest = onDismiss,
         onDismissFinished = { BlurState.hide() }
     ) {
+        NonPredictiveBackInterceptor()
         // 追踪 Sheet 拖拽位置
         if (show) {
             Box(
@@ -267,6 +269,7 @@ private fun MiuixUpdateProgressSheet(
         onDismissRequest = onDismiss,
         onDismissFinished = { BlurState.hide() }
     ) {
+        NonPredictiveBackInterceptor()
         if (show) {
             Box(
                 modifier = Modifier

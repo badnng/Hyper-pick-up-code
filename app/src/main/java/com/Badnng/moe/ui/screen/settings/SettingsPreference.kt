@@ -69,8 +69,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
 import com.Badnng.moe.R
 import com.Badnng.moe.helper.SuperIslandHelper
+import com.Badnng.moe.ui.theme.MD3E_MONET_ENABLED_KEY
+import com.Badnng.moe.ui.theme.MIUIX_MONET_ENABLED_KEY
 import com.Badnng.moe.ui.miuix.MIUIX_FLOATING_NAV_BAR_STYLE_KEY
 import com.Badnng.moe.ui.miuix.MiuixFloatingNavigationBarStyle
+import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.component.CaptureModeItem
 import com.Badnng.moe.ui.component.ChoiceChip
 import com.Badnng.moe.ui.component.GroupPosition
@@ -109,7 +112,12 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
         mutableStateOf(prefs.getBoolean("large_screen_nav_adaptive_enabled", true))
     }
     var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "system") ?: "system") }
-    var monetEnabled by remember { mutableStateOf(prefs.getBoolean("monet_enabled", true)) }
+    var md3eMonetEnabled by remember {
+        mutableStateOf(prefs.getBoolean(MD3E_MONET_ENABLED_KEY, true))
+    }
+    var miuixMonetEnabled by remember {
+        mutableStateOf(prefs.getBoolean(MIUIX_MONET_ENABLED_KEY, false))
+    }
     var amoledPureBlack by remember { mutableStateOf(prefs.getBoolean("amoled_pure_black", false)) }
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
     var predictiveBackEnabled by remember {
@@ -124,7 +132,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
     var smsRecognitionEnabled by remember { mutableStateOf(prefs.getBoolean("sms_recognition_enabled", false)) }
     var notificationListenerEnabled by remember { mutableStateOf(prefs.getBoolean("notification_listener_recognition_enabled", false)) }
     var notificationListenerPermissionReady by remember { mutableStateOf(com.Badnng.moe.service.NotificationListenerRecognitionService.isNotificationListenerEnabled(context)) }
-    var uiStyle by remember { mutableStateOf(prefs.getString("ui_style", "md3e") ?: "md3e") }
+    val uiStyle = remember(prefs) { prefs.getString("ui_style", "miuix") ?: "miuix" }
     var useFloatingNavBar by remember { mutableStateOf(prefs.getBoolean("use_floating_nav_bar", false)) }
     var floatingNavBarStyle by remember {
         mutableStateOf(
@@ -155,17 +163,17 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
         }
     }
 
-    val isMiuix = uiStyle == "miuix"
+    val isMiuix = rememberMiuixStyle()
 
     // Miuix 颜色模式索引计算
     val colorModeLabels = listOf("跟随系统", "浅色", "深色", "莫奈取色(自动)", "莫奈取色(浅色)", "莫奈取色(深色)")
     val currentColorModeIndex = when {
-        !monetEnabled && themeMode == "system" -> 0
-        !monetEnabled && themeMode == "light" -> 1
-        !monetEnabled && themeMode == "dark" -> 2
-        monetEnabled && themeMode == "system" -> 3
-        monetEnabled && themeMode == "light" -> 4
-        monetEnabled && themeMode == "dark" -> 5
+        !miuixMonetEnabled && themeMode == "system" -> 0
+        !miuixMonetEnabled && themeMode == "light" -> 1
+        !miuixMonetEnabled && themeMode == "dark" -> 2
+        miuixMonetEnabled && themeMode == "system" -> 3
+        miuixMonetEnabled && themeMode == "light" -> 4
+        miuixMonetEnabled && themeMode == "dark" -> 5
         else -> 0
     }
 
@@ -361,10 +369,10 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                             else -> "system" to false
                         }
                         themeMode = newThemeMode
-                        monetEnabled = newMonetEnabled
+                        miuixMonetEnabled = newMonetEnabled
                         prefs.edit()
                             .putString("theme_mode", newThemeMode)
-                            .putBoolean("monet_enabled", newMonetEnabled)
+                            .putBoolean(MIUIX_MONET_ENABLED_KEY, newMonetEnabled)
                             .apply()
                     }
                 )
@@ -387,7 +395,6 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                     onSelectedIndexChange = { index ->
                         performHaptic()
                         val newStyle = if (index == 1) "miuix" else "md3e"
-                        uiStyle = newStyle
                         prefs.edit().putString("ui_style", newStyle).apply()
                     }
                 )
@@ -400,16 +407,16 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                         title = "莫奈取色 (Dynamic Color)",
                         description = "开启后主题色将跟随系统壁纸自动变化",
                         position = GroupPosition.Single,
-                        checked = monetEnabled,
+                        checked = md3eMonetEnabled,
                         onCheckedChange = {
                             performHaptic()
-                            monetEnabled = it
-                            prefs.edit().putBoolean("monet_enabled", it).apply()
+                            md3eMonetEnabled = it
+                            prefs.edit().putBoolean(MD3E_MONET_ENABLED_KEY, it).apply()
                         }
                     )
                 }
             }
-            AnimatedVisibility(visible = !monetEnabled, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { PreferenceSection(title = "自定义主题色") { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("滑动调节色相", style = MaterialTheme.typography.bodySmall); Slider(value = customHue, onValueChange = { customHue = it }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth()); val previewColor = remember(customHue) { Color.hsv(customHue, 0.7f, 0.9f) }; Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(previewColor).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)); Button(onClick = { performHaptic(); selectedColorInt = previewColor.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f).height(56.dp)) { Text("应用颜色") } } ; Text("MD3 建议色", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)); val md3Presets = Md3Presets; val gap = 2.5f; val cr = 4f; FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) { md3Presets.forEach { preset -> Box(modifier = Modifier.size(36.dp).clip(CircleShape).drawWithContent { val w = size.width; val h = size.height; val midX = w / 2; val midY = h / 2; drawPath(androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(midX + gap, gap, w - gap, h - gap, androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(cr), androidx.compose.ui.geometry.CornerRadius(cr), androidx.compose.ui.geometry.CornerRadius(0f))) }, preset.primary); drawPath(androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(gap, gap, midX - gap * 0.5f, midY - gap * 0.5f, androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(cr))) }, preset.secondary); drawPath(androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(gap, midY + gap * 0.5f, midX - gap * 0.5f, h - gap, androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(cr), androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(0f))) }, preset.tertiary) }.border(width = if (selectedColorInt == preset.seed.toArgb()) 3.dp else 0.dp, color = if (selectedColorInt == preset.seed.toArgb()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape = CircleShape).clickable { performHaptic(); selectedColorInt = preset.seed.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }) } } } } }
+            AnimatedVisibility(visible = !md3eMonetEnabled, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { PreferenceSection(title = "自定义主题色") { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("滑动调节色相", style = MaterialTheme.typography.bodySmall); Slider(value = customHue, onValueChange = { customHue = it }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth()); val previewColor = remember(customHue) { Color.hsv(customHue, 0.7f, 0.9f) }; Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(previewColor).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)); Button(onClick = { performHaptic(); selectedColorInt = previewColor.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f).height(56.dp)) { Text("应用颜色") } } ; Text("MD3 建议色", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)); val md3Presets = Md3Presets; val gap = 2.5f; val cr = 4f; FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) { md3Presets.forEach { preset -> Box(modifier = Modifier.size(36.dp).clip(CircleShape).drawWithContent { val w = size.width; val h = size.height; val midX = w / 2; val midY = h / 2; drawPath(androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(midX + gap, gap, w - gap, h - gap, androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(cr), androidx.compose.ui.geometry.CornerRadius(cr), androidx.compose.ui.geometry.CornerRadius(0f))) }, preset.primary); drawPath(androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(gap, gap, midX - gap * 0.5f, midY - gap * 0.5f, androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(cr))) }, preset.secondary); drawPath(androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(gap, midY + gap * 0.5f, midX - gap * 0.5f, h - gap, androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(cr), androidx.compose.ui.geometry.CornerRadius(0f), androidx.compose.ui.geometry.CornerRadius(0f))) }, preset.tertiary) }.border(width = if (selectedColorInt == preset.seed.toArgb()) 3.dp else 0.dp, color = if (selectedColorInt == preset.seed.toArgb()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, shape = CircleShape).clickable { performHaptic(); selectedColorInt = preset.seed.toArgb(); prefs.edit().putInt("theme_color", selectedColorInt).apply() }) } } } } }
             PreferenceSection(title = "显示模式") {
                 SettingsGroup {
                     val themeOptions = listOf("light" to "浅色", "dark" to "深色", "system" to "跟随系统")
@@ -451,7 +458,6 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                         position = GroupPosition.First,
                         onClick = {
                             performHaptic()
-                            uiStyle = "md3e"
                             prefs.edit().putString("ui_style", "md3e").apply()
                         },
                         trailing = { RadioButton(selected = uiStyle == "md3e", onClick = null) }
@@ -462,7 +468,6 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                         position = GroupPosition.Last,
                         onClick = {
                             performHaptic()
-                            uiStyle = "miuix"
                             prefs.edit().putString("ui_style", "miuix").apply()
                         },
                         trailing = { RadioButton(selected = uiStyle == "miuix", onClick = null) }

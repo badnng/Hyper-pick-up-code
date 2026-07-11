@@ -248,7 +248,7 @@ fun MiuixCaptureScreen(
                                 Icon(
                                     if (isEditMode) MiuixIcons.Regular.Close else MiuixIcons.Regular.ListView,
                                     contentDescription = "管理",
-                                    tint = Color.White
+                                    tint = MiuixTheme.colorScheme.onSurface
                                 )
                             }
                         }

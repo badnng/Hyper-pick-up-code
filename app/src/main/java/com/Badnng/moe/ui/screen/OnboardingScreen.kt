@@ -1,7 +1,8 @@
 package com.Badnng.moe.ui.screen
 
 import android.annotation.SuppressLint
-import androidx.compose.animation.core.animateFloatAsState
+import android.app.Activity
+import android.content.ContextWrapper
 import com.Badnng.moe.R
 import android.app.AppOpsManager
 import android.app.StatusBarManager
@@ -13,14 +14,20 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Process
+import android.view.View
+import android.view.WindowManager
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,57 +36,107 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.view.WindowCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.Badnng.moe.helper.RootHelper
-import com.Badnng.moe.helper.AccessibilityShortcutHelper
+import com.Badnng.moe.helper.EdgeToEdgeHelper
 import com.Badnng.moe.service.CaptureTileService
+import com.Badnng.moe.ui.oobe.OOBE_PAGE_TRANSITION_MILLIS
+import com.Badnng.moe.ui.oobe.OobeAccelerateDecelerateEasing
+import com.Badnng.moe.ui.oobe.OobeCubicOutEasing
+import com.Badnng.moe.ui.oobe.OobeCompleteView
+import com.Badnng.moe.ui.oobe.OobeContentHeaderView
+import com.Badnng.moe.ui.oobe.OobeGlowBackground
+import com.Badnng.moe.ui.oobe.OobeHomeReadiness
+import com.Badnng.moe.ui.oobe.OobePrimaryButtonView
+import com.Badnng.moe.ui.oobe.OobeVisualBackend
+import com.Badnng.moe.ui.oobe.OobeVisualBackendResolver
+import com.Badnng.moe.ui.oobe.OobeWelcomeView
+import com.Badnng.moe.ui.oobe.oobeCircularReveal
+import com.Badnng.moe.ui.oobe.rememberOobeVisualBackend
 import rikka.shizuku.Shizuku
 
-enum class OnboardingStep {
-    Permissions,   // 权限设置
-    Features       // 功能介绍
+private enum class OnboardingStep {
+    Welcome,
+    Permissions,
+    Features,
+    Complete,
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+private val LocalOobeBackend = staticCompositionLocalOf { OobeVisualBackend.AndroidFallback }
+private val LocalOobeDarkTheme = staticCompositionLocalOf { false }
+
 @Composable
-fun OnboardingScreen(onComplete: () -> Unit) {
-    var currentStep by remember { mutableStateOf(OnboardingStep.Permissions) }
+fun OnboardingScreen(
+    onComplete: () -> Unit,
+    showWelcome: Boolean = true,
+    startAtComplete: Boolean = false,
+    welcomeEnabled: Boolean = true,
+    onWelcomeStart: ((View) -> Unit)? = null,
+    onFinalStepRequested: (() -> Unit)? = null,
+    onExit: () -> Unit = {},
+) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    val backendState = rememberOobeVisualBackend()
+    val homeReady by OobeHomeReadiness.ready.collectAsState()
+    var currentStep by rememberSaveable(showWelcome, startAtComplete) {
+        mutableStateOf(
+            when {
+                startAtComplete -> OnboardingStep.Complete
+                showWelcome -> OnboardingStep.Welcome
+                else -> OnboardingStep.Permissions
+            },
+        )
+    }
+    var welcomeIntroPlayed by rememberSaveable { mutableStateOf(false) }
+    var transitionLocked by remember { mutableStateOf(false) }
+    var revealActive by remember { mutableStateOf(false) }
+    val revealProgress = remember { Animatable(1f) }
+    var startButtonCenter by remember { mutableStateOf(Offset.Unspecified) }
+    val coroutineScope = rememberCoroutineScope()
+    val darkTheme = isSystemInDarkTheme()
 
-    // 震动辅助函数（使用Compose HapticFeedback API，与主页一致）
     val performHaptic = {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
-    // 权限状态
     var hasNotificationPermission by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
     var isIgnoringBattery by remember { mutableStateOf(false) }
     var hasUsageStatsPermission by remember { mutableStateOf(checkUsageStatsPermission(context)) }
     var shizukuReady by remember { mutableStateOf(false) }
-    var rootReady by remember { mutableStateOf(false) }
     var featuresAckCountdown by remember { mutableIntStateOf(15) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
 
-    // 定期检查权限状态
-    LaunchedEffect(Unit) {
-        // Root 不需要高频检测；只检查一次 su 是否存在，避免在未使用时频繁触发 Magisk 提示。
-        rootReady = withContext(Dispatchers.IO) { RootHelper.isSuAvailable() }
-        while (true) {
+    LaunchedEffect(currentStep) {
+        if (currentStep != OnboardingStep.Permissions) return@LaunchedEffect
+        while (currentStep == OnboardingStep.Permissions) {
             hasNotificationPermission = NotificationManagerCompat.from(context).areNotificationsEnabled()
             isIgnoringBattery = checkBatteryOptimization(context)
             hasUsageStatsPermission = checkUsageStatsPermission(context)
@@ -98,192 +155,432 @@ fun OnboardingScreen(onComplete: () -> Unit) {
         }
     }
 
-    Box(modifier = Modifier
-        .fillMaxSize()
-        .background(MaterialTheme.colorScheme.background)
-    ) {
+    fun navigateTo(step: OnboardingStep) {
+        if (transitionLocked) return
+        performHaptic()
+        transitionLocked = true
+        currentStep = step
+        coroutineScope.launch {
+            delay(OOBE_PAGE_TRANSITION_MILLIS.toLong())
+            transitionLocked = false
+        }
+    }
 
-        // 顶部标题栏 + 进度条 + 内容区域
-        Column(modifier = Modifier.fillMaxSize()) {
-            // 顶部标题栏
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "欢迎使用澎湃记",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = if (currentStep == OnboardingStep.Permissions) "第 1 步：权限设置" else "第 2 步：功能介绍",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+    fun startOobe(source: View) {
+        if (transitionLocked) return
+        performHaptic()
+        if (onWelcomeStart != null) {
+            onWelcomeStart(source)
+            return
+        }
+        transitionLocked = true
+        revealActive = true
+        coroutineScope.launch {
+            revealProgress.snapTo(0f)
+            currentStep = OnboardingStep.Permissions
+            revealProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(520, easing = OobeCubicOutEasing),
             )
+            revealActive = false
+            transitionLocked = false
+        }
+    }
 
-            // 进度指示器（带动画）
-            val animatedProgress by animateFloatAsState(
-                targetValue = if (currentStep == OnboardingStep.Permissions) 0.5f else 1f,
-                animationSpec = tween(durationMillis = 500),
-                label = "progress_animation"
-            )
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+    val requestNotificationPermission = {
+        val alreadyRequested = prefs.getBoolean("notification_permission_requested", false)
+        if (!alreadyRequested) {
+            prefs.edit().putBoolean("notification_permission_requested", true).apply()
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            })
+        }
+    }
 
-            // 内容区域（底部留出按钮高度的空间，防止内容被遮住）
-            Box(modifier = Modifier.weight(1f)) {
-                AnimatedContent(
-                    targetState = currentStep,
-                    label = "step_transition",
-                    transitionSpec = {
-                        if (targetState.ordinal > initialState.ordinal) {
-                            // 向前：从右滑入，向左滑出
-                            slideInHorizontally(animationSpec = tween(300)) { it } togetherWith
-                                    slideOutHorizontally(animationSpec = tween(300)) { -it }
-                        } else {
-                            // 向后：从左滑入，向右滑出
-                            slideInHorizontally(animationSpec = tween(300)) { -it } togetherWith
-                                    slideOutHorizontally(animationSpec = tween(300)) { it }
-                        }
-                    }
-                ) { step ->
-                    when (step) {
-                        OnboardingStep.Permissions -> {
-                            PermissionsStep(
-                                hasNotificationPermission = hasNotificationPermission,
-                                isIgnoringBattery = isIgnoringBattery,
-                                hasUsageStatsPermission = hasUsageStatsPermission,
-                                shizukuReady = shizukuReady,
-                                rootReady = rootReady,
-                                performHaptic = performHaptic
-                            )
-                        }
-                        OnboardingStep.Features -> {
-                            FeaturesStep()
-                        }
-                    }
+    BackHandler(enabled = transitionLocked || currentStep != OnboardingStep.Welcome || !showWelcome) {
+        if (transitionLocked) return@BackHandler
+        when (currentStep) {
+            OnboardingStep.Welcome -> Unit
+            OnboardingStep.Permissions -> {
+                if (showWelcome) {
+                    navigateTo(OnboardingStep.Welcome)
+                } else {
+                    performHaptic()
+                    onExit()
                 }
             }
+            OnboardingStep.Features -> navigateTo(OnboardingStep.Permissions)
+            OnboardingStep.Complete -> Unit
         }
+    }
 
-        // 悬浮按钮，无背景，叠在内容上方
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 16.dp)
-        ) {
-            when (currentStep) {
-                OnboardingStep.Permissions -> {
-                    val allRequiredGranted = hasNotificationPermission
-                    Button(
-                        onClick = {
-                            if (allRequiredGranted) {
+    val useDarkSystemBarIcons = when (currentStep) {
+        OnboardingStep.Welcome, OnboardingStep.Complete ->
+            backendState.value != OobeVisualBackend.HyperOsEnhanced && !darkTheme
+        OnboardingStep.Permissions, OnboardingStep.Features -> !darkTheme
+    }
+    OobeSystemBars(darkIcons = useDarkSystemBarIcons)
+    OobeFixedTheme(
+        darkTheme = darkTheme,
+        backend = backendState.value,
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            if (revealActive) {
+                OobeWelcomePage(
+                    backendState = backendState,
+                    onStart = { _ -> },
+                    enabled = false,
+                    onStartButtonCenter = {},
+                    modifier = Modifier.zIndex(0f),
+                    playIntro = false,
+                )
+            }
+
+            AnimatedContent(
+                targetState = currentStep,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(1f)
+                    .then(
+                        if (revealActive) {
+                            Modifier.oobeCircularReveal(
+                                progress = { revealProgress.value },
+                                center = {
+                                    if (startButtonCenter.x.isFinite() && startButtonCenter.y.isFinite()) {
+                                        startButtonCenter
+                                    } else {
+                                        Offset.Zero
+                                    }
+                                },
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
+                label = "oobe_step_transition",
+                transitionSpec = {
+                    if (initialState == OnboardingStep.Welcome && targetState == OnboardingStep.Permissions) {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else if (targetState.ordinal > initialState.ordinal) {
+                        slideInHorizontally(
+                            animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
+                        ) { it } togetherWith slideOutHorizontally(
+                            animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
+                        ) { -it }
+                    } else {
+                        slideInHorizontally(
+                            animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
+                        ) { -it } togetherWith slideOutHorizontally(
+                            animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
+                        ) { it }
+                    }
+                },
+            ) { step ->
+                when (step) {
+                    OnboardingStep.Welcome -> OobeWelcomePage(
+                        backendState = backendState,
+                        onStart = ::startOobe,
+                        enabled = !transitionLocked && welcomeEnabled,
+                        onStartButtonCenter = { startButtonCenter = it },
+                        playIntro = backendState.value != OobeVisualBackend.StaticFallback &&
+                            !welcomeIntroPlayed,
+                        onIntroFinished = { welcomeIntroPlayed = true },
+                    )
+                    OnboardingStep.Permissions -> OobePageScaffold(
+                        title = "权限设置",
+                        subtitle = "通知权限为必选设置哦",
+                        previewDrawable = R.drawable.oobe_permission_preview,
+                        primaryLabel = "继续",
+                        primaryEnabled = hasNotificationPermission && !transitionLocked,
+                        onBack = {
+                            if (showWelcome) {
+                                navigateTo(OnboardingStep.Welcome)
+                            } else {
                                 performHaptic()
-                                currentStep = OnboardingStep.Features
+                                onExit()
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (allRequiredGranted)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                Color.Gray,
-                            contentColor = if (allRequiredGranted)
-                                MaterialTheme.colorScheme.onPrimary
-                            else
-                                Color.White
-                        )
+                        onPrimary = { navigateTo(OnboardingStep.Features) },
                     ) {
-                        Text(
-                            text = "下一步",
-                            fontSize = 16.sp
+                        PermissionsStep(
+                            hasNotificationPermission = hasNotificationPermission,
+                            isIgnoringBattery = isIgnoringBattery,
+                            hasUsageStatsPermission = hasUsageStatsPermission,
+                            shizukuReady = shizukuReady,
+                            performHaptic = performHaptic,
+                            onRequestNotificationPermission = requestNotificationPermission,
                         )
                     }
-                }
-                OnboardingStep.Features -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Button(
-                            onClick = { 
+                    OnboardingStep.Features -> OobePageScaffold(
+                        title = "使用澎湃记",
+                        subtitle = "选择适合当前场景的识别方式",
+                        previewDrawable = R.drawable.oobe_features_preview,
+                        primaryLabel = if (featuresAckCountdown == 0) "完成设置" else "完成设置（${featuresAckCountdown}s）",
+                        primaryEnabled = featuresAckCountdown == 0 && !transitionLocked,
+                        onBack = { navigateTo(OnboardingStep.Permissions) },
+                        onPrimary = {
+                            if (onFinalStepRequested != null) {
                                 performHaptic()
-                                currentStep = OnboardingStep.Permissions 
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ),
-                            border = BorderStroke(
-                                width = 1.5.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Text(
-                                text = "上一步",
-                                fontSize = 16.sp
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                if (featuresAckCountdown == 0) {
-                                    performHaptic()
-                                    // 保存引导完成状态
-                                    prefs.edit().putBoolean("onboarding_completed", true).apply()
-                                    onComplete()
-                                }
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            enabled = featuresAckCountdown == 0,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (featuresAckCountdown == 0) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    Color.Gray
-                                },
-                                contentColor = if (featuresAckCountdown == 0) {
-                                    MaterialTheme.colorScheme.onPrimary
-                                } else {
-                                    Color.White
-                                },
-                                disabledContainerColor = Color.Gray,
-                                disabledContentColor = Color.White
-                            )
-                        ) {
-                            Text(
-                                text = if (featuresAckCountdown == 0) "我知道了" else "我知道了（${featuresAckCountdown}s）",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                                onFinalStepRequested()
+                            } else {
+                                navigateTo(OnboardingStep.Complete)
+                            }
+                        },
+                    ) {
+                        FeaturesStep()
                     }
+                    OnboardingStep.Complete -> OobeCompletePage(
+                        backendState = backendState,
+                        actionLabel = if (homeReady) "进入澎湃记" else "正在准备中",
+                        enabled = homeReady && !transitionLocked,
+                        onComplete = {
+                            performHaptic()
+                            prefs.edit().putBoolean("onboarding_completed", true).apply()
+                            onComplete()
+                        },
+                    )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun OobeFixedTheme(
+    darkTheme: Boolean,
+    backend: OobeVisualBackend,
+    content: @Composable () -> Unit,
+) {
+    val colors = if (darkTheme) {
+        darkColorScheme(
+            primary = Color(0xFF9CB5FF),
+            onPrimary = Color(0xFF001A43),
+            background = Color(0xFF101114),
+            surface = Color(0xFF1B1C20),
+            surfaceVariant = Color(0xFF27282D),
+        )
+    } else {
+        lightColorScheme(
+            primary = Color(0xFF0D84FF),
+            onPrimary = Color.White,
+            background = Color(0xFFF7F7FA),
+            surface = Color.White,
+            surfaceVariant = Color(0xFFECEEF3),
+        )
+    }
+    MaterialTheme(colorScheme = colors) {
+        CompositionLocalProvider(
+            LocalOobeBackend provides backend,
+            LocalOobeDarkTheme provides darkTheme,
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun OobeWelcomePage(
+    backendState: MutableState<OobeVisualBackend>,
+    onStart: (View) -> Unit,
+    enabled: Boolean,
+    onStartButtonCenter: (Offset) -> Unit,
+    modifier: Modifier = Modifier,
+    playIntro: Boolean = true,
+    onIntroFinished: () -> Unit = {},
+) {
+    val backend = backendState.value
+    val darkTheme = LocalOobeDarkTheme.current
+    val introRequested = remember { playIntro }
+    val motionEnabled = introRequested && backend != OobeVisualBackend.StaticFallback
+    var circleYOffset by remember { mutableFloatStateOf(0.1f) }
+
+    OobeGlowBackground(
+        backendState = backendState,
+        showOpeningCircle = motionEnabled,
+        darkTheme = darkTheme,
+        circleYOffset = circleYOffset,
+        modifier = modifier,
+    ) {
+        key(motionEnabled) {
+            AndroidView(
+                factory = { context ->
+                    OobeWelcomeView(context, motionEnabled)
+                },
+                update = { welcomeView ->
+                    welcomeView.bind(
+                        backend = backend,
+                        darkTheme = darkTheme,
+                        enabled = enabled,
+                        onStart = { source ->
+                            val location = IntArray(2)
+                            source.getLocationInWindow(location)
+                            onStartButtonCenter(
+                                Offset(
+                                    location[0] + source.width / 2f,
+                                    location[1] + source.height / 2f,
+                                ),
+                            )
+                            onStart(source)
+                        },
+                        onIntroFinished = onIntroFinished,
+                        onBackendFailure = {
+                            backendState.value = OobeVisualBackendResolver.downgradeFromHyperOs()
+                        },
+                        onCircleYOffsetChanged = { circleYOffset = it },
+                    )
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OobePageScaffold(
+    title: String,
+    subtitle: String,
+    previewDrawable: Int,
+    primaryLabel: String,
+    primaryEnabled: Boolean,
+    onBack: () -> Unit,
+    onPrimary: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val darkTheme = LocalOobeDarkTheme.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 720.dp),
+        ) {
+            AndroidView(
+                factory = { context -> OobeContentHeaderView(context) },
+                update = { header ->
+                    header.bind(
+                        title = title,
+                        subtitle = subtitle,
+                        previewDrawable = previewDrawable,
+                        darkTheme = darkTheme,
+                        onBack = onBack,
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Box(Modifier.weight(1f)) { content() }
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                tonalElevation = 0.dp,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AndroidView(
+                        factory = { context -> OobePrimaryButtonView(context) },
+                        update = { button ->
+                            button.bind(
+                                label = primaryLabel,
+                                enabled = primaryEnabled,
+                                onClick = onPrimary,
+                            )
+                        },
+                        modifier = Modifier
+                            .widthIn(max = 552.dp)
+                            .fillMaxWidth()
+                            .height(50.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OobeCompletePage(
+    backendState: MutableState<OobeVisualBackend>,
+    actionLabel: String,
+    enabled: Boolean,
+    onComplete: () -> Unit,
+) {
+    val darkTheme = LocalOobeDarkTheme.current
+    val motionEnabled = backendState.value != OobeVisualBackend.StaticFallback
+
+    OobeGlowBackground(
+        backendState = backendState,
+        showOpeningCircle = false,
+        darkTheme = darkTheme,
+    ) {
+        key(motionEnabled) {
+            AndroidView(
+                factory = { context -> OobeCompleteView(context, motionEnabled) },
+                update = { completeView ->
+                    completeView.bind(
+                        backend = backendState.value,
+                        darkTheme = darkTheme,
+                        actionLabel = actionLabel,
+                        enabled = enabled,
+                        onComplete = onComplete,
+                        onBackendFailure = {
+                            backendState.value = OobeVisualBackendResolver.downgradeFromHyperOs()
+                        },
+                    )
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OobeSystemBars(darkIcons: Boolean) {
+    val view = LocalView.current
+    val context = LocalContext.current
+    DisposableEffect(view, darkIcons) {
+        val activity = context.findActivity()
+        val window = activity?.window
+        if (window != null) {
+            window.clearFlags(
+                WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS or
+                    WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION,
+            )
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarDividerColor = android.graphics.Color.TRANSPARENT
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = darkIcons
+                isAppearanceLightNavigationBars = darkIcons
+            }
+        }
+        onDispose {
+            if (activity != null) EdgeToEdgeHelper.applyGestureEdgeToEdge(activity)
+        }
+    }
+}
+
+private fun Context.findActivity(): Activity? {
+    var current: Context? = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        val base = current.baseContext
+        if (base === current) return null
+        current = base
+    }
+    return current as? Activity
 }
 
 @Composable
@@ -292,110 +589,25 @@ private fun PermissionsStep(
     isIgnoringBattery: Boolean,
     hasUsageStatsPermission: Boolean,
     shizukuReady: Boolean,
-    rootReady: Boolean,
-    performHaptic: () -> Unit
+    performHaptic: () -> Unit,
+    onRequestNotificationPermission: () -> Unit,
 ) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    val neutralCardColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    var captureMode by remember { mutableStateOf(prefs.getString("capture_mode", "media_projection") ?: "media_projection") }
-    var mpNoPromptEnabled by remember { mutableStateOf(prefs.getBoolean("media_projection_no_prompt_enabled", false)) }
-    var volumeKeyShortcutEnabled by remember { mutableStateOf(prefs.getBoolean("volume_key_shortcut_enabled", false)) }
-    val shortcutConflict = captureMode == "media_projection" && mpNoPromptEnabled
-    val currentShortcutBackend = remember(captureMode, shizukuReady, rootReady, shortcutConflict) {
-        if (shortcutConflict) return@remember null
-        when (captureMode) {
-            "shizuku" -> if (shizukuReady) "shizuku" else null
-            "root" -> if (rootReady) "root" else null
-            else -> null
-        }
-    }
 
-    DisposableEffect(prefs) {
-        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-            when (key) {
-                "capture_mode" -> captureMode = p.getString("capture_mode", "media_projection") ?: "media_projection"
-                "media_projection_no_prompt_enabled" -> mpNoPromptEnabled = p.getBoolean("media_projection_no_prompt_enabled", false)
-                "volume_key_shortcut_enabled" -> volumeKeyShortcutEnabled = p.getBoolean("volume_key_shortcut_enabled", false)
-            }
-        }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Spacer(Modifier.height(8.dp))
-
-        // 必要权限说明
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = "请先完成必要权限设置，以确保应用正常运行。可选权限可以稍后在设置中开启。",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    lineHeight = 18.sp
-                )
-            }
-        }
-
-        // 必要权限部分
-        Text(
-            text = "必要权限",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        PermissionCard(
+    OobePermissionContent {
+        OobePermissionRow(
             title = "通知权限",
-            description = "用于收取取餐码通知，关闭后将无法收到取餐提醒",
-            icon = Icons.Default.Notifications,
-            isGranted = hasNotificationPermission,
-            isRequired = true,
-            onClick = {
-                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                }
-                context.startActivity(intent)
-            }
+            granted = hasNotificationPermission,
+            performHaptic = performHaptic,
+            onClick = onRequestNotificationPermission,
         )
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        OobeDeferredHint("您可以稍后设置以下权限")
 
-        // 可选权限部分
-        Text(
-            text = "可选权限（推荐）",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        PermissionCard(
+        OobePermissionRow(
             title = "忽略电池优化",
-            description = "防止系统休眠时清理应用，确保后台正常运行",
-            icon = Icons.Default.BatterySaver,
-            isGranted = isIgnoringBattery,
-            isRequired = false,
+            granted = isIgnoringBattery,
+            performHaptic = performHaptic,
             onClick = {
                 try {
                     val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
@@ -403,18 +615,15 @@ private fun PermissionsStep(
                     }
                     context.startActivity(intent)
                 } catch (e: Exception) {
-                    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                    context.startActivity(intent)
+                    context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 }
-            }
+            },
         )
-
-        PermissionCard(
+        Spacer(Modifier.height(10.dp))
+        OobePermissionRow(
             title = "应用使用情况",
-            description = "能更准确识别当前所在的 App，推荐开启",
-            icon = Icons.Default.Apps,
-            isGranted = hasUsageStatsPermission,
-            isRequired = false,
+            granted = hasUsageStatsPermission,
+            performHaptic = performHaptic,
             onClick = {
                 val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
                     data = Uri.parse("package:${context.packageName}")
@@ -424,368 +633,59 @@ private fun PermissionsStep(
                 } catch (e: Exception) {
                     context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 }
-            }
+            },
         )
-
-        PermissionCard(
-            title = "Shizuku",
-            description = "用于免授权截图识别，需要安装 Shizuku 应用并启动服务\n（如已启动服务请点击卡片进行授权，未启动服务将不会弹出任何内容）",
-            icon = Icons.Default.Adb,
-            isGranted = shizukuReady,
-            isRequired = false,
+        Spacer(Modifier.height(10.dp))
+        OobePermissionRow(
+            title = "Shizuku 授权",
+            granted = shizukuReady,
+            performHaptic = performHaptic,
             onClick = {
                 if (Shizuku.pingBinder()) {
                     try {
                         Shizuku.requestPermission(1001)
-                    } catch (e: Exception) {}
+                    } catch (_: Exception) {
+                    }
                 }
-            }
+            },
         )
-
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = neutralCardColor,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "截图方案设置",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = if (shizukuReady) "先选一个常用方案，稍后也可在 设置-截图方式 再次调整。"
-                    else "Shizuku 未激活时，部分功能不可用。请稍后在 设置-截图方式 里继续设置。",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                CaptureModeQuickItem(
-                    title = "共享屏幕 (MediaProjection)",
-                    selected = captureMode == "media_projection",
-                    onClick = {
-                        performHaptic()
-                        if (volumeKeyShortcutEnabled) {
-                            Thread {
-                                when {
-                                    captureMode == "root" && rootReady -> AccessibilityShortcutHelper.disableServiceWithRoot(context)
-                                    captureMode == "shizuku" && shizukuReady -> AccessibilityShortcutHelper.disableServiceWithShizuku(context)
-                                    rootReady -> AccessibilityShortcutHelper.disableServiceWithRoot(context)
-                                    shizukuReady -> AccessibilityShortcutHelper.disableServiceWithShizuku(context)
-                                }
-                            }.start()
-                            volumeKeyShortcutEnabled = false
-                            prefs.edit().putBoolean("volume_key_shortcut_enabled", false).apply()
-                            prefs.edit().putBoolean("skip_next_accessibility_connect", false).apply()
-                        }
-                        captureMode = "media_projection"
-                        prefs.edit().putString("capture_mode", "media_projection").apply()
-                    }
-                )
-                CaptureModeQuickItem(
-                    title = "纯 Shizuku 模式",
-                    selected = captureMode == "shizuku",
-                    enabled = shizukuReady,
-                    onClick = {
-                        if (shizukuReady) {
-                            performHaptic()
-                            captureMode = "shizuku"
-                            prefs.edit().putString("capture_mode", "shizuku").apply()
-                        }
-                    }
-                )
-                CaptureModeQuickItem(
-                    title = "Root 免授权",
-                    selected = captureMode == "root",
-                    enabled = rootReady,
-                    onClick = {
-                        if (rootReady) {
-                            performHaptic()
-                            captureMode = "root"
-                            prefs.edit().putString("capture_mode", "root").apply()
-                        }
-                    }
-                )
-
-                Surface(
-                    onClick = {
-                        if (captureMode == "media_projection" && shizukuReady) {
-                            performHaptic()
-                            val target = !mpNoPromptEnabled
-                            if (AccessibilityShortcutHelper.setProjectMediaAppOpsWithShizuku(context, target)) {
-                                mpNoPromptEnabled = target
-                                prefs.edit().putBoolean("media_projection_no_prompt_enabled", target).apply()
-                                if (target && volumeKeyShortcutEnabled) {
-                                    volumeKeyShortcutEnabled = false
-                                    prefs.edit().putBoolean("volume_key_shortcut_enabled", false).apply()
-                                }
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (captureMode == "media_projection" && shizukuReady) MaterialTheme.colorScheme.surface else neutralCardColor,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
-                    enabled = captureMode == "media_projection" && shizukuReady
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "共享屏幕免授权弹窗",
-                            fontSize = 13.sp,
-                            color = if (captureMode == "media_projection" && shizukuReady) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
-                        Switch(
-                            checked = mpNoPromptEnabled,
-                            onCheckedChange = null,
-                            enabled = captureMode == "media_projection" && shizukuReady
-                        )
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (!shortcutConflict && (captureMode == "root" && rootReady || captureMode == "shizuku" && shizukuReady)) MaterialTheme.colorScheme.surface else neutralCardColor,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "音量键快捷触发",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = when {
-                                    shortcutConflict -> "已与共享屏幕免授权弹窗冲突，需先关闭该开关"
-                                    captureMode == "shizuku" && !shizukuReady -> "Shizuku 未激活，请在 设置-截图方式 里稍后再次设置"
-                                    captureMode == "media_projection" -> "请切换到纯 Shizuku 模式或 Root 模式后再开启"
-                                    else -> "开启后可通过音量键快速触发识别"
-                                },
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = volumeKeyShortcutEnabled,
-                            enabled = currentShortcutBackend != null,
-                            onCheckedChange = { checked ->
-                                performHaptic()
-                                val targetEnabled = checked
-                                if (targetEnabled) {
-                                    prefs.edit().putBoolean("skip_next_accessibility_connect", true).apply()
-                                } else {
-                                    prefs.edit().putBoolean("skip_next_accessibility_connect", false).apply()
-                                }
-                                val success = when (currentShortcutBackend) {
-                                    "root" -> if (targetEnabled) {
-                                        AccessibilityShortcutHelper.configureShortcutWithRoot(context)
-                                    } else {
-                                        AccessibilityShortcutHelper.disableServiceWithRoot(context)
-                                    }
-                                    "shizuku" -> if (targetEnabled) {
-                                        AccessibilityShortcutHelper.configureShortcutWithShizuku(context)
-                                    } else {
-                                        AccessibilityShortcutHelper.disableServiceWithShizuku(context)
-                                    }
-                                    else -> false
-                                }
-                                if (success) {
-                                    volumeKeyShortcutEnabled = targetEnabled
-                                    prefs.edit().putBoolean("volume_key_shortcut_enabled", targetEnabled).apply()
-                                } else {
-                                    if (targetEnabled) {
-                                        volumeKeyShortcutEnabled = false
-                                        prefs.edit().putBoolean("volume_key_shortcut_enabled", false).apply()
-                                    }
-                                    prefs.edit().putBoolean("skip_next_accessibility_connect", false).apply()
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        // 底部额外空白，防止按钮遮挡最后一个内容项
-        Spacer(Modifier.height(120.dp))
     }
 }
 
 @Composable
-private fun PermissionCard(
-    title: String,
-    description: String,
-    icon: ImageVector,
-    isGranted: Boolean,
-    isRequired: Boolean,
-    onClick: () -> Unit,
-    isToggle: Boolean = false
+private fun OobePermissionContent(
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
-        onClick = if (!isToggle) onClick else { {} },
-        shape = RoundedCornerShape(16.dp),
-        color = if (isGranted) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-        } else {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-        },
-        modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 图标
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (isGranted) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                },
-                modifier = Modifier.size(48.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = if (isGranted) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-
-            Spacer(Modifier.width(16.dp))
-
-            // 内容
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = title,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (isRequired) {
-                        Spacer(Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.error
-                        ) {
-                            Text(
-                                text = "必要",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onError,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = description,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 18.sp
-                )
-            }
-
-            Spacer(Modifier.width(12.dp))
-
-            // 状态/操作
-            if (isToggle) {
-                Switch(
-                    checked = isGranted,
-                    onCheckedChange = { onClick() }
-                )
-            } else if (isGranted) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "已授权",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.ArrowForward,
-                    contentDescription = "去设置",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = 600.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .verticalScroll(rememberScrollState()),
+            content = {
+                content()
+                Spacer(Modifier.height(96.dp))
+            },
+        )
     }
 }
 
 @SuppressLint("WrongConstant")
 @Composable
-private fun FeaturesStep(
-) {
+private fun FeaturesStep() {
     val context = LocalContext.current
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Spacer(Modifier.height(8.dp))
-
-        // 说明
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.TouchApp,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = "澎湃记支持多种识别方式，你可以根据使用场景选择最适合的方式。",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    lineHeight = 18.sp
-                )
-            }
-        }
-
-        // 功能1：截图识别
-        FeatureCard(
+    OobePageContent {
+        OobeSectionLabel(
+            title = "识别方式",
+            summary = "澎湃记支持以下四种入口，点击任一项目可查看操作步骤。",
+        )
+        OobeFeatureRow(
             title = "截图识别",
             subtitle = "常用做法",
             description = "通过控制中心磁贴快速截图识别，识别完成后自动通知你取餐码信息。",
-            icon = Icons.Default.CameraAlt,
             steps = listOf(
                 "下拉打开控制中心",
                 "点击「截图识别」磁贴",
@@ -806,13 +706,10 @@ private fun FeaturesStep(
                 }
             }
         )
-
-        // 功能2：划词识别
-        FeatureCard(
+        OobeFeatureRow(
             title = "划词识别",
             subtitle = "识别率最高",
             description = "在特定页面选择文字后，点击右上角菜单选择「识别取餐码」，适合大量文字或短信记录。",
-            icon = Icons.Default.TextFields,
             steps = listOf(
                 "长按选择文字",
                 "点击右上角「...」菜单",
@@ -822,13 +719,10 @@ private fun FeaturesStep(
             actionLabel = null,
             onAction = null
         )
-
-        // 功能3：分享识别
-        FeatureCard(
+        OobeFeatureRow(
             title = "分享识别",
             subtitle = "更方便",
             description = "部分机型截图后可以进行分享，点击分享/发送后选择澎湃记，即可自动识别。",
-            icon = Icons.Default.Share,
             steps = listOf(
                 "截图后点击分享按钮",
                 "在分享列表中选择澎湃记",
@@ -838,12 +732,10 @@ private fun FeaturesStep(
             actionLabel = null,
             onAction = null
         )
-
-        FeatureCard(
+        OobeFeatureRow(
             title = "音量键快捷触发",
             subtitle = "快速触发",
             description = "开启后可通过无障碍快捷方式触发识别，适合单手操作。",
-            icon = Icons.Default.VolumeUp,
             steps = listOf(
                 "在第一步里开启音量键快捷触发开关",
                 "按音量键呼出无障碍快捷方式",
@@ -853,121 +745,289 @@ private fun FeaturesStep(
             actionLabel = null,
             onAction = null
         )
-
-        // 底部额外空白，防止按钮遮挡最后一个内容项
-        Spacer(Modifier.height(120.dp))
     }
 }
 
 @Composable
-private fun FeatureCard(
+private fun OobePageContent(
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = 600.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            content = {
+                Spacer(Modifier.height(4.dp))
+                content()
+                Spacer(Modifier.height(96.dp))
+            },
+        )
+    }
+}
+
+@Composable
+private fun OobeSectionLabel(
+    title: String,
+    summary: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(2.dp),
+                ),
+        )
+        Spacer(Modifier.width(11.dp))
+        Column(
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = summary,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun OobeDeferredHint(text: String) {
+    Text(
+        text = text,
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+    )
+}
+
+@Composable
+private fun OobePermissionRow(
+    title: String,
+    granted: Boolean,
+    performHaptic: () -> Unit,
+    onClick: () -> Unit,
+) {
+    OobeSettingSurface(
+        onClick = {
+            performHaptic()
+            onClick()
+        },
+    ) {
+        Text(
+            text = title,
+            style = TextStyle(
+                fontFamily = FontFamily.SansSerif,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.sp,
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (granted) {
+            Spacer(Modifier.width(12.dp))
+            Icon(
+                painter = painterResource(R.drawable.oobe_picker_check),
+                contentDescription = "已授权",
+                tint = Color.Unspecified,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OobeSettingSurface(
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+    }
+}
+
+@Composable
+private fun OobeFeatureRow(
     title: String,
     subtitle: String,
     description: String,
-    icon: ImageVector,
     steps: List<String>,
     actionLabel: String?,
-    onAction: (() -> Unit)?
+    onAction: (() -> Unit)?,
 ) {
+    val haptic = LocalHapticFeedback.current
+    val motionScheme = MaterialTheme.motionScheme
+    var expanded by rememberSaveable(title) { mutableStateOf(false) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+        label = "oobe_feature_arrow",
+    )
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            expanded = !expanded
+        },
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.surface,
         modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            // 标题行
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(48.dp)
+            Row(
+                modifier = Modifier.padding(start = 16.dp, top = 13.dp, end = 12.dp, bottom = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(24.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = title,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
-                    }
-                }
-                Spacer(Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = subtitle,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
+                    Text(
+                        text = description,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "收起步骤" else "查看步骤",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .rotate(arrowRotation),
+                )
             }
 
-            // 描述
-            Text(
-                text = description,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 20.sp
-            )
-
-            // 步骤
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                steps.forEachIndexed { index, step ->
-                    Row(verticalAlignment = Alignment.Top) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec<Float>()) +
+                    expandVertically(
+                        animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                        expandFrom = Alignment.Top,
+                    ),
+                exit = fadeOut(animationSpec = motionScheme.defaultEffectsSpec<Float>()) +
+                    shrinkVertically(
+                        animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                        shrinkTowards = Alignment.Top,
+                    ),
+            ) {
+                Column {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    )
+                    Column(
+                        modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(9.dp),
+                    ) {
+                        steps.forEachIndexed { index, step ->
+                            Row(verticalAlignment = Alignment.Top) {
                                 Text(
                                     text = "${index + 1}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF277AF7),
+                                    modifier = Modifier.width(22.dp),
+                                )
+                                Text(
+                                    text = step,
+                                    fontSize = 14.sp,
+                                    lineHeight = 19.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f),
                                 )
                             }
                         }
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = step,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
+                        if (actionLabel != null && onAction != null) {
+                            Surface(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onAction()
+                                },
+                                shape = RoundedCornerShape(15.dp),
+                                color = Color.Transparent,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 44.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = Color(0xFF277AF7),
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = actionLabel,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF277AF7),
+                                    )
+                                }
+                            }
+                        }
                     }
-                }
-            }
-
-            // 操作按钮
-            if (actionLabel != null && onAction != null) {
-                OutlinedButton(
-                    onClick = onAction,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(actionLabel)
                 }
             }
         }
@@ -1009,46 +1069,5 @@ private fun isShizukuReady(): Boolean {
         Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
     } catch (e: Exception) {
         false
-    }
-}
-
-@Composable
-private fun CaptureModeQuickItem(
-    title: String,
-    selected: Boolean,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = { if (enabled) onClick() },
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
-        border = BorderStroke(
-            1.dp,
-            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
-        ),
-        enabled = enabled
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = title,
-                fontSize = 13.sp,
-                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-            )
-            if (selected) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
     }
 }

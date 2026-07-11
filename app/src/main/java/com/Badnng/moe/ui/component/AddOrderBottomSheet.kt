@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,8 +35,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.ocr.TextRecognitionHelper
 import com.Badnng.moe.viewmodel.OrderViewModel
@@ -56,6 +60,7 @@ import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.LocalDismissState
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowBottomSheet
+import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
 
 @Composable
 fun AddOrderBottomSheet(
@@ -65,6 +70,7 @@ fun AddOrderBottomSheet(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val isDarkTheme = MiuixTheme.colorScheme.background.luminance() < 0.5f
 
     // 模糊进度：Animatable 驱动开/关动画，拖拽时 snapTo 覆盖
     var showSheet by remember { mutableStateOf(show) }
@@ -123,6 +129,9 @@ fun AddOrderBottomSheet(
             onDismiss()
         }
     ) {
+        NonPredictiveBackInterceptor()
+        SyncWindowBottomSheetStatusBar(isDarkTheme = isDarkTheme)
+
         // 追踪 Sheet 拖拽位置
         if (showSheet) {
             Box(
@@ -255,6 +264,26 @@ fun AddOrderBottomSheet(
                 }
             }
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun SyncWindowBottomSheetStatusBar(isDarkTheme: Boolean) {
+    val view = LocalView.current
+
+    androidx.compose.runtime.DisposableEffect(view, isDarkTheme) {
+        val applySystemBarAppearance = Runnable {
+            val window = (view.parent as? DialogWindowProvider)?.window ?: return@Runnable
+            WindowCompat.getInsetsController(window, window.decorView)
+                .isAppearanceLightStatusBars = !isDarkTheme
+        }
+
+        applySystemBarAppearance.run()
+        view.post(applySystemBarAppearance)
+
+        onDispose {
+            view.removeCallbacks(applySystemBarAppearance)
         }
     }
 }

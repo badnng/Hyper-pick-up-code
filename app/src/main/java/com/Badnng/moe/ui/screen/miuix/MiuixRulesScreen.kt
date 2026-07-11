@@ -1152,6 +1152,7 @@ private fun OnlineSourceWindowSheet(
             onDismiss()
         }
     ) {
+        com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor()
         if (showSheet) {
             Box(
                 modifier = Modifier
