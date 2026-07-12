@@ -31,6 +31,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -42,12 +43,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
@@ -61,7 +69,19 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.Badnng.moe.helper.EdgeToEdgeHelper
+import com.Badnng.moe.recognition.CustomRequestMode
+import com.Badnng.moe.recognition.MimoBillingMode
+import com.Badnng.moe.recognition.OnlineRecognitionCatalog
+import com.Badnng.moe.recognition.OnlineRecognitionClient
+import com.Badnng.moe.recognition.OnlineRecognitionModel
+import com.Badnng.moe.recognition.OnlineRecognitionPreferences
+import com.Badnng.moe.recognition.OnlineRecognitionProvider
+import com.Badnng.moe.recognition.SecureApiKeyStore
+import com.Badnng.moe.privacy.PrivacyConsent
 import com.Badnng.moe.service.CaptureTileService
+import com.Badnng.moe.ui.component.OnlineRecognitionProviderIcon
+import com.Badnng.moe.ui.component.PrivacyConsentBottomSheet
+import com.Badnng.moe.ui.screen.settings.ProviderUsageGuide
 import com.Badnng.moe.ui.oobe.OOBE_PAGE_TRANSITION_MILLIS
 import com.Badnng.moe.ui.oobe.OobeAccelerateDecelerateEasing
 import com.Badnng.moe.ui.oobe.OobeCubicOutEasing
@@ -76,10 +96,28 @@ import com.Badnng.moe.ui.oobe.OobeWelcomeView
 import com.Badnng.moe.ui.oobe.oobeCircularReveal
 import com.Badnng.moe.ui.oobe.rememberOobeVisualBackend
 import rikka.shizuku.Shizuku
+import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
+import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
+import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
+import top.yukonga.miuix.kmp.basic.Text as MiuixText
+import top.yukonga.miuix.kmp.basic.TextField as MiuixTextField
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Hide
+import top.yukonga.miuix.kmp.icon.extended.Show
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
 
 private enum class OnboardingStep {
     Welcome,
     Permissions,
+    RecognitionPreference,
     Features,
     Complete,
 }
@@ -128,6 +166,17 @@ fun OnboardingScreen(
     var hasUsageStatsPermission by remember { mutableStateOf(checkUsageStatsPermission(context)) }
     var shizukuReady by remember { mutableStateOf(false) }
     var featuresAckCountdown by remember { mutableIntStateOf(15) }
+    var privacyAccepted by remember { mutableStateOf(PrivacyConsent.isAccepted(prefs)) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
+    var preferredRecognitionMode by rememberSaveable {
+        val savedMode = prefs.getString(OnlineRecognitionPreferences.MODE_KEY, null)
+        mutableStateOf(
+            savedMode.takeUnless {
+                it == OnlineRecognitionPreferences.MODE_ONLINE && !privacyAccepted
+            },
+        )
+    }
+    var onlineConfigurationReady by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) {
@@ -211,7 +260,8 @@ fun OnboardingScreen(
                     onExit()
                 }
             }
-            OnboardingStep.Features -> navigateTo(OnboardingStep.Permissions)
+            OnboardingStep.RecognitionPreference -> navigateTo(OnboardingStep.Permissions)
+            OnboardingStep.Features -> navigateTo(OnboardingStep.RecognitionPreference)
             OnboardingStep.Complete -> Unit
         }
     }
@@ -219,129 +269,229 @@ fun OnboardingScreen(
     val useDarkSystemBarIcons = when (currentStep) {
         OnboardingStep.Welcome, OnboardingStep.Complete ->
             backendState.value != OobeVisualBackend.HyperOsEnhanced && !darkTheme
-        OnboardingStep.Permissions, OnboardingStep.Features -> !darkTheme
+        OnboardingStep.Permissions,
+        OnboardingStep.RecognitionPreference,
+        OnboardingStep.Features -> !darkTheme
     }
     OobeSystemBars(darkIcons = useDarkSystemBarIcons)
     OobeFixedTheme(
         darkTheme = darkTheme,
         backend = backendState.value,
     ) {
-        Box(Modifier.fillMaxSize()) {
-            if (revealActive) {
-                OobeWelcomePage(
-                    backendState = backendState,
-                    onStart = { _ -> },
-                    enabled = false,
-                    onStartButtonCenter = {},
-                    modifier = Modifier.zIndex(0f),
-                    playIntro = false,
-                )
-            }
-
-            AnimatedContent(
-                targetState = currentStep,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(1f)
-                    .then(
-                        if (revealActive) {
-                            Modifier.oobeCircularReveal(
-                                progress = { revealProgress.value },
-                                center = {
-                                    if (startButtonCenter.x.isFinite() && startButtonCenter.y.isFinite()) {
-                                        startButtonCenter
-                                    } else {
-                                        Offset.Zero
-                                    }
-                                },
-                            )
-                        } else {
-                            Modifier
-                        },
-                    ),
-                label = "oobe_step_transition",
-                transitionSpec = {
-                    if (initialState == OnboardingStep.Welcome && targetState == OnboardingStep.Permissions) {
-                        EnterTransition.None togetherWith ExitTransition.None
-                    } else if (targetState.ordinal > initialState.ordinal) {
-                        slideInHorizontally(
-                            animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
-                        ) { it } togetherWith slideOutHorizontally(
-                            animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
-                        ) { -it }
-                    } else {
-                        slideInHorizontally(
-                            animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
-                        ) { -it } togetherWith slideOutHorizontally(
-                            animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
-                        ) { it }
-                    }
-                },
-            ) { step ->
-                when (step) {
-                    OnboardingStep.Welcome -> OobeWelcomePage(
-                        backendState = backendState,
-                        onStart = ::startOobe,
-                        enabled = !transitionLocked && welcomeEnabled,
-                        onStartButtonCenter = { startButtonCenter = it },
-                        playIntro = backendState.value != OobeVisualBackend.StaticFallback &&
-                            !welcomeIntroPlayed,
-                        onIntroFinished = { welcomeIntroPlayed = true },
-                    )
-                    OnboardingStep.Permissions -> OobePageScaffold(
-                        title = "权限设置",
-                        subtitle = "通知权限为必选设置哦",
-                        previewDrawable = R.drawable.oobe_permission_preview,
-                        primaryLabel = "继续",
-                        primaryEnabled = hasNotificationPermission && !transitionLocked,
-                        onBack = {
-                            if (showWelcome) {
-                                navigateTo(OnboardingStep.Welcome)
-                            } else {
-                                performHaptic()
-                                onExit()
-                            }
-                        },
-                        onPrimary = { navigateTo(OnboardingStep.Features) },
-                    ) {
-                        PermissionsStep(
-                            hasNotificationPermission = hasNotificationPermission,
-                            isIgnoringBattery = isIgnoringBattery,
-                            hasUsageStatsPermission = hasUsageStatsPermission,
-                            shizukuReady = shizukuReady,
-                            performHaptic = performHaptic,
-                            onRequestNotificationPermission = requestNotificationPermission,
+        OobeMiuixTheme {
+            val backdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
+            Box(Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier,
+                        ),
+                ) {
+                    if (revealActive) {
+                        OobeWelcomePage(
+                            backendState = backendState,
+                            onStart = { _ -> },
+                            enabled = false,
+                            onStartButtonCenter = {},
+                            modifier = Modifier.zIndex(0f),
+                            playIntro = false,
                         )
                     }
-                    OnboardingStep.Features -> OobePageScaffold(
-                        title = "使用澎湃记",
-                        subtitle = "选择适合当前场景的识别方式",
-                        previewDrawable = R.drawable.oobe_features_preview,
-                        primaryLabel = if (featuresAckCountdown == 0) "完成设置" else "完成设置（${featuresAckCountdown}s）",
-                        primaryEnabled = featuresAckCountdown == 0 && !transitionLocked,
-                        onBack = { navigateTo(OnboardingStep.Permissions) },
-                        onPrimary = {
-                            if (onFinalStepRequested != null) {
-                                performHaptic()
-                                onFinalStepRequested()
+
+                    AnimatedContent(
+                        targetState = currentStep,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(1f)
+                            .then(
+                                if (revealActive) {
+                                    Modifier.oobeCircularReveal(
+                                        progress = { revealProgress.value },
+                                        center = {
+                                            if (startButtonCenter.x.isFinite() && startButtonCenter.y.isFinite()) {
+                                                startButtonCenter
+                                            } else {
+                                                Offset.Zero
+                                            }
+                                        },
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                        label = "oobe_step_transition",
+                        transitionSpec = {
+                            if (initialState == OnboardingStep.Welcome && targetState == OnboardingStep.Permissions) {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            } else if (targetState.ordinal > initialState.ordinal) {
+                                slideInHorizontally(
+                                    animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
+                                ) { it } togetherWith slideOutHorizontally(
+                                    animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
+                                ) { -it }
                             } else {
-                                navigateTo(OnboardingStep.Complete)
+                                slideInHorizontally(
+                                    animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
+                                ) { -it } togetherWith slideOutHorizontally(
+                                    animationSpec = tween(OOBE_PAGE_TRANSITION_MILLIS, easing = OobeAccelerateDecelerateEasing),
+                                ) { it }
                             }
                         },
-                    ) {
-                        FeaturesStep()
+                    ) { step ->
+                        when (step) {
+                            OnboardingStep.Welcome -> OobeWelcomePage(
+                                backendState = backendState,
+                                onStart = ::startOobe,
+                                enabled = !transitionLocked && welcomeEnabled,
+                                onStartButtonCenter = { startButtonCenter = it },
+                                playIntro = backendState.value != OobeVisualBackend.StaticFallback &&
+                                    !welcomeIntroPlayed,
+                                onIntroFinished = { welcomeIntroPlayed = true },
+                            )
+                            OnboardingStep.Permissions -> OobePageScaffold(
+                                title = "权限设置",
+                                subtitle = "通知权限为必选设置哦",
+                                previewDrawable = R.drawable.oobe_permission_preview,
+                                primaryLabel = "继续",
+                                primaryEnabled = hasNotificationPermission && !transitionLocked,
+                                onBack = {
+                                    if (showWelcome) {
+                                        navigateTo(OnboardingStep.Welcome)
+                                    } else {
+                                        performHaptic()
+                                        onExit()
+                                    }
+                                },
+                                onPrimary = { navigateTo(OnboardingStep.RecognitionPreference) },
+                            ) {
+                                PermissionsStep(
+                                    hasNotificationPermission = hasNotificationPermission,
+                                    isIgnoringBattery = isIgnoringBattery,
+                                    hasUsageStatsPermission = hasUsageStatsPermission,
+                                    shizukuReady = shizukuReady,
+                                    performHaptic = performHaptic,
+                                    onRequestNotificationPermission = requestNotificationPermission,
+                                )
+                            }
+                            OnboardingStep.RecognitionPreference -> OobePageScaffold(
+                                title = "识别方式",
+                                subtitle = "您偏好哪一种识别方式？",
+                                previewDrawable = R.drawable.oobe_recognition_preview,
+                                primaryLabel = "继续",
+                                primaryEnabled = preferredRecognitionMode != null &&
+                                    (preferredRecognitionMode != OnlineRecognitionPreferences.MODE_ONLINE ||
+                                        (privacyAccepted && onlineConfigurationReady)) &&
+                                    !transitionLocked,
+                                onBack = { navigateTo(OnboardingStep.Permissions) },
+                                onPrimary = {
+                                    preferredRecognitionMode?.let { selectedMode ->
+                                        prefs.edit()
+                                            .putString(
+                                                OnlineRecognitionPreferences.MODE_KEY,
+                                                selectedMode,
+                                            )
+                                            .apply()
+                                        navigateTo(OnboardingStep.Features)
+                                    }
+                                },
+                            ) {
+                                RecognitionPreferenceStep(
+                                    selectedMode = preferredRecognitionMode,
+                                    performHaptic = performHaptic,
+                                    onOnlineConfigurationReady = { onlineConfigurationReady = it },
+                                    onModeSelected = { selectedMode ->
+                                        performHaptic()
+                                        if (selectedMode == OnlineRecognitionPreferences.MODE_ONLINE &&
+                                            !privacyAccepted
+                                        ) {
+                                            showPrivacyDialog = true
+                                        } else {
+                                            if (selectedMode == OnlineRecognitionPreferences.MODE_ONLINE) {
+                                                onlineConfigurationReady = false
+                                            }
+                                            preferredRecognitionMode = selectedMode
+                                        }
+                                    },
+                                )
+                            }
+                            OnboardingStep.Features -> OobePageScaffold(
+                                title = "使用澎湃记",
+                                subtitle = "选择适合当前场景的识别方式",
+                                previewDrawable = R.drawable.oobe_features_preview,
+                                primaryLabel = if (featuresAckCountdown == 0) "完成设置" else "完成设置（${featuresAckCountdown}s）",
+                                primaryEnabled = featuresAckCountdown == 0 && !transitionLocked,
+                                onBack = { navigateTo(OnboardingStep.RecognitionPreference) },
+                                onPrimary = {
+                                    if (onFinalStepRequested != null) {
+                                        performHaptic()
+                                        onFinalStepRequested()
+                                    } else {
+                                        navigateTo(OnboardingStep.Complete)
+                                    }
+                                },
+                            ) {
+                                FeaturesStep()
+                            }
+                            OnboardingStep.Complete -> OobeCompletePage(
+                                backendState = backendState,
+                                actionLabel = if (homeReady) "进入澎湃记" else "正在准备中",
+                                enabled = homeReady && !transitionLocked,
+                                onComplete = {
+                                    performHaptic()
+                                    prefs.edit().putBoolean("onboarding_completed", true).apply()
+                                    onComplete()
+                                },
+                            )
+                        }
                     }
-                    OnboardingStep.Complete -> OobeCompletePage(
-                        backendState = backendState,
-                        actionLabel = if (homeReady) "进入澎湃记" else "正在准备中",
-                        enabled = homeReady && !transitionLocked,
-                        onComplete = {
-                            performHaptic()
-                            prefs.edit().putBoolean("onboarding_completed", true).apply()
-                            onComplete()
-                        },
-                    )
                 }
+
+                val blurProgress = com.Badnng.moe.ui.component.BlurState.progress.floatValue
+                if (blurProgress > 0.01f) {
+                    if (backdrop != null) {
+                        val baseBrightness = if (darkTheme) -0.3f else -0.5f
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .textureBlur(
+                                    backdrop = backdrop,
+                                    shape = RectangleShape,
+                                    blurRadius = 56f * blurProgress,
+                                    colors = BlurDefaults.blurColors(
+                                        brightness = baseBrightness * blurProgress,
+                                        contrast = 1f + 0.2f * blurProgress,
+                                        saturation = 1f + 0.08f * blurProgress,
+                                    ),
+                                )
+                                .graphicsLayer(alpha = blurProgress),
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.32f * blurProgress)),
+                        )
+                    }
+                }
+
+                PrivacyConsentBottomSheet(
+                    show = showPrivacyDialog,
+                    title = "启用在线识别",
+                    onDismiss = {
+                        performHaptic()
+                        showPrivacyDialog = false
+                    },
+                    onConfirm = {
+                        performHaptic()
+                        PrivacyConsent.accept(prefs)
+                        privacyAccepted = true
+                        onlineConfigurationReady = false
+                        preferredRecognitionMode = OnlineRecognitionPreferences.MODE_ONLINE
+                        showPrivacyDialog = false
+                    },
+                )
             }
         }
     }
@@ -581,6 +731,414 @@ private fun Context.findActivity(): Activity? {
         current = base
     }
     return current as? Activity
+}
+
+@Composable
+private fun RecognitionPreferenceStep(
+    selectedMode: String?,
+    performHaptic: () -> Unit,
+    onOnlineConfigurationReady: (Boolean) -> Unit,
+    onModeSelected: (String) -> Unit,
+) {
+    OobePermissionContent {
+        OobeRecognitionModeRow(
+            title = "离线识别",
+            selected = selectedMode == OnlineRecognitionPreferences.MODE_OFFLINE,
+            onClick = {
+                onModeSelected(OnlineRecognitionPreferences.MODE_OFFLINE)
+            },
+        )
+        Spacer(Modifier.height(10.dp))
+        OobeRecognitionModeRow(
+            title = "在线识别",
+            selected = selectedMode == OnlineRecognitionPreferences.MODE_ONLINE,
+            onClick = {
+                onModeSelected(OnlineRecognitionPreferences.MODE_ONLINE)
+            },
+        )
+
+        val description = when (selectedMode) {
+            OnlineRecognitionPreferences.MODE_OFFLINE ->
+                "使用本地 OCR 与识别规则，无需网络或 API 密钥，识别内容不会上传。"
+            OnlineRecognitionPreferences.MODE_ONLINE ->
+                "使用在线多模态模型。截图、分享图片、通知文字、短信内容或所选文字会发送给您选择的供应商，请在下方完成供应商和 API 密钥配置。"
+            else -> "请选择一种识别方式，之后仍可在设置中更改。"
+        }
+        Text(
+            text = description,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp),
+        )
+
+        if (selectedMode == OnlineRecognitionPreferences.MODE_ONLINE) {
+            Spacer(Modifier.height(16.dp))
+            OobeOnlineRecognitionSetup(
+                performHaptic = performHaptic,
+                onConfigurationReady = onOnlineConfigurationReady,
+            )
+        }
+    }
+}
+
+@Composable
+private fun OobeOnlineRecognitionSetup(
+    performHaptic: () -> Unit,
+    onConfigurationReady: (Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    val keyStore = remember { SecureApiKeyStore(context) }
+
+    var provider by remember {
+        mutableStateOf(OnlineRecognitionPreferences.provider(context))
+    }
+    var model by remember {
+        mutableStateOf(OnlineRecognitionPreferences.model(context, provider))
+    }
+    var mimoBillingMode by remember {
+        mutableStateOf(OnlineRecognitionPreferences.mimoBillingMode(context))
+    }
+    var customRequestMode by remember {
+        mutableStateOf(OnlineRecognitionPreferences.customRequestMode(context))
+    }
+    var customBaseUrl by remember {
+        val savedUrl = OnlineRecognitionPreferences.customBaseUrl(context)
+        mutableStateOf(TextFieldValue(savedUrl, TextRange(savedUrl.length)))
+    }
+    var apiKeyInput by remember {
+        val savedKey = keyStore.get(provider).orEmpty()
+        mutableStateOf(TextFieldValue(savedKey, TextRange(savedKey.length)))
+    }
+    var apiKeyVisible by remember { mutableStateOf(false) }
+    var customModels by remember { mutableStateOf(emptyList<OnlineRecognitionModel>()) }
+    var customModelsLoading by remember { mutableStateOf(false) }
+    var customModelsError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(provider) {
+        model = OnlineRecognitionPreferences.model(context, provider)
+        val savedKey = keyStore.get(provider).orEmpty()
+        apiKeyInput = TextFieldValue(savedKey, TextRange(savedKey.length))
+        apiKeyVisible = false
+    }
+
+    LaunchedEffect(provider, customBaseUrl.text, apiKeyInput.text) {
+        if (provider != OnlineRecognitionProvider.CUSTOM) return@LaunchedEffect
+        customModels = emptyList()
+        customModelsError = null
+        customModelsLoading = false
+        if (customBaseUrl.text.isBlank() || apiKeyInput.text.isBlank()) return@LaunchedEffect
+        delay(700)
+        customModelsLoading = true
+        runCatching {
+            OnlineRecognitionClient(context).fetchCustomModels(customBaseUrl.text)
+        }.onSuccess { fetchedModels ->
+            customModels = fetchedModels
+            val savedModel = OnlineRecognitionPreferences.model(context, provider)
+            val selectedModel = fetchedModels.firstOrNull { it.id == savedModel.id }
+                ?: fetchedModels.first()
+            model = selectedModel
+            OnlineRecognitionPreferences.saveModel(context, provider, selectedModel.id)
+        }.onFailure { error ->
+            customModelsError = error.message ?: "获取模型失败"
+        }
+        customModelsLoading = false
+    }
+
+    val availableModels = if (provider == OnlineRecognitionProvider.CUSTOM) {
+        customModels
+    } else {
+        OnlineRecognitionCatalog.modelsFor(provider)
+    }
+    val configurationReady = apiKeyInput.text.isNotBlank() &&
+        model.id.isNotBlank() &&
+        (provider != OnlineRecognitionProvider.CUSTOM ||
+            (customBaseUrl.text.isNotBlank() && customModels.any { it.id == model.id }))
+
+    LaunchedEffect(configurationReady) {
+        onConfigurationReady(configurationReady)
+    }
+
+    OobeMiuixTheme {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (provider == OnlineRecognitionProvider.MIMO ||
+                provider == OnlineRecognitionProvider.ZHIPU ||
+                provider == OnlineRecognitionProvider.MINIMAX ||
+                provider == OnlineRecognitionProvider.MOONSHOT
+            ) {
+                ProviderUsageGuide(
+                    provider = provider,
+                    isMiuix = true,
+                    performHaptic = performHaptic,
+                    miuixHorizontalPadding = 0.dp,
+                )
+            }
+
+            MiuixCard(modifier = Modifier.fillMaxWidth()) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    WindowDropdownPreference(
+                        title = "供应商",
+                        entries = listOf(
+                            DropdownEntry(
+                                items = OnlineRecognitionProvider.entries.map { item ->
+                                    DropdownItem(
+                                        text = item.displayName,
+                                        selected = provider == item,
+                                        onClick = {
+                                            performHaptic()
+                                            provider = item
+                                            model = OnlineRecognitionPreferences.model(context, item)
+                                            val savedKey = keyStore.get(item).orEmpty()
+                                            apiKeyInput = TextFieldValue(
+                                                savedKey,
+                                                TextRange(savedKey.length),
+                                            )
+                                            apiKeyVisible = false
+                                            if (item == OnlineRecognitionProvider.CUSTOM) {
+                                                customModels = emptyList()
+                                                customModelsError = null
+                                            }
+                                            prefs.edit()
+                                                .putString(
+                                                    OnlineRecognitionPreferences.PROVIDER_KEY,
+                                                    item.key,
+                                                )
+                                                .apply()
+                                        },
+                                        icon = { _ ->
+                                            Box(
+                                                modifier = Modifier.size(width = 38.dp, height = 28.dp),
+                                                contentAlignment = Alignment.CenterStart,
+                                            ) {
+                                                OnlineRecognitionProviderIcon(
+                                                    provider = item,
+                                                    modifier = Modifier.size(28.dp),
+                                                )
+                                            }
+                                        },
+                                    )
+                                },
+                            ),
+                        ),
+                        showValue = false,
+                    )
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OnlineRecognitionProviderIcon(
+                            provider = provider,
+                            modifier = Modifier.size(28.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        MiuixText(
+                            text = provider.displayName,
+                            style = MiuixTheme.textStyles.body2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+
+                if (provider == OnlineRecognitionProvider.MIMO) {
+                    WindowDropdownPreference(
+                        title = "计费模式",
+                        items = MimoBillingMode.entries.map { it.displayName },
+                        selectedIndex = MimoBillingMode.entries.indexOf(mimoBillingMode),
+                        onSelectedIndexChange = { index ->
+                            performHaptic()
+                            mimoBillingMode = MimoBillingMode.entries[index]
+                            prefs.edit()
+                                .putString(
+                                    OnlineRecognitionPreferences.MIMO_BILLING_KEY,
+                                    mimoBillingMode.key,
+                                )
+                                .apply()
+                        },
+                    )
+                }
+
+                if (provider == OnlineRecognitionProvider.CUSTOM) {
+                    WindowDropdownPreference(
+                        title = "请求模式",
+                        items = CustomRequestMode.entries.map { it.displayName },
+                        selectedIndex = CustomRequestMode.entries.indexOf(customRequestMode),
+                        onSelectedIndexChange = { index ->
+                            performHaptic()
+                            customRequestMode = CustomRequestMode.entries[index]
+                            prefs.edit()
+                                .putString(
+                                    OnlineRecognitionPreferences.CUSTOM_REQUEST_MODE_KEY,
+                                    customRequestMode.key,
+                                )
+                                .apply()
+                        },
+                    )
+                }
+
+                if (availableModels.isNotEmpty()) {
+                    WindowDropdownPreference(
+                        title = "模型",
+                        items = availableModels.map { it.displayName },
+                        selectedIndex = availableModels.indexOfFirst { it.id == model.id }
+                            .coerceAtLeast(0),
+                        onSelectedIndexChange = { index ->
+                            performHaptic()
+                            model = availableModels[index]
+                            OnlineRecognitionPreferences.saveModel(context, provider, model.id)
+                        },
+                    )
+                }
+            }
+
+            if (provider == OnlineRecognitionProvider.CUSTOM) {
+                MiuixTextField(
+                    value = customBaseUrl,
+                    onValueChange = { value ->
+                        customBaseUrl = value
+                        customModels = emptyList()
+                        customModelsError = null
+                        prefs.edit()
+                            .putString(
+                                OnlineRecognitionPreferences.CUSTOM_BASE_URL_KEY,
+                                value.text.trim(),
+                            )
+                            .apply()
+                    },
+                    label = "API 请求地址",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                )
+            }
+
+            MiuixTextField(
+                value = apiKeyInput,
+                onValueChange = { value ->
+                    apiKeyInput = value
+                    if (provider == OnlineRecognitionProvider.CUSTOM) {
+                        customModels = emptyList()
+                        customModelsError = null
+                    }
+                    keyStore.save(provider, value.text)
+                },
+                label = "${provider.displayName} API 密钥",
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                visualTransformation = if (apiKeyVisible) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    MiuixIconButton(
+                        onClick = {
+                            performHaptic()
+                            apiKeyVisible = !apiKeyVisible
+                        },
+                    ) {
+                        MiuixIcon(
+                            imageVector = if (apiKeyVisible) {
+                                MiuixIcons.Regular.Hide
+                            } else {
+                                MiuixIcons.Regular.Show
+                            },
+                            contentDescription = if (apiKeyVisible) "隐藏密钥" else "显示密钥",
+                        )
+                    }
+                },
+            )
+
+            val statusText = when {
+                provider == OnlineRecognitionProvider.CUSTOM && customModelsLoading ->
+                    "正在获取模型…"
+                provider == OnlineRecognitionProvider.CUSTOM && customModelsError != null ->
+                    customModelsError.orEmpty()
+                provider == OnlineRecognitionProvider.CUSTOM && customModels.isEmpty() ->
+                    "填写 API 请求地址和密钥后将自动获取模型。"
+                apiKeyInput.text.isBlank() -> "填写 API 密钥后即可继续。"
+                else -> "密钥已通过 Android Keystore 加密保存在当前设备。"
+            }
+            MiuixText(
+                text = statusText,
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+
+            if (provider == OnlineRecognitionProvider.CUSTOM) {
+                MiuixText(
+                    text = "请填写到 /responses 或 /chat/completions 前的 API 请求地址。使用第三方供应商时，请自行辨别其安全性。",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+                MiuixText(
+                    text = "您应该使用多模态模型作为识别模型。为了保证使用体验，请选择参数量相对较小、" +
+                        "非思考模式下也足够聪明且速度较快的模型，如 GLM-V4.7-Flash、MiMo 2.5 等。",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+
+        }
+    }
+}
+
+@Composable
+private fun OobeMiuixTheme(
+    content: @Composable () -> Unit,
+) {
+    val darkTheme = LocalOobeDarkTheme.current
+    val controller = remember(darkTheme) {
+        ThemeController(
+            colorSchemeMode = if (darkTheme) ColorSchemeMode.Dark else ColorSchemeMode.Light,
+            keyColor = Color(0xFF3482FF),
+            isDark = darkTheme,
+        )
+    }
+    MiuixTheme(controller = controller, content = content)
+}
+
+@Composable
+private fun OobeRecognitionModeRow(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    OobeSettingSurface(
+        onClick = onClick,
+    ) {
+        Text(
+            text = title,
+            style = TextStyle(
+                fontFamily = FontFamily.SansSerif,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.sp,
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        if (selected) {
+            Spacer(Modifier.width(12.dp))
+            Icon(
+                painter = painterResource(R.drawable.oobe_picker_check),
+                contentDescription = "已选择",
+                tint = Color.Unspecified,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
 }
 
 @Composable

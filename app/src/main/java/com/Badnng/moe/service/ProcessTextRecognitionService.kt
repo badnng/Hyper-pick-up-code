@@ -18,8 +18,7 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
-import com.Badnng.moe.ocr.TextRecognitionHelper
-import com.Badnng.moe.rules.RecognitionRuleEngine
+import com.Badnng.moe.recognition.RecognitionRouter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -53,12 +52,7 @@ class ProcessTextRecognitionService : Service() {
     }
     
     private suspend fun processText(selectedText: String) {
-        if (!RecognitionRuleEngine.isInitialized) {
-            RecognitionRuleEngine.initialize(applicationContext)
-        }
-        val helper = TextRecognitionHelper(applicationContext)
-        val results = helper.recognizeFromText(selectedText)
-        helper.close()
+        val results = RecognitionRouter(applicationContext).recognizeText(selectedText).orders
 
         Log.d("ProcessTextRecognition", "识别结果：${results.size}个, codes=${results.map { it.code }}")
         results.forEach { r ->

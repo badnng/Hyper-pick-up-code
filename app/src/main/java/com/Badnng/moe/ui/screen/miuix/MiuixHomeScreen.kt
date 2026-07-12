@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.width
@@ -341,6 +343,7 @@ private fun MiuixMainContent(
     var rulesMenuExport: (() -> Unit)? by remember { mutableStateOf(null) }
     var rulesMenuRename: (() -> Unit)? by remember { mutableStateOf(null) }
     var rulesMenuDelete: (() -> Unit)? by remember { mutableStateOf(null) }
+    var isRulesModalVisible by remember { mutableStateOf(false) }
 
     val activity = context as? android.app.Activity
 
@@ -349,6 +352,8 @@ private fun MiuixMainContent(
     val layoutInfo by windowInfoTracker.windowLayoutInfo(context).collectAsState(initial = null)
     val foldingFeature = layoutInfo?.displayFeatures?.filterIsInstance<FoldingFeature>()?.firstOrNull()
     val isFolded = foldingFeature?.state == FoldingFeature.State.HALF_OPENED
+    val imeBottomInset = WindowInsets.ime.getBottom(LocalDensity.current)
+    val isImeVisible = imeBottomInset > 0
 
     // 主页面按返回键时，从最近任务移除卡片
     androidx.activity.compose.BackHandler(
@@ -512,6 +517,7 @@ private fun MiuixMainContent(
                             )
                             1 -> MiuixRulesScreen(
                                 bottomLayoutInfo = bottomLayoutInfo,
+                                onModalVisibilityChange = { isRulesModalVisible = it },
                                 onShowMenu = { position, rename, delete, export ->
                                     rulesMenuPosition = position
                                     rulesMenuRename = rename
@@ -563,7 +569,12 @@ private fun MiuixMainContent(
         // 底栏：覆盖在 Scaffold 和模糊遮罩上方，支持模糊效果
         // 标准底栏（非悬浮）
         AnimatedVisibility(
-            visible = !isEditMode && !isManaging && !useFloatingNavBar,
+            visible = !isEditMode &&
+                !isManaging &&
+                !isScrollingDown &&
+                !isImeVisible &&
+                !isRulesModalVisible &&
+                !useFloatingNavBar,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -617,7 +628,13 @@ private fun MiuixMainContent(
 
         // 悬浮底栏
         AnimatedVisibility(
-            visible = !isEditMode && !isManaging && useFloatingNavBar && !isFolded,
+            visible = !isEditMode &&
+                !isManaging &&
+                !isScrollingDown &&
+                !isImeVisible &&
+                !isRulesModalVisible &&
+                useFloatingNavBar &&
+                !isFolded,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -866,6 +883,7 @@ private fun MiuixSettingsSubPageDirect(
         SettingsPage.Preference -> "偏好设置"
         SettingsPage.Permission -> "权限与保活"
         SettingsPage.Screenshot -> "截图方式"
+        SettingsPage.Recognition -> "识别方式"
         SettingsPage.KeepAlive -> "保活设置"
         SettingsPage.Storage -> "清理空间"
         SettingsPage.About -> "关于"
@@ -910,59 +928,112 @@ private fun MiuixSettingsSubPageDirect(
             onBack = onBack
         )
     } else {
-        Scaffold(
-            topBar = {
-                val topBarColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface
-                com.Badnng.moe.ui.miuix.MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
-                    TopAppBar(
-                        title = title,
-                        color = topBarColor,
-                        scrollBehavior = topAppBarScrollBehavior,
-                        navigationIcon = {
-                            IconButton(onClick = onBack) {
-                                Icon(
-                                    MiuixIcons.Regular.Back,
-                                    contentDescription = "返回"
-                                )
-                            }
+        // 独立采样整个页面（包含状态栏与 TopAppBar），供 BottomSheet 遮罩使用。
+        // 与顶栏自身的 backdrop 分开，避免 layerBackdrop / textureBlur 递归渲染。
+        val sheetBackdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
+        Box(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (sheetBackdrop != null) {
+                            Modifier.layerBackdrop(sheetBackdrop)
+                        } else {
+                            Modifier
                         },
-                        actions = {
-                            if (page == SettingsPage.NotificationApps) {
-                                appUi.notificationAppsTopBarAction(
-                                    showSystemApps,
-                                    { showSystemApps = it },
-                                    performHaptic
+                    ),
+                topBar = {
+                    val topBarColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface
+                    com.Badnng.moe.ui.miuix.MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
+                        TopAppBar(
+                            title = title,
+                            color = topBarColor,
+                            scrollBehavior = topAppBarScrollBehavior,
+                            navigationIcon = {
+                                IconButton(onClick = onBack) {
+                                    Icon(
+                                        MiuixIcons.Regular.Back,
+                                        contentDescription = "返回"
+                                    )
+                                }
+                            },
+                            actions = {
+                                if (page == SettingsPage.NotificationApps) {
+                                    appUi.notificationAppsTopBarAction(
+                                        showSystemApps,
+                                        { showSystemApps = it },
+                                        performHaptic
+                                    )
+                                }
+                            }
+                        )
+                    }
+                }
+            ) { innerPadding ->
+                val scrollState = androidx.compose.foundation.rememberScrollState()
+                val topBarHeight = innerPadding.calculateTopPadding()
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier,
+                            ),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+                        ) {
+                            when (page) {
+                                SettingsPage.Screenshot -> com.Badnng.moe.ui.screen.settings.ScreenshotSettingsContent(performHaptic, topBarHeight, scrollState)
+                                SettingsPage.Recognition -> com.Badnng.moe.ui.screen.settings.RecognitionSettingsContent(performHaptic, topBarHeight, scrollState)
+                                SettingsPage.Permission -> com.Badnng.moe.ui.screen.settings.PermissionSettingsContent(performHaptic, topBarHeight, scrollState)
+                                SettingsPage.Preference -> com.Badnng.moe.ui.screen.settings.PreferenceSettingsContent(performHaptic, onNavigate, topBarHeight, scrollState)
+                                SettingsPage.KeepAlive -> com.Badnng.moe.ui.screen.settings.KeepAliveSettingsContent(performHaptic, topBarHeight, scrollState)
+                                SettingsPage.Storage -> com.Badnng.moe.ui.screen.settings.StorageSettingsContent(performHaptic, prefs, topBarHeight + 26.dp, scrollState)
+                                SettingsPage.Sponsor -> com.Badnng.moe.ui.screen.settings.SponsorSettingsContent(topBarHeight, scrollState)
+                                SettingsPage.NotificationApps -> com.Badnng.moe.ui.screen.settings.NotificationAppsSettingsContent(
+                                    performHaptic = performHaptic,
+                                    topPadding = topBarHeight + 8.dp,
+                                    showSystemApps = showSystemApps
                                 )
+                                SettingsPage.Credits -> com.Badnng.moe.ui.screen.settings.CreditsSettingsContent(performHaptic, topBarHeight, scrollState)
+                                SettingsPage.Main -> {}
+                                else -> {}
                             }
                         }
-                    )
+                    }
                 }
             }
-        ) { innerPadding ->
-            val scrollState = androidx.compose.foundation.rememberScrollState()
-            val topBarHeight = innerPadding.calculateTopPadding()
-            Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
-                ) {
-                    when (page) {
-                        SettingsPage.Screenshot -> com.Badnng.moe.ui.screen.settings.ScreenshotSettingsContent(performHaptic, topBarHeight, scrollState)
-                        SettingsPage.Permission -> com.Badnng.moe.ui.screen.settings.PermissionSettingsContent(performHaptic, topBarHeight, scrollState)
-                        SettingsPage.Preference -> com.Badnng.moe.ui.screen.settings.PreferenceSettingsContent(performHaptic, onNavigate, topBarHeight, scrollState)
-                        SettingsPage.KeepAlive -> com.Badnng.moe.ui.screen.settings.KeepAliveSettingsContent(performHaptic, topBarHeight, scrollState)
-                        SettingsPage.Storage -> com.Badnng.moe.ui.screen.settings.StorageSettingsContent(performHaptic, prefs, topBarHeight + 26.dp, scrollState)
-                        SettingsPage.Sponsor -> com.Badnng.moe.ui.screen.settings.SponsorSettingsContent(topBarHeight, scrollState)
-                        SettingsPage.NotificationApps -> com.Badnng.moe.ui.screen.settings.NotificationAppsSettingsContent(
-                            performHaptic = performHaptic,
-                            topPadding = topBarHeight + 8.dp,
-                            showSystemApps = showSystemApps
-                        )
-                        SettingsPage.Credits -> com.Badnng.moe.ui.screen.settings.CreditsSettingsContent(performHaptic, topBarHeight, scrollState)
-                        SettingsPage.Main -> {}
-                        else -> {}
-                    }
+
+            val sheetProgress = com.Badnng.moe.ui.component.BlurState.progress.floatValue
+            if (sheetProgress > 0.01f) {
+                if (sheetBackdrop != null) {
+                    val isDarkTheme = MiuixTheme.colorScheme.background.luminance() < 0.5f
+                    val baseBrightness = if (isDarkTheme) -0.3f else -0.5f
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .textureBlur(
+                                backdrop = sheetBackdrop,
+                                shape = RectangleShape,
+                                blurRadius = 56f * sheetProgress,
+                                colors = BlurDefaults.blurColors(
+                                    brightness = baseBrightness * sheetProgress,
+                                    contrast = 1f + 0.2f * sheetProgress,
+                                    saturation = 1f + 0.08f * sheetProgress,
+                                ),
+                            )
+                            .graphicsLayer(alpha = sheetProgress),
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.32f * sheetProgress)),
+                    )
                 }
             }
         }

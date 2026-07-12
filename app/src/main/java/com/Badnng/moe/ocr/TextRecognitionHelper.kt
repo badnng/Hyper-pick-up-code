@@ -250,7 +250,7 @@ class TextRecognitionHelper(private val context: Context) {
         // 第二步：兜底——在含快递关键词的文本中按权重筛选
         val hasExpressKeyword = expressKeywords.any { mergedText.contains(it) }
         val hasExpressBrand = expressBrandKeywords.any { mergedText.contains(it) }
-        if (!hasExpressKeyword && !hasExpressBrand) return null
+        if (hasExpressKeyword || !hasExpressBrand) return null
         val fallbackPattern = engine.getCompiledPattern("express_fallback") ?: return null
         val scoringConfig = engine.rules.scoring.expressCode
         val candidates = mutableListOf<Pair<String, Int>>()
@@ -744,68 +744,15 @@ class TextRecognitionHelper(private val context: Context) {
         val expressKeywords = engine.getExpressTriggerKeywords()
         val hasExpressKeyword = expressKeywords.any { mergedText.contains(it) }
         val hasExpressBrand = expressBrandKeywords.any { mergedText.contains(it) }
-        val foundCodes = mutableListOf<String>()
-
-        // 第零步：先用完整文本匹配（处理需要包含关键词本身的模式，如『』格式）
-        if (hasExpressKeyword) {
-            val allPatterns = engine.getExpressPatterns()
-            Log.d("ExpressExtract", "[text] 第零步: 共${allPatterns.size}个模式")
-            for (pattern in allPatterns) {
-                val compiled = engine.getCompiledPattern(pattern.id) ?: continue
-                for (match in compiled.findAll(mergedText)) {
-                    val code = match.groupValues.getOrElse(1) { match.value }
-                    if (code.isNotBlank() &&
-                        !isInvalidExpressCode(code) &&
-                        !isLikelyPhoneTail(code, mergedText) &&
-                        code !in foundCodes &&
-                        foundCodes.none { code in it }
-                    ) {
-                        Log.d("ExpressExtract", "[text] 第零步命中: code=$code, pattern=${pattern.id}")
-                        foundCodes.add(code)
-                    }
-                }
-            }
-            if (foundCodes.isNotEmpty()) return foundCodes
+        val contextualMatches = findExpressCodesNearKeywords(mergedText)
+        if (contextualMatches.isNotEmpty()) {
+            val codes = contextualMatches.map { it.first }
+            Log.d("ExpressExtract", "[text] 关键词上下文命中: $codes")
+            return codes
         }
-
-        // 第一步：精确从关键词后截取（支持同关键词后多个 code，用分隔符分隔）
-        for (keyword in expressKeywords) {
-            var searchIdx = 0
-            while (true) {
-                val kwIdx = mergedText.indexOf(keyword, searchIdx)
-                if (kwIdx < 0) break
-                var afterText = mergedText.substring(kwIdx + keyword.length)
-                    .trimStart(':', '：', ' ')
-                Log.d("ExpressExtract", "[text] 第一步: keyword=$keyword, afterText=${afterText.take(40)}")
-                var offset = 0
-                while (offset < afterText.length) {
-                    var found = false
-                    for (pattern in engine.getExpressPatterns()) {
-                        val compiled = engine.getCompiledPattern(pattern.id) ?: continue
-                        val remaining = afterText.substring(offset)
-                        val match = compiled.find(remaining) ?: continue
-                        val code = match.groupValues.getOrElse(1) { match.value }
-                        if (!isInvalidExpressCode(code) && !isLikelyPhoneTail(code, mergedText) && code !in foundCodes) {
-                            Log.d("ExpressExtract", "[text] 第一步命中: code=$code, pattern=${pattern.id}")
-                            foundCodes.add(code)
-                        }
-                        offset += match.range.last + 1
-                        found = true
-                        break
-                    }
-                    if (!found) break
-                    val separators = engine.rules.validation.expressCode.codeSeparators
-                    while (offset < afterText.length && afterText[offset].toString() in separators) {
-                        offset++
-                    }
-                }
-                searchIdx = kwIdx + keyword.length
-            }
-        }
-        if (foundCodes.isNotEmpty()) return foundCodes
 
         // 第二步：兜底——按权重筛选
-        if (!hasExpressKeyword && !hasExpressBrand) return emptyList()
+        if (hasExpressKeyword || !hasExpressBrand) return emptyList()
         val fallbackPattern = engine.getCompiledPattern("express_fallback") ?: return emptyList()
         val scoringConfig = engine.rules.scoring.expressCode
         val candidates = fallbackPattern.findAll(mergedText).mapNotNull { match ->
@@ -818,7 +765,108 @@ class TextRecognitionHelper(private val context: Context) {
             value to weight
         }.sortedByDescending { it.second }.toList()
         Log.d("ExpressExtract", "[text] 第二步兜底: ${candidates.map { it.first }}")
-        return candidates.map { it.first }
+        return listOfNotNull(candidates.firstOrNull()?.first)
+    }
+
+    private fun findExpressCodesNearKeywords(mergedText: String): List<Pair<String, IntRange>> {
+        val keywords = engine.getExpressTriggerKeywords()
+        val patterns = engine.getExpressPatterns()
+        val validation = engine.rules.validation.expressCode
+        val found = mutableListOf<Pair<String, IntRange>>()
+
+        fun addIfValid(code: String, range: IntRange, patternId: String) {
+            if (code.isBlank() || isInvalidExpressCode(code) || isLikelyPhoneTail(code, mergedText)) return
+            if (found.any { (existing, _) -> existing == code || code in existing }) return
+            found += code to range
+            Log.d("ExpressExtract", "[context] 命中: code=$code, pattern=$patternId, range=$range")
+        }
+
+        for (keyword in keywords) {
+            var searchIndex = 0
+            while (true) {
+                val keywordIndex = mergedText.indexOf(keyword, searchIndex)
+                if (keywordIndex < 0) break
+                val keywordEnd = keywordIndex + keyword.length
+                var cursor = keywordEnd
+                while (cursor < mergedText.length &&
+                    (mergedText[cursor].isWhitespace() || mergedText[cursor] == ':' || mergedText[cursor] == '：')
+                ) {
+                    cursor++
+                }
+
+                var firstCode = true
+                while (cursor < mergedText.length) {
+                    val remaining = mergedText.substring(cursor)
+                    val allowedGap = if (firstCode) validation.maxCodeKeywordGap else 0
+                    val candidate = patterns.mapNotNull { pattern ->
+                        val match = engine.getCompiledPattern(pattern.id)?.find(remaining)
+                            ?: return@mapNotNull null
+                        val group = if (match.groups.size > 1) match.groups[1] else null
+                        val code = group?.value ?: match.value
+                        val range = group?.range ?: match.range
+                        if (code.isBlank() || range.first > allowedGap) return@mapNotNull null
+                        Triple(pattern, code, range)
+                    }.minWithOrNull(
+                        compareBy<Triple<com.Badnng.moe.rules.ExtractionPattern, String, IntRange>>(
+                            { it.third.first },
+                            { it.first.priority },
+                        )
+                    ) ?: break
+
+                    val codeRange = (cursor + candidate.third.first)..(cursor + candidate.third.last)
+                    addIfValid(candidate.second, codeRange, candidate.first.id)
+                    cursor = codeRange.last + 1
+                    firstCode = false
+
+                    val beforeSeparators = cursor
+                    while (cursor < mergedText.length &&
+                        (mergedText[cursor].isWhitespace() ||
+                            mergedText[cursor].toString() in validation.codeSeparators)
+                    ) {
+                        cursor++
+                    }
+                    if (cursor == beforeSeparators) break
+                }
+
+                // “12345取件码”只对语义上表示码名称的关键词做反向识别。
+                if (keyword.endsWith("码")) {
+                    val reverseStart = (keywordIndex - validation.maxReverseDistance).coerceAtLeast(0)
+                    val beforeText = mergedText.substring(reverseStart, keywordIndex)
+                        .trimEnd(':', '：', ' ')
+                    val reverseCandidate = patterns
+                        .filter { it.priority <= engine.rules.recognitionParams.patternPrioritySkip }
+                        .mapNotNull { pattern ->
+                            val match = engine.getCompiledPattern(pattern.id)
+                                ?.findAll(beforeText)
+                                ?.lastOrNull()
+                                ?: return@mapNotNull null
+                            val group = if (match.groups.size > 1) match.groups[1] else null
+                            val code = group?.value ?: match.value
+                            val range = group?.range ?: match.range
+                            val gap = beforeText.length - range.last - 1
+                            if (code.isBlank() || gap > validation.maxCodeKeywordGap) {
+                                return@mapNotNull null
+                            }
+                            Triple(pattern, code, range)
+                        }
+                        .minWithOrNull(
+                            compareBy<Triple<com.Badnng.moe.rules.ExtractionPattern, String, IntRange>>(
+                                { beforeText.length - it.third.last - 1 },
+                                { it.first.priority },
+                            )
+                        )
+                    if (reverseCandidate != null) {
+                        val range = (reverseStart + reverseCandidate.third.first)..
+                            (reverseStart + reverseCandidate.third.last)
+                        addIfValid(reverseCandidate.second, range, reverseCandidate.first.id)
+                    }
+                }
+
+                searchIndex = keywordEnd
+            }
+        }
+
+        return found.sortedBy { it.second.first }
     }
 
     private fun extractFoodCodeFromText(mergedText: String, detectedBrand: String?): Pair<String?, String?> {
@@ -991,78 +1039,17 @@ class TextRecognitionHelper(private val context: Context) {
             }
         }
 
-        // 方法1：基于触发关键词查找（支持正向"取件码123456"和反向"123456取件码"两种顺序）
-        val expressKeywords = engine.getExpressTriggerKeywords()
+        // 方法1：基于触发关键词上下文查找，避免把地址中的门牌号当成取件码
         val enginePatterns = engine.getExpressPatterns()
-        Log.d("RecognitionMonitor", "expressKeywords: $expressKeywords, patterns: ${enginePatterns.map { it.id }}")
-
-        for (keyword in expressKeywords) {
-            // 正向：keyword 后面找 code（可能有多个，用、或,分隔）
-            var searchStart = 0
-            while (true) {
-                val kwIdx = mergedText.indexOf(keyword, searchStart)
-                if (kwIdx < 0) break
-                var afterText = mergedText.substring(kwIdx + keyword.length)
-                    .trimStart(':', '：', ' ')
-                Log.d("RecognitionMonitor", "[express] keyword=$keyword, afterText=${afterText.take(30)}")
-                var offsetInAfter = 0
-                while (offsetInAfter < afterText.length) {
-                    var found = false
-                    for (pattern in enginePatterns) {
-                        val compiled = engine.getCompiledPattern(pattern.id) ?: continue
-                        val remaining = afterText.substring(offsetInAfter)
-                        val match = compiled.find(remaining) ?: continue
-                        val code = match.groupValues.getOrElse(1) { match.value }
-                        Log.d("RecognitionMonitor", "[express] pattern=${pattern.id}, code=$code")
-                        val absStart = kwIdx + keyword.length + offsetInAfter + match.range.first
-                        val absEnd = kwIdx + keyword.length + offsetInAfter + match.range.last
-                        addOrderIfValid(code, absStart..absEnd)
-                        offsetInAfter += match.range.last + 1
-                        found = true
-                        break
-                    }
-                    if (!found) break
-                    // 跳过分隔符
-                    val separators = engine.rules.validation.expressCode.codeSeparators
-                    while (offsetInAfter < afterText.length && afterText[offsetInAfter].toString() in separators) {
-                        offsetInAfter++
-                    }
-                }
-                searchStart = kwIdx + keyword.length
-            }
-
-            // 反向：keyword 前面找 code（只用高优先级模式，避免误匹配快递单号）
-            searchStart = 0
-            while (true) {
-                val kwIdx = mergedText.indexOf(keyword, searchStart)
-                if (kwIdx < 0) break
-                val maxDist = engine.rules.validation.expressCode.maxReverseDistance
-                val reverseSearchStart = (kwIdx - maxDist).coerceAtLeast(0)
-                val beforeText = mergedText.substring(reverseSearchStart, kwIdx)
-                    .trimEnd(':', '：', ' ')
-                for (pattern in enginePatterns) {
-                    if (pattern.priority > engine.rules.recognitionParams.patternPrioritySkip) continue // 跳过低优先级模式
-                    val compiled = engine.getCompiledPattern(pattern.id) ?: continue
-                    val match = compiled.findAll(beforeText).lastOrNull() ?: continue
-                    val code = match.groupValues.getOrElse(1) { match.value }
-                    // code 到 keyword 的距离不能太远，否则不是同一个上下文
-                    val gap = beforeText.length - match.range.last - 1
-                    val maxGap = engine.rules.validation.expressCode.maxCodeKeywordGap
-                    if (gap > maxGap) {
-                        Log.d("RecognitionMonitor", "[express-reverse] skip code=$code, gap=$gap too far from keyword")
-                        continue
-                    }
-                    Log.d("RecognitionMonitor", "[express-reverse] pattern=${pattern.id}, code=$code")
-                    addOrderIfValid(code, match.range)
-                    break
-                }
-                searchStart = kwIdx + keyword.length
-            }
+        Log.d("RecognitionMonitor", "express patterns: ${enginePatterns.map { it.id }}")
+        for ((code, range) in findExpressCodesNearKeywords(mergedText)) {
+            addOrderIfValid(code, range)
         }
         Log.d("RecognitionMonitor", "方法1完成，找到 ${orders.size} 个取件码")
 
         // 方法2：如果方法1找到的取件码不足，尝试基于快递品牌名称查找
-        if (orders.isEmpty()) {
+        val hasExpressTrigger = engine.getExpressTriggerKeywords().any { mergedText.contains(it) }
+        if (orders.isEmpty() && !hasExpressTrigger) {
             val expressBrands = engine.getExpressBrands()
             for (brandDef in expressBrands) {
                 val brandNames = listOf(brandDef.name) + brandDef.aliases

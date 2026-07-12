@@ -1412,27 +1412,89 @@ fun OrderGroupCard(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                        // 显示组内的订单卡片
+                        // 显示组内精简订单信息，避免嵌套完整订单卡片
                         if (groupOrders.isNotEmpty()) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                groupOrders.forEach { order ->
-                                    OrderCard(
-                                        order = order,
-                                        onMarkCompleted = { performHaptic(); viewModel.markAsCompleted(order.id) },
-                                        onDelete = { performHaptic(); viewModel.deleteOrder(order) },
-                                        onShowQr = { /* TODO: 显示二维码 */ },
-                                        isCompleted = order.isCompleted,
-                                        isEditMode = isEditMode,
-                                        onNavigateToDetail = { /* TODO: 导航到详情 */ },
-                                        showRealtimeNotification = false,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                            Column {
+                                groupOrders.forEachIndexed { index, order ->
+                                    Md3eGroupedOrderRow(order = order)
+                                    if (index < groupOrders.lastIndex) {
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(horizontal = 4.dp),
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun Md3eGroupedOrderRow(order: OrderEntity) {
+    val timeStr = remember(order.createdAt) {
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(order.createdAt))
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (order.orderType == "快递") "取件码" else (order.brandName ?: "取餐码"),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = order.takeoutCode,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (order.isCompleted) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
+            )
+            if (!order.pickupLocation.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = order.pickupLocation,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "时间: $timeStr",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        }
+        if (order.isCompleted) {
+            Text(
+                text = "已完成",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }

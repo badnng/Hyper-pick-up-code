@@ -10,8 +10,7 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
-import com.Badnng.moe.ocr.TextRecognitionHelper
-import com.Badnng.moe.rules.RecognitionRuleEngine
+import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.service.SmsRecognitionService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,12 +59,7 @@ class SmsRecognitionReceiver : BroadcastReceiver() {
 
     private suspend fun processSms(context: Context, smsText: String, sender: String) {
         withContext(Dispatchers.IO) {
-            if (!RecognitionRuleEngine.isInitialized) {
-                RecognitionRuleEngine.initialize(context)
-            }
-            val helper = TextRecognitionHelper(context)
-            val results = helper.recognizeFromText(smsText)
-            helper.close()
+            val results = RecognitionRouter(context).recognizeText(smsText).orders
 
             Log.d("SmsRecognition", "识别结果：${results.size}个, codes=${results.map { it.code }}")
 

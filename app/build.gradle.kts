@@ -6,6 +6,12 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val generatedPrivacyAssetsDir = layout.buildDirectory.dir("generated/privacy-assets")
+val generatePrivacyAssets by tasks.registering(Copy::class) {
+    from(rootProject.file("PRIVACY.md"))
+    into(generatedPrivacyAssetsDir)
+}
+
 android {
     namespace = "com.Badnng.moe"
     compileSdk = 37
@@ -18,8 +24,8 @@ android {
         applicationId = "com.Badnng.moe"
         minSdk = 35
         targetSdk = 37
-        versionCode = 20260712_11
-        versionName = "26.7.12.C01-Dev"
+        versionCode = 20260713_11
+        versionName = "26.7.13.C01-Dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -94,6 +100,10 @@ android {
         compose = true
     }
 
+    sourceSets.getByName("main").assets.directories.add(
+        generatedPrivacyAssetsDir.get().asFile.absolutePath
+    )
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -102,6 +112,10 @@ android {
             useLegacyPackaging = false
         }
     }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(generatePrivacyAssets)
 }
 
 kotlin {

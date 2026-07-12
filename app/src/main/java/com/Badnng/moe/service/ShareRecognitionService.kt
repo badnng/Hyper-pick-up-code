@@ -24,9 +24,8 @@ import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.AppLogger
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
-import com.Badnng.moe.ocr.MultiRecognitionResult
-import com.Badnng.moe.ocr.TextRecognitionHelper
-import com.Badnng.moe.rules.RecognitionRuleEngine
+import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import java.io.File
 import java.io.FileOutputStream
 
@@ -73,35 +72,23 @@ class ShareRecognitionService : Service() {
             return
         }
 
-        val croppedBitmap = cropStatusBar(bitmap)
-        if (!RecognitionRuleEngine.isInitialized) {
-            RecognitionRuleEngine.initialize(applicationContext)
-        }
-        val helper = TextRecognitionHelper(applicationContext)
-
+        val onlineRecognition = OnlineRecognitionPreferences.isOnline(applicationContext)
+        val croppedBitmap = if (onlineRecognition) bitmap else cropStatusBar(bitmap)
         try {
-            helper.initOcr()
-
-            val recognizeResult = helper.recognizeAll(bitmap)
-            val singleResult = recognizeResult.first
-            val ocrResult = recognizeResult.second
-            val hasExpressKeyword = singleResult.fullText.contains("\u53d6\u4ef6") ||
-                singleResult.fullText.contains("\u53d6\u8d27") ||
-                singleResult.fullText.contains("\u5feb\u9012") ||
-                singleResult.fullText.contains("\u9a7f\u7ad9") ||
-                singleResult.fullText.contains("\u83dc\u9e1f")
-            val bitmapToUse = if (hasExpressKeyword) bitmap else croppedBitmap
-            val multiResult = if (hasExpressKeyword || singleResult.type == "\u5feb\u9012") {
-                helper.recognizeMultipleCodesFromResult(ocrResult.rawFullText, ocrResult.textBlocks, ocrResult.mergedText)
-            } else {
-                MultiRecognitionResult(emptyList(), false)
+            val routedResult = RecognitionRouter(applicationContext).recognizeImage(bitmap)
+            val recognizedOrders = routedResult.orders
+            routedResult.onlineError?.let {
+                Log.w("ShareRecognition", "Online recognition fallback: $it")
             }
-            val recognizedOrders = when {
-                multiResult.hasMultipleCodes && multiResult.orders.size > 1 -> multiResult.orders
-                singleResult.code != null -> listOf(singleResult)
-                multiResult.orders.isNotEmpty() -> multiResult.orders
-                else -> emptyList()
+            val hasExpressKeyword = recognizedOrders.any { result ->
+                result.type == "快递" ||
+                    result.fullText.contains("取件") ||
+                    result.fullText.contains("取货") ||
+                    result.fullText.contains("快递") ||
+                    result.fullText.contains("驿站") ||
+                    result.fullText.contains("菜鸟")
             }
+            val bitmapToUse = if (onlineRecognition || hasExpressKeyword) bitmap else croppedBitmap
 
             if (recognizedOrders.isEmpty()) {
                 AppLogger.recognition("ShareRecognition: no codes found")
@@ -195,7 +182,6 @@ class ShareRecognitionService : Service() {
             val refreshIntent = Intent("com.Badnng.moe.REFRESH_ORDERS")
             LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(refreshIntent)
         } finally {
-            helper.close()
             bitmap.recycle()
             if (croppedBitmap != bitmap) {
                 croppedBitmap.recycle()

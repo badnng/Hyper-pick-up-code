@@ -64,7 +64,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 
 enum class SettingsPage {
-    Main, Preference, Permission, Screenshot, KeepAlive, Storage, About, Sponsor, NotificationApps, Credits
+    Main, Preference, Permission, Screenshot, Recognition, KeepAlive, Storage, About, Sponsor, NotificationApps, Credits
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -196,6 +196,7 @@ fun SettingsScreen(
                         SettingsPage.Preference -> "偏好设置"
                         SettingsPage.Permission -> "权限与保活"
                         SettingsPage.Screenshot -> "截图方式"
+                        SettingsPage.Recognition -> "识别方式"
                         SettingsPage.KeepAlive -> "保活设置"
                         SettingsPage.Storage -> "清理空间"
                         SettingsPage.About -> "关于"
@@ -244,6 +245,7 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit, isMiuix: Boolean = fals
                     SettingsGroupItem(title = "偏好设置", description = "管理自行习惯的设置", position = GroupPosition.First, onClick = { onNavigate(SettingsPage.Preference) })
                     SettingsGroupItem(title = "权限与保活", description = "管理权限和防止系统清理后台", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.Permission) })
                     SettingsGroupItem(title = "截图方式", description = "管理App截图的方式", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.Screenshot) })
+                    SettingsGroupItem(title = "识别方式", description = "选择离线或在线多模态识别", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.Recognition) })
                     SettingsGroupItem(title = "添加到控制中心", description = "将「截图识别」磁贴添加到控制中心快捷栏", position = GroupPosition.Last, onClick = { performHaptic(); requestAddTile(context) })
                 }
             }
@@ -277,6 +279,7 @@ fun MainSettingsList(onNavigate: (SettingsPage) -> Unit, isMiuix: Boolean = fals
                     SettingsGroupItem(title = "偏好设置", description = "管理自行习惯的设置", position = GroupPosition.First, onClick = { onNavigate(SettingsPage.Preference) })
                     SettingsGroupItem(title = "权限与保活", description = "管理权限和防止系统清理后台", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.Permission) })
                     SettingsGroupItem(title = "截图方式", description = "管理App截图的方式", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.Screenshot) })
+                    SettingsGroupItem(title = "识别方式", description = "选择离线或在线多模态识别", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.Recognition) })
                     SettingsGroupItem(title = "添加到控制中心", description = "将「截图识别」磁贴添加到控制中心快捷栏", position = GroupPosition.Last, onClick = { performHaptic(); requestAddTile(context) })
                 }
             }
@@ -357,6 +360,7 @@ fun SubPage(
             ) {
                 when (page) {
                     SettingsPage.Screenshot -> ScreenshotSettingsContent(performHaptic, 0.dp, scrollState)
+                    SettingsPage.Recognition -> RecognitionSettingsContent(performHaptic, 0.dp, scrollState)
                     SettingsPage.Permission -> PermissionSettingsContent(performHaptic, 0.dp, scrollState)
                     SettingsPage.Preference -> PreferenceSettingsContent(performHaptic, onNavigate, 0.dp, scrollState)
                     SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic, 0.dp, scrollState)
@@ -408,6 +412,7 @@ fun SubPage(
         Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             when (page) {
                 SettingsPage.Screenshot -> ScreenshotSettingsContent(performHaptic, topContentPadding, scrollState)
+                SettingsPage.Recognition -> RecognitionSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Permission -> PermissionSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Preference -> PreferenceSettingsContent(performHaptic, onNavigate, topContentPadding, scrollState)
                 SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic, topContentPadding, scrollState)

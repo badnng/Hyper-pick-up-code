@@ -41,7 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.Badnng.moe.data.db.OrderEntity
-import com.Badnng.moe.ocr.TextRecognitionHelper
+import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.viewmodel.OrderViewModel
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.utils.MiuixIndication
@@ -170,19 +171,21 @@ fun AddOrderBottomSheet(
                     val sideMargin = (originalBitmap.width * 0.02).toInt()
                     val targetWidth = (originalBitmap.width * 0.96).toInt()
                     val targetHeight = (originalBitmap.height * 0.81).toInt()
-                    val bitmap = if (originalBitmap.height > statusBarHeight + targetHeight && originalBitmap.width > sideMargin + targetWidth) {
+                    val bitmap = if (OnlineRecognitionPreferences.isOnline(context)) {
+                        originalBitmap
+                    } else if (originalBitmap.height > statusBarHeight + targetHeight && originalBitmap.width > sideMargin + targetWidth) {
                         Bitmap.createBitmap(originalBitmap, sideMargin, statusBarHeight, targetWidth, targetHeight)
                     } else originalBitmap
 
-                    val helper = TextRecognitionHelper(context)
-                    helper.initOcr()
-                    val (result, _) = helper.recognizeAll(bitmap)
-                    text = result.code ?: ""
-                    detectedQrData = result.qr
-                    orderType = result.type
-                    brandName = result.brand
-                    pickupLocation = result.pickupLocation
-                    if (result.code != null) {
+                    val result = RecognitionRouter(context).recognizeImage(bitmap).orders.firstOrNull()
+                    text = result?.code ?: ""
+                    detectedQrData = result?.qr
+                    result?.let {
+                        orderType = it.type
+                        brandName = it.brand
+                        pickupLocation = it.pickupLocation
+                    }
+                    if (result?.code != null) {
                         val screenshotFile = java.io.File(context.filesDir, "screenshots/manual_${System.currentTimeMillis()}.png")
                         screenshotFile.parentFile?.mkdirs()
                         val outputStream = java.io.FileOutputStream(screenshotFile)
@@ -190,7 +193,6 @@ fun AddOrderBottomSheet(
                         outputStream.close()
                         screenshotPath = screenshotFile.absolutePath
                     }
-                    helper.close()
                 }
             }
         }
