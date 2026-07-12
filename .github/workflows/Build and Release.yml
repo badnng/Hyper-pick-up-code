@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - master
-      - dev
+      - Dev
     tags:
       - 'v*'
 
