@@ -69,6 +69,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
 import com.Badnng.moe.R
 import com.Badnng.moe.helper.SuperIslandHelper
+import com.Badnng.moe.privacy.PrivacyConsent
 import com.Badnng.moe.ui.theme.MD3E_MONET_ENABLED_KEY
 import com.Badnng.moe.ui.theme.MIUIX_MONET_ENABLED_KEY
 import com.Badnng.moe.ui.miuix.MIUIX_FLOATING_NAV_BAR_STYLE_KEY
@@ -79,6 +80,7 @@ import com.Badnng.moe.ui.component.ChoiceChip
 import com.Badnng.moe.ui.component.GroupPosition
 import com.Badnng.moe.ui.component.PreferenceSection
 import com.Badnng.moe.ui.component.PreferenceSwitchItem
+import com.Badnng.moe.ui.component.PrivacyConsentBottomSheet
 import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsGroupSwitchItem
@@ -126,7 +128,10 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
     var showOnboardingOnNextLaunch by remember { mutableStateOf(prefs.getBoolean("show_onboarding_on_next_launch", false)) }
     var customHue by remember { mutableFloatStateOf(260f) }
     var selectedColorInt by remember { mutableIntStateOf(prefs.getInt("theme_color", Color(0xFF6750A4).toArgb())) }
-    var networkUpdateEnabled by remember { mutableStateOf(prefs.getBoolean("network_update_enabled", false)) }
+    var networkUpdateEnabled by remember {
+        mutableStateOf(PrivacyConsent.isNetworkUpdateEnabled(prefs))
+    }
+    var showNetworkPrivacyDialog by remember { mutableStateOf(false) }
     var updateChannel by remember { mutableStateOf(prefs.getString("update_channel", "stable") ?: "stable") }
     var notificationType by remember { mutableStateOf(prefs.getString("notification_type", "native") ?: "native") }
     var smsRecognitionEnabled by remember { mutableStateOf(prefs.getBoolean("sms_recognition_enabled", false)) }
@@ -157,6 +162,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
     }
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
+        PrivacyConsent.discardLegacyNetworkUpdatePreference(prefs)
         while (true) {
             notificationListenerPermissionReady = com.Badnng.moe.service.NotificationListenerRecognitionService.isNotificationListenerEnabled(context)
             kotlinx.coroutines.delay(2000)
@@ -164,6 +170,20 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
     }
 
     val isMiuix = rememberMiuixStyle()
+    val requestNetworkUpdateChange: (Boolean) -> Unit = { enabled ->
+        performHaptic()
+        when {
+            !enabled -> {
+                networkUpdateEnabled = false
+                PrivacyConsent.setNetworkUpdateEnabled(prefs, false)
+            }
+            PrivacyConsent.isAccepted(prefs) -> {
+                networkUpdateEnabled = true
+                PrivacyConsent.setNetworkUpdateEnabled(prefs, true)
+            }
+            else -> showNetworkPrivacyDialog = true
+        }
+    }
 
     // Miuix 颜色模式索引计算
     val colorModeLabels = listOf("跟随系统", "浅色", "深色", "莫奈取色(自动)", "莫奈取色(浅色)", "莫奈取色(深色)")
@@ -853,11 +873,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                     title = "联网更新",
                     summary = "仅用于检测App新版本并下载，不用于其他用途",
                     checked = networkUpdateEnabled,
-                    onCheckedChange = {
-                        performHaptic()
-                        networkUpdateEnabled = it
-                        prefs.edit().putBoolean("network_update_enabled", it).apply()
-                    }
+                    onCheckedChange = requestNetworkUpdateChange,
                 )
                 AnimatedVisibility(
                         visible = networkUpdateEnabled,
@@ -886,11 +902,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                             description = "仅用于检测App新版本并下载，不用于其他用途",
                             position = GroupPosition.Single,
                             checked = networkUpdateEnabled,
-                            onCheckedChange = {
-                                performHaptic()
-                                networkUpdateEnabled = it
-                                prefs.edit().putBoolean("network_update_enabled", it).apply()
-                            }
+                            onCheckedChange = requestNetworkUpdateChange,
                         )
                     }
 
@@ -933,4 +945,20 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
         }
         Spacer(modifier = Modifier.height(48.dp))
     }
+    PrivacyConsentBottomSheet(
+        show = showNetworkPrivacyDialog,
+        isMiuix = isMiuix,
+        title = "启用联网更新",
+        onDismiss = {
+            performHaptic()
+            showNetworkPrivacyDialog = false
+        },
+        onConfirm = {
+            performHaptic()
+            PrivacyConsent.accept(prefs)
+            PrivacyConsent.setNetworkUpdateEnabled(prefs, true)
+            networkUpdateEnabled = true
+            showNetworkPrivacyDialog = false
+        },
+    )
 }

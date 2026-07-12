@@ -66,13 +66,15 @@ import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.window.WindowDialog
 import java.io.BufferedReader
 import java.util.*
 
 @Composable
 fun MiuixRulesScreen(
     bottomLayoutInfo: MiuixHomeBottomLayoutInfo,
-    onShowMenu: ((position: androidx.compose.ui.geometry.Offset, rename: (() -> Unit)?, delete: (() -> Unit)?, export: (() -> Unit)?) -> Unit)? = null
+    onShowMenu: ((position: androidx.compose.ui.geometry.Offset, rename: (() -> Unit)?, delete: (() -> Unit)?, export: (() -> Unit)?) -> Unit)? = null,
+    onModalVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -106,6 +108,18 @@ fun MiuixRulesScreen(
     var pendingImportRules by remember { mutableStateOf<RecognitionRules?>(null) }
     var pendingImportFileName by remember { mutableStateOf("") }
     var pendingImportName by remember { mutableStateOf("") }
+
+    val hasVisibleModal = showResetDialog ||
+        showAddSourceDialog ||
+        editingSource != null ||
+        pendingImportRules != null
+    val currentOnModalVisibilityChange by rememberUpdatedState(onModalVisibilityChange)
+    LaunchedEffect(hasVisibleModal) {
+        currentOnModalVisibilityChange(hasVisibleModal)
+    }
+    DisposableEffect(Unit) {
+        onDispose { currentOnModalVisibilityChange(false) }
+    }
 
 
     val singleExportLauncher = rememberLauncherForActivityResult(
@@ -878,7 +892,7 @@ fun MiuixRulesScreen(
             pendingImportFileName = ""
             pendingImportName = ""
         }
-        OverlayDialog(
+        WindowDialog(
             title = "导入规则",
             show = true,
             onDismissRequest = dismissImportDialog

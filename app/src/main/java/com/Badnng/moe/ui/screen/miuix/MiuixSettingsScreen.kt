@@ -5,31 +5,25 @@ import android.content.ComponentName
 import android.content.Context
 import android.graphics.drawable.Icon
 import android.os.Build
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.Badnng.moe.R
 import com.Badnng.moe.service.CaptureTileService
+import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.screen.settings.SettingsPage
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.basic.VerticalScrollBar
-import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -50,13 +44,10 @@ fun MiuixSettingsScreen(
             )
         }
     ) { innerPadding ->
-        val lazyListState = rememberLazyListState()
-        Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
-            state = lazyListState,
             modifier = Modifier
                 .fillMaxSize()
-                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+                .miuixScrollModifiers(topAppBarScrollBehavior),
             contentPadding = PaddingValues(
                 top = innerPadding.calculateTopPadding(),
                 bottom = bottomLayoutInfo.pageContentBottomPadding
@@ -79,6 +70,11 @@ fun MiuixSettingsScreen(
                         title = "截图方式",
                         summary = "管理App截图的方式",
                         onClick = { onNavigateToSubPage(SettingsPage.Screenshot) }
+                    )
+                    ArrowPreference(
+                        title = "识别方式",
+                        summary = "选择离线或在线多模态识别",
+                        onClick = { onNavigateToSubPage(SettingsPage.Recognition) }
                     )
                     ArrowPreference(
                         title = "清理空间",
@@ -110,12 +106,6 @@ fun MiuixSettingsScreen(
             }
 
             item { Spacer(modifier = Modifier.height(12.dp)) }
-        }
-        VerticalScrollBar(
-            adapter = rememberScrollBarAdapter(lazyListState),
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            trackPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = bottomLayoutInfo.pageContentBottomPadding),
-        )
         }
     }
 }

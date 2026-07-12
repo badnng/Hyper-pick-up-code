@@ -3,10 +3,10 @@ package com.Badnng.moe.ui.screen.settings
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -31,18 +32,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.Badnng.moe.R
+import androidx.compose.ui.viewinterop.AndroidView
 import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.helper.AppLogger
 import com.Badnng.moe.helper.BackupHelper
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.UpdateHelper
 import com.Badnng.moe.helper.UpdateInfo
+import com.Badnng.moe.privacy.PrivacyConsent
+import com.Badnng.moe.recognition.OnlineRecognitionPreferences
+import com.Badnng.moe.ui.component.PrivacyPolicyBottomSheet
 import com.Badnng.moe.ui.component.UpdateSheet
 import com.Badnng.moe.ui.component.UpdateProgressSheet
 import com.Badnng.moe.ui.component.GroupPosition
@@ -51,6 +54,7 @@ import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsListItem
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
+import com.Badnng.moe.ui.oobe.OobeCarvedLogoView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
@@ -85,6 +89,8 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
     val pausedFlag = remember { AtomicBoolean(false) }
     var isChecking by remember { mutableStateOf(false) }
     var iconTapCount by remember { mutableIntStateOf(0) }
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
+    var privacyAccepted by remember { mutableStateOf(PrivacyConsent.isAccepted(prefs)) }
 
     val coroutineScope = rememberCoroutineScope()
     val notificationHelper = remember { NotificationHelper(context) }
@@ -102,7 +108,7 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
         }
     }
 
-    val networkUpdateEnabled = prefs.getBoolean("network_update_enabled", false)
+    val networkUpdateEnabled = privacyAccepted && PrivacyConsent.isNetworkUpdateEnabled(prefs)
     val updateChannel = prefs.getString("update_channel", "stable") ?: "stable"
 
     val checkUpdateAction: () -> Unit = {
@@ -142,6 +148,8 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
             iconTapCount = iconTapCount,
             onIconTap = { iconTapCount = it },
             onNavigateToCredits = onNavigateToCredits,
+            privacyAccepted = privacyAccepted,
+            onShowPrivacyPolicy = { showPrivacyPolicy = true },
             onBack = onBack
         )
     } else {
@@ -155,9 +163,47 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
             topPadding = topPadding,
             scrollState = scrollState,
             iconTapCount = iconTapCount,
-            onIconTap = { iconTapCount = it }
+            onIconTap = { iconTapCount = it },
+            privacyAccepted = privacyAccepted,
+            onShowPrivacyPolicy = { showPrivacyPolicy = true },
         )
     }
+
+    PrivacyPolicyBottomSheet(
+        show = showPrivacyPolicy,
+        isMiuix = isMiuix,
+        isAccepted = privacyAccepted,
+        onDismiss = {
+            performHaptic()
+            showPrivacyPolicy = false
+        },
+        onAccept = {
+            performHaptic()
+            PrivacyConsent.accept(prefs)
+            privacyAccepted = true
+            Toast.makeText(
+                context,
+                "已同意用户协议与隐私说明",
+                Toast.LENGTH_SHORT,
+            ).show()
+        },
+        onRevoke = {
+            performHaptic()
+            PrivacyConsent.revoke(prefs)
+            prefs.edit()
+                .putString(
+                    OnlineRecognitionPreferences.MODE_KEY,
+                    OnlineRecognitionPreferences.MODE_OFFLINE,
+                )
+                .apply()
+            privacyAccepted = false
+            Toast.makeText(
+                context,
+                "已撤销同意，在线识别与联网更新已关闭",
+                Toast.LENGTH_SHORT,
+            ).show()
+        },
+    )
 
     // 更新弹窗
     updateInfo?.let { info ->
@@ -246,6 +292,8 @@ private fun MiuixAboutPage(
     iconTapCount: Int,
     onIconTap: (Int) -> Unit,
     onNavigateToCredits: () -> Unit,
+    privacyAccepted: Boolean,
+    onShowPrivacyPolicy: () -> Unit,
     onBack: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -273,11 +321,18 @@ private fun MiuixAboutPage(
     }
 
     val backdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
+    val sheetBackdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
     val collapsed by remember { derivedStateOf { scrollProgress == 1f } }
     val blurActive by remember(backdrop) { derivedStateOf { backdrop != null && scrollProgress == 1f } }
 
-    top.yukonga.miuix.kmp.basic.Scaffold(
-        topBar = {
+    Box(modifier = Modifier.fillMaxSize()) {
+        top.yukonga.miuix.kmp.basic.Scaffold(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (sheetBackdrop != null) Modifier.layerBackdrop(sheetBackdrop) else Modifier,
+                ),
+            topBar = {
             val barColor = if (blurActive) {
                 Color.Transparent
             } else {
@@ -306,8 +361,8 @@ private fun MiuixAboutPage(
                     },
                 )
             }
-        },
-    ) { innerPadding ->
+            },
+        ) { innerPadding ->
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
             val surfaceForBackdrop = MiuixTheme.colorScheme.surface
             val textBackdrop = top.yukonga.miuix.kmp.blur.rememberLayerBackdrop {
@@ -489,6 +544,18 @@ private fun MiuixAboutPage(
                                             onNavigateToCredits()
                                         }
                                     )
+                                    ArrowPreference(
+                                        title = "用户协议与隐私说明",
+                                        summary = if (privacyAccepted) {
+                                            "已同意 · 点击查看或撤销"
+                                        } else {
+                                            "未同意 · 点击查看"
+                                        },
+                                        onClick = {
+                                            performHaptic()
+                                            onShowPrivacyPolicy()
+                                        }
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(12.dp))
@@ -523,7 +590,6 @@ private fun MiuixAboutPage(
                                     scaleX = 1f - (iconProgress * 0.05f)
                                     scaleY = 1f - (iconProgress * 0.05f)
                                 }
-                                .background(MiuixTheme.colorScheme.primary, RoundedCornerShape(24.dp))
                                 .clickable(
                                     indication = null,
                                     interactionSource = remember { MutableInteractionSource() }
@@ -535,11 +601,37 @@ private fun MiuixAboutPage(
                                     }
                                 }
                         ) {
-                            MiuixIcon(
-                                painter = painterResource(id = R.drawable.abouttopicon),
-                                contentDescription = "Logo",
-                                modifier = Modifier.size(74.dp),
-                                tint = Color.Unspecified
+                            val fallbackLogoColor = MiuixTheme.colorScheme.onBackground.toArgb()
+                            AndroidView(
+                                factory = { logoContext ->
+                                    OobeCarvedLogoView(logoContext)
+                                },
+                                update = { logoView ->
+                                    logoView.setBaseColor(
+                                        if (textBackdrop != null) {
+                                            android.graphics.Color.WHITE
+                                        } else {
+                                            fallbackLogoColor
+                                        },
+                                    )
+                                },
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .then(
+                                        if (textBackdrop != null) {
+                                            Modifier.textureBlur(
+                                                backdrop = textBackdrop,
+                                                shape = RoundedCornerShape(24.dp),
+                                                blurRadius = 150f,
+                                                colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
+                                                    blendColors = logoBlend,
+                                                ),
+                                                contentBlendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                                            )
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
                             )
                         }
                         // 应用名（带 textureBlur 渲染，contentBlendMode = DstIn 让模糊只作用于文字像素）
@@ -616,42 +708,51 @@ private fun MiuixAboutPage(
                 }
             }
 
+            }
         }
 
         // BottomSheet 模糊背景（实时跟随 Sheet 拖拽进度）
         val animatedBlurAlpha = com.Badnng.moe.ui.component.BlurState.progress.floatValue
-        if (animatedBlurAlpha > 0.01f && backdrop != null) {
-            val blurPrefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-            var blurThemeMode by remember { mutableStateOf(blurPrefs.getString("theme_mode", "system") ?: "system") }
-            DisposableEffect(blurPrefs) {
-                val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-                    if (key == "theme_mode") blurThemeMode = p.getString(key, "system") ?: "system"
+        if (animatedBlurAlpha > 0.01f) {
+            if (sheetBackdrop != null) {
+                val blurPrefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+                var blurThemeMode by remember { mutableStateOf(blurPrefs.getString("theme_mode", "system") ?: "system") }
+                DisposableEffect(blurPrefs) {
+                    val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+                        if (key == "theme_mode") blurThemeMode = p.getString(key, "system") ?: "system"
+                    }
+                    blurPrefs.registerOnSharedPreferenceChangeListener(listener)
+                    onDispose { blurPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
                 }
-                blurPrefs.registerOnSharedPreferenceChangeListener(listener)
-                onDispose { blurPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+                val isInDark = when (blurThemeMode) {
+                    "light" -> false
+                    "dark" -> true
+                    else -> isSystemInDarkTheme()
+                }
+                val baseBrightness = if (isInDark) -0.3f else -0.5f
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .textureBlur(
+                            backdrop = sheetBackdrop,
+                            shape = RoundedCornerShape(0.dp),
+                            blurRadius = 56f * animatedBlurAlpha,
+                            colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
+                                brightness = baseBrightness * animatedBlurAlpha,
+                                contrast = 1f + 0.2f * animatedBlurAlpha,
+                                saturation = 1f + 0.08f * animatedBlurAlpha,
+                            ),
+                        )
+                        .graphicsLayer(alpha = animatedBlurAlpha)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.32f * animatedBlurAlpha)),
+                )
             }
-            val isInDark = when (blurThemeMode) {
-                "light" -> false
-                "dark" -> true
-                else -> isSystemInDarkTheme()
-            }
-            val baseBrightness = if (isInDark) -0.3f else -0.5f
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .textureBlur(
-                        backdrop = backdrop,
-                        shape = RoundedCornerShape(0.dp),
-                        blurRadius = 56f * animatedBlurAlpha,
-                        colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
-                            brightness = baseBrightness * animatedBlurAlpha,
-                            contrast = 1f + 0.2f * animatedBlurAlpha,
-                            saturation = 1f + 0.08f * animatedBlurAlpha,
-                        ),
-                    )
-                    .graphicsLayer(alpha = animatedBlurAlpha)
-            )
         }
     }
 }
@@ -671,11 +772,14 @@ private fun Md3eAboutPage(
     topPadding: androidx.compose.ui.unit.Dp,
     scrollState: androidx.compose.foundation.ScrollState,
     iconTapCount: Int,
-    onIconTap: (Int) -> Unit
+    onIconTap: (Int) -> Unit,
+    privacyAccepted: Boolean,
+    onShowPrivacyPolicy: () -> Unit,
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val coroutineScope = rememberCoroutineScope()
+    val md3LogoColor = MaterialTheme.colorScheme.primary.toArgb()
 
     Column(
         modifier = Modifier
@@ -706,10 +810,12 @@ private fun Md3eAboutPage(
             shadowElevation = 4.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Image(
-                    painter = painterResource(id = R.drawable.abouttopicon),
-                    contentDescription = "Logo",
-                    modifier = Modifier.size(66.dp)
+                AndroidView(
+                    factory = { logoContext -> OobeCarvedLogoView(logoContext) },
+                    update = { logoView ->
+                        logoView.setBaseColor(md3LogoColor)
+                    },
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -800,6 +906,26 @@ private fun Md3eAboutPage(
                         performHaptic()
                         uriHandler.openUri(url)
                     }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        PreferenceSection(title = "协议与政策") {
+            SettingsGroup {
+                SettingsGroupItem(
+                    title = "用户协议与隐私说明",
+                    description = if (privacyAccepted) {
+                        "已同意 · 点击查看或撤销"
+                    } else {
+                        "未同意 · 点击查看"
+                    },
+                    position = GroupPosition.Single,
+                    onClick = {
+                        performHaptic()
+                        onShowPrivacyPolicy()
+                    },
                 )
             }
         }

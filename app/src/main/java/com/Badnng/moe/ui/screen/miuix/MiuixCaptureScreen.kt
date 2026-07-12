@@ -44,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -165,6 +166,9 @@ fun MiuixCaptureScreen(
         if (selectedCategory == "全部") incompleteOrders
         else incompleteOrders.filter { it.orderType == selectedCategory }
     }
+    val standaloneCompletedOrders = remember(completedOrders) {
+        completedOrders.filter { it.groupId == null }
+    }
 
     // 多选模式
     var isEditMode by remember { mutableStateOf(false) }
@@ -224,6 +228,16 @@ fun MiuixCaptureScreen(
         null
     }
     val blurEnabled = backdrop != null
+    val lazyListState = rememberLazyListState()
+    val isListScrolling by remember {
+        derivedStateOf { lazyListState.isScrollInProgress }
+    }
+    LaunchedEffect(isListScrolling) {
+        onScrollStateChange(isListScrolling)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onScrollStateChange(false) }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
@@ -303,8 +317,6 @@ fun MiuixCaptureScreen(
             }
         },
     ) { innerPadding ->
-        val lazyListState = rememberLazyListState()
-
         // 将 backdrop 应用到内容区域，这样顶栏才能采样到背后的内容
         val contentModifier = if (backdrop != null) {
             Modifier.fillMaxSize().layerBackdrop(backdrop)
@@ -491,11 +503,11 @@ fun MiuixCaptureScreen(
                     }
                 }
 
-                if (completedOrders.isNotEmpty()) {
+                if (standaloneCompletedOrders.isNotEmpty()) {
                     item {
                         SmallTitle(text = "已完成订单")
                     }
-                    items(items = completedOrders, key = { "completed_${it.id}" }) { order ->
+                    items(items = standaloneCompletedOrders, key = { "completed_${it.id}" }) { order ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.animateItem(
@@ -538,7 +550,7 @@ fun MiuixCaptureScreen(
                 }
 
                 // 空状态
-                if (completedOrders.isEmpty() && completedGroups.isEmpty()) {
+                if (standaloneCompletedOrders.isEmpty() && completedGroups.isEmpty()) {
                     item {
                         Box(
                             modifier = Modifier
@@ -586,7 +598,7 @@ fun MiuixCaptureScreen(
                 Button(
                     onClick = {
                         performHaptic()
-                        val currentOrders = if (selectedTab == 0) filteredIncompleteOrders.filter { it.groupId == null } else completedOrders
+                        val currentOrders = if (selectedTab == 0) filteredIncompleteOrders.filter { it.groupId == null } else standaloneCompletedOrders
                         if (selectedIds.size == currentOrders.size && currentOrders.isNotEmpty()) {
                             selectedIds = emptySet()
                         } else {
@@ -601,7 +613,7 @@ fun MiuixCaptureScreen(
                             val currentOrders = filteredIncompleteOrders.filter { it.groupId == null }
                             if (selectedIds.size == currentOrders.size && currentOrders.isNotEmpty()) "取消全选订单" else "全选订单"
                         } else {
-                            if (selectedIds.size == completedOrders.size && completedOrders.isNotEmpty()) "取消全选订单" else "全选订单"
+                            if (selectedIds.size == standaloneCompletedOrders.size && standaloneCompletedOrders.isNotEmpty()) "取消全选订单" else "全选订单"
                         },
                         fontSize = 13.sp
                     )
@@ -748,7 +760,7 @@ fun MiuixCaptureScreen(
     }
 
     AnimatedVisibility(
-        visible = !isEditMode && selectedTab == 0,
+        visible = !isEditMode && selectedTab == 0 && !isListScrolling,
         enter = fadeIn(),
         exit = fadeOut(),
         modifier = Modifier
@@ -996,29 +1008,22 @@ private fun MiuixOrderGroupCard(
                 }
             }
 
-            // 展开后显示内嵌订单卡片
+            // 展开后显示精简订单信息，避免组卡片内再次嵌套完整卡片和操作按钮
             AnimatedVisibility(
                 visible = isExpanded && !isEditMode,
                 enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                 exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    groupOrders.forEach { order ->
-                        MiuixOrderCard(
-                            order = order,
-                            onClick = { },
-                            onMarkCompleted = {
-                                performHaptic()
-                                viewModel.markAsCompleted(order.id)
-                            },
-                            onDelete = {
-                                performHaptic()
-                                viewModel.deleteOrder(order)
-                            },
-                            isCompleted = order.isCompleted,
-                            isEditMode = isEditMode
-                        )
+                    groupOrders.forEachIndexed { index, order ->
+                        MiuixGroupedOrderRow(order = order)
+                        if (index < groupOrders.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                color = MiuixTheme.colorScheme.outline.copy(alpha = 0.3f)
+                            )
+                        }
                     }
                 }
             }
@@ -1133,6 +1138,70 @@ private fun MiuixOrderGroupCard(
             showTimePicker = false
         }
     )
+}
+
+@Composable
+private fun MiuixGroupedOrderRow(order: OrderEntity) {
+    val timeStr = remember(order.createdAt) {
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(order.createdAt))
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (order.orderType == "快递") "取件码" else (order.brandName ?: "取餐码"),
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+            )
+            Text(
+                text = order.takeoutCode,
+                style = MiuixTheme.textStyles.title1,
+                fontWeight = FontWeight.Bold,
+                color = if (order.isCompleted) {
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                } else {
+                    MiuixTheme.colorScheme.primary
+                }
+            )
+            if (!order.pickupLocation.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = MiuixIcons.Regular.Location,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MiuixTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = order.pickupLocation,
+                        style = MiuixTheme.textStyles.body2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        maxLines = 1
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "时间: $timeStr",
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f)
+            )
+        }
+        if (order.isCompleted) {
+            Text(
+                text = "已完成",
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.primary
+            )
+        }
+    }
 }
 
 @Composable

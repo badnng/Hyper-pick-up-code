@@ -57,7 +57,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.Badnng.moe.activity.MainActivity
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
-import com.Badnng.moe.ocr.TextRecognitionHelper
+import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.viewmodel.OrderViewModel
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -943,21 +944,24 @@ fun HomeScreen(
                                 MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
                             }
 
-                            val bitmap = cropStatusBar(originalBitmap)
+                            val bitmap = if (OnlineRecognitionPreferences.isOnline(context)) {
+                                originalBitmap
+                            } else {
+                                cropStatusBar(originalBitmap)
+                            }
 
-                            val helper = TextRecognitionHelper(context)
-                            helper.initOcr() // 初始化 PaddleOCR
-                            val recognizeResult = helper.recognizeAll(bitmap)
-                            val result = recognizeResult.first
+                            val result = RecognitionRouter(context).recognizeImage(bitmap).orders.firstOrNull()
 
-                            text = result.code ?: ""
-                            detectedQrData = result.qr
-                            orderType = result.type
-                            brandName = result.brand
-                            pickupLocation = result.pickupLocation
+                            text = result?.code ?: ""
+                            detectedQrData = result?.qr
+                            result?.let {
+                                orderType = it.type
+                                brandName = it.brand
+                                pickupLocation = it.pickupLocation
+                            }
 
-                            // 保存裁剪后的图片
-                            if (result.code != null) {
+                            // 保存本次识别使用的图片。
+                            if (result?.code != null) {
                                 val screenshotFile = java.io.File(context.filesDir, "screenshots/manual_${System.currentTimeMillis()}.png")
                                 screenshotFile.parentFile?.mkdirs()
                                 val outputStream = java.io.FileOutputStream(screenshotFile)
@@ -966,7 +970,6 @@ fun HomeScreen(
                                 screenshotPath = screenshotFile.absolutePath
                             }
 
-                            helper.close()
                         }
                     }
                 }

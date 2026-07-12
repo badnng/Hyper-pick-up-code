@@ -11,8 +11,7 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
-import com.Badnng.moe.ocr.TextRecognitionHelper
-import com.Badnng.moe.rules.RecognitionRuleEngine
+import com.Badnng.moe.recognition.RecognitionRouter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -96,12 +95,7 @@ class NotificationListenerRecognitionService : NotificationListenerService() {
     }
 
     private suspend fun processNotificationText(text: String, pkgName: String, appLabel: String) {
-        if (!RecognitionRuleEngine.isInitialized) {
-            RecognitionRuleEngine.initialize(applicationContext)
-        }
-        val helper = TextRecognitionHelper(applicationContext)
-        val results = helper.recognizeFromText(text)
-        helper.close()
+        val results = RecognitionRouter(applicationContext).recognizeText(text).orders
 
         Log.d("NotificationListener", "识别结果: ${results.size}个, codes=${results.map { it.code }}")
 
@@ -239,12 +233,7 @@ class NotificationListenerRecognitionService : NotificationListenerService() {
         fun testNotificationRecognition(context: Context, text: String) {
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 try {
-                    if (!RecognitionRuleEngine.isInitialized) {
-                        RecognitionRuleEngine.initialize(context)
-                    }
-                    val helper = TextRecognitionHelper(context)
-                    val results = helper.recognizeFromText(text)
-                    helper.close()
+                    val results = RecognitionRouter(context).recognizeTextOffline(text)
 
                     if (results.isEmpty()) {
                         android.util.Log.d("NotificationListener", "测试识别: 未识别到码")

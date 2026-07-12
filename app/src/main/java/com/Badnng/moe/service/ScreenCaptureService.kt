@@ -36,9 +36,8 @@ import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.RootHelper
-import com.Badnng.moe.ocr.MultiRecognitionResult
-import com.Badnng.moe.ocr.TextRecognitionHelper
-import com.Badnng.moe.rules.RecognitionRuleEngine
+import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import rikka.shizuku.Shizuku
 import java.io.File
 import java.io.FileOutputStream
@@ -142,8 +141,8 @@ class ScreenCaptureService : Service() {
             try {
                 bitmap = captureShizukuScreenshot()
                 if (bitmap != null) {
-                    val cropped = cropStatusBar(bitmap)
-                    recognizeAndStop(cropped, appName, pkg, triggeredByAccessibilityShortcut)
+                    val recognitionBitmap = prepareRecognitionBitmap(bitmap)
+                    recognizeAndStop(recognitionBitmap, appName, pkg, triggeredByAccessibilityShortcut)
                 } else {
                     AppLogger.service("Shizuku capture returned null bitmap")
                     stopSelf()
@@ -174,8 +173,8 @@ class ScreenCaptureService : Service() {
             try {
                 bitmap = RootHelper.captureScreenshot()
                 if (bitmap != null) {
-                    val cropped = cropStatusBar(bitmap)
-                    recognizeAndStop(cropped, appName, pkg, triggeredByAccessibilityShortcut)
+                    val recognitionBitmap = prepareRecognitionBitmap(bitmap)
+                    recognizeAndStop(recognitionBitmap, appName, pkg, triggeredByAccessibilityShortcut)
                 } else {
                     AppLogger.service("Root capture returned null bitmap")
                     withContext(Dispatchers.Main) {
@@ -307,8 +306,8 @@ class ScreenCaptureService : Service() {
                 )
                 bitmap.copyPixelsFromBuffer(buffer)
                 cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
-                val cropped = cropStatusBar(cleanBitmap)
-                recognizeAndStop(cropped, appName, pkg, triggeredByAccessibilityShortcut)
+                val recognitionBitmap = prepareRecognitionBitmap(cleanBitmap)
+                recognizeAndStop(recognitionBitmap, appName, pkg, triggeredByAccessibilityShortcut)
             } catch (e: Exception) {
                 Log.e("CaptureLog", "MediaProjection capture failed", e)
                 stopSelf()
@@ -332,37 +331,26 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    private fun prepareRecognitionBitmap(src: Bitmap): Bitmap {
+        if (OnlineRecognitionPreferences.isOnline(applicationContext)) {
+            return src.copy(Bitmap.Config.ARGB_8888, false)
+        }
+        val cropped = cropStatusBar(src)
+        return if (cropped === src) {
+            src.copy(Bitmap.Config.ARGB_8888, false)
+        } else {
+            cropped
+        }
+    }
+
     private fun recognizeAndStop(bitmap: Bitmap, sourceApp: String?, sourcePkg: String?, triggeredByAccessibilityShortcut: Boolean) {
         scope.launch {
-            var helper: TextRecognitionHelper? = null
-
             try {
-                if (!RecognitionRuleEngine.isInitialized) {
-                    RecognitionRuleEngine.initialize(applicationContext)
-                }
-                helper = TextRecognitionHelper(applicationContext)
-                if (!helper.paddleOcr.isInitialized) {
-                    helper.initOcr()
-                }
-
-                val recognizeResult = helper.recognizeAll(bitmap, sourceApp, sourcePkg)
-                val singleResult = recognizeResult.first
-                val ocrResult = recognizeResult.second
-                val hasExpressKeyword = singleResult.fullText.contains("\u53d6\u4ef6") ||
-                    singleResult.fullText.contains("\u53d6\u8d27") ||
-                    singleResult.fullText.contains("\u5feb\u9012") ||
-                    singleResult.fullText.contains("\u9a7f\u7ad9") ||
-                    singleResult.fullText.contains("\u83dc\u9e1f")
-                val multiResult = if (hasExpressKeyword || singleResult.type == "\u5feb\u9012") {
-                    helper.recognizeMultipleCodesFromResult(ocrResult.rawFullText, ocrResult.textBlocks, ocrResult.mergedText, sourceApp, sourcePkg)
-                } else {
-                    MultiRecognitionResult(emptyList(), false)
-                }
-                val recognizedOrders = when {
-                    multiResult.hasMultipleCodes && multiResult.orders.size > 1 -> multiResult.orders
-                    singleResult.code != null -> listOf(singleResult)
-                    multiResult.orders.isNotEmpty() -> multiResult.orders
-                    else -> emptyList()
+                val routedResult = RecognitionRouter(applicationContext)
+                    .recognizeImage(bitmap, sourceApp, sourcePkg)
+                val recognizedOrders = routedResult.orders
+                routedResult.onlineError?.let {
+                    Log.w("CaptureLog", "Online recognition fallback: $it")
                 }
 
                 if (recognizedOrders.isEmpty()) {
@@ -457,12 +445,6 @@ class ScreenCaptureService : Service() {
                     ).show()
                 }
             } finally {
-                try {
-                    helper?.close()
-                } catch (e: Exception) {
-                    Log.e("CaptureLog", "Failed to close helper", e)
-                }
-
                 if (!bitmap.isRecycled) {
                     bitmap.recycle()
                 }

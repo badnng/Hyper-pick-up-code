@@ -1,0 +1,71 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#FF6756E8"
+        android:pathData="M10,0H38C43.52,0 48,4.48 48,10V38C48,43.52 43.52,48 38,48H10C4.48,48 0,43.52 0,38V10C0,4.48 4.48,0 10,0Z" />
+    <group
+        android:scaleX="1.25"
+        android:scaleY="1.25"
+        android:translateX="10.84"
+        android:translateY="9">
+        <path android:pathData="M21.0517,11.7895V5.9156C21.0517,5.8982 21.0422,5.8821 21.0268,5.8735L10.5497,0.0063C10.5422,0.0021 10.5338,0 10.5254,0V2.458C10.5254,7.2273 14.5109,11.784 19.4278,11.784C19.3287,11.784 19.2299,11.7858 19.1316,11.7895H21.0517Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:endX="20.4628"
+                    android:endY="7.6859"
+                    android:startX="9.9379"
+                    android:startY="0.5649"
+                    android:type="linear">
+                    <item android:color="#FFFFFFFF" android:offset="0" />
+                    <item android:color="#FFC9C1FF" android:offset="1" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M-0.0009,11.7895V17.8731C-0.0009,17.8912 0.0086,17.9079 0.024,17.9168L10.5011,23.9934C10.5086,23.9978 10.517,24 10.5254,24V21.4542C10.5254,16.5146 6.5399,11.7952 1.623,11.7952C1.7221,11.7952 1.8209,11.7933 1.9192,11.7895H-0.0009Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:endX="-1.5714"
+                    android:endY="11.4259"
+                    android:startX="9.3478"
+                    android:startY="21.242"
+                    android:type="linear">
+                    <item android:color="#FFF4F1FF" android:offset="0" />
+                    <item android:color="#FFB9D6FF" android:offset="1" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M-0.0009,11.7895V5.9156C-0.0009,5.8982 0.0086,5.8821 0.024,5.8735L10.5011,0.0063C10.5086,0.0021 10.517,0 10.5254,0V2.458C10.5254,7.2273 6.5399,11.784 1.623,11.784C1.7221,11.784 1.8209,11.7858 1.9192,11.7895H-0.0009Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:endX="9.8686"
+                    android:endY="-0.1209"
+                    android:startX="1.2829"
+                    android:startY="11.7895"
+                    android:type="linear">
+                    <item android:color="#FFD8D2FF" android:offset="0" />
+                    <item android:color="#FFFFFFFF" android:offset="1" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M21.0517,11.7895V17.8731C21.0517,17.8912 21.0422,17.9079 21.0268,17.9168L10.5497,23.9934C10.5422,23.9978 10.5338,24 10.5254,24V21.4542C10.5254,16.5146 14.5109,11.7952 19.4278,11.7952C19.3287,11.7952 19.2299,11.7933 19.1316,11.7895H21.0517Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:endX="10.7663"
+                    android:endY="23.7957"
+                    android:startX="21.0517"
+                    android:startY="11.2977"
+                    android:type="linear">
+                    <item android:color="#FFC8D2FF" android:offset="0" />
+                    <item android:color="#FFF8F6FF" android:offset="1" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M10.5273,2.458C10.5273,7.2273 14.5129,11.7842 19.4297,11.7842L19.1338,11.7891C19.232,11.7929 19.3307,11.7949 19.4297,11.7949C14.5129,11.7949 10.5274,16.5146 10.5273,21.4541C10.5273,16.5581 6.6118,11.8801 1.7549,11.7979L1.7539,11.792L1.9209,11.7891C1.8654,11.787 1.8097,11.7869 1.7539,11.7861V11.7803C6.6113,11.7015 10.5273,7.1855 10.5273,2.458Z" />
+    </group>
+</vector>

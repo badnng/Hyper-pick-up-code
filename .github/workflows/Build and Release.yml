@@ -36,9 +36,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-
+          key: gradle-Linux-b18f4d0b36d5b58a8aed9916b0f53262ee9e206e4cc47de6f4a72b25d1a5c6ab
 
       - name: Decode Keystore
         if: startsWith(github.ref, 'refs/tags/')
@@ -67,13 +65,13 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon -Porg.gradle.user.home=$HOME/.gradle
 
       - name: Save Gradle cache
-        if: success() && steps.gradle_cache.outputs.cache-hit != 'true'
+        if: success() && github.ref == 'refs/heads/master' && steps.gradle_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          key: gradle-Linux-b18f4d0b36d5b58a8aed9916b0f53262ee9e206e4cc47de6f4a72b25d1a5c6ab
 
       # ─── 以下仅 tag 推送时执行 ───
 
