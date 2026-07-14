@@ -4,11 +4,7 @@ import android.content.Context
 import android.os.VibratorManager
 import com.Badnng.moe.ui.theme.Md3Presets
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import android.content.pm.PackageManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -21,8 +17,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -35,12 +33,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -67,13 +63,13 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
-import com.Badnng.moe.R
 import com.Badnng.moe.helper.SuperIslandHelper
 import com.Badnng.moe.privacy.PrivacyConsent
 import com.Badnng.moe.ui.theme.MD3E_MONET_ENABLED_KEY
 import com.Badnng.moe.ui.theme.MIUIX_MONET_ENABLED_KEY
 import com.Badnng.moe.ui.miuix.MIUIX_FLOATING_NAV_BAR_STYLE_KEY
 import com.Badnng.moe.ui.miuix.MiuixFloatingNavigationBarStyle
+import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.component.CaptureModeItem
 import com.Badnng.moe.ui.component.ChoiceChip
@@ -84,7 +80,6 @@ import com.Badnng.moe.ui.component.PrivacyConsentBottomSheet
 import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsGroupSwitchItem
-import com.Badnng.moe.ui.component.SettingsListItem
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -229,20 +224,17 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
         else -> 0
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = if (isMiuix) 0.dp else 16.dp)
-            .verticalScroll(scrollState)
-            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom)),
-        verticalArrangement = Arrangement.spacedBy(if (isMiuix) 0.dp else 32.dp)
-    ) {
-        Spacer(Modifier.height(topPadding))
+    var autoGroupEnabled by remember {
+        mutableStateOf(prefs.getBoolean("auto_group_enabled", true))
+    }
+
+    val bottomBarSection: @Composable () -> Unit = {
         if (isMiuix) {
             SmallTitle(text = "底栏设置")
             MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 SwitchPreference(
                     title = "悬浮底栏",
+                    summary = "大屏设备关闭时使用可展开的侧边导航",
                     checked = useFloatingNavBar,
                     onCheckedChange = {
                         performHaptic()
@@ -367,7 +359,9 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 }
             }
         }
+    }
 
+    val interactionSection: @Composable () -> Unit = {
         PreferenceSection(title = "交互设置") {
             SettingsGroup {
                 if (hasVibrator) {
@@ -396,9 +390,9 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 )
             }
         }
+    }
 
-        var autoGroupEnabled by remember { mutableStateOf(prefs.getBoolean("auto_group_enabled", true)) }
-
+    val appearanceSection: @Composable () -> Unit = {
         if (isMiuix) {
             // Miuix 模式：外观设置（颜色模式 + 界面风格）
             SmallTitle(text = "外观设置")
@@ -526,7 +520,9 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 }
             }
         }
+    }
 
+    val featureSection: @Composable () -> Unit = {
         if (!isMiuix) {
             PreferenceSection(title = "订单管理") {
                 SettingsGroup {
@@ -714,7 +710,9 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 }
             }
         }
+    }
 
+    val onboardingSection: @Composable () -> Unit = {
         PreferenceSection(title = "引导设置") {
             SettingsGroup {
                 SettingsGroupSwitchItem(
@@ -730,7 +728,9 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 )
             }
         }
+    }
 
+    val notificationTypeSection: @Composable () -> Unit = {
         if (isMiuix) {
             val isIslandSupported = com.Badnng.moe.helper.SuperIslandHelper.isDeviceSupported(context)
             SmallTitle(text = "通知类型")
@@ -882,7 +882,9 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 }
             }
         }
+    }
 
+    val networkUpdateSection: @Composable () -> Unit = {
         if (isMiuix) {
             SmallTitle(text = "联网更新")
             MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
@@ -960,7 +962,41 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 }
             }
         }
-        Spacer(modifier = Modifier.height(48.dp))
+    }
+
+    val sections = listOf(
+        bottomBarSection,
+        interactionSection,
+        appearanceSection,
+        featureSection,
+        onboardingSection,
+        notificationTypeSection,
+        networkUpdateSection,
+    )
+    if (isMiuix) {
+        MiuixSettingsLazyColumn(
+            sections = sections,
+            contentPadding = PaddingValues(
+                top = topPadding,
+                bottom = 48.dp +
+                    WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding(),
+            ),
+        )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(scrollState)
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom),
+                ),
+            verticalArrangement = Arrangement.spacedBy(32.dp),
+        ) {
+            Spacer(Modifier.height(topPadding))
+            sections.forEach { it() }
+            Spacer(modifier = Modifier.height(48.dp))
+        }
     }
     PrivacyConsentBottomSheet(
         show = showNetworkPrivacyDialog,

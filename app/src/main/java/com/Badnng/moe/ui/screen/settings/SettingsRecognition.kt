@@ -93,6 +93,7 @@ import com.Badnng.moe.recognition.SecureApiKeyStore
 import com.Badnng.moe.privacy.PrivacyConsent
 import com.Badnng.moe.ui.component.OnlineRecognitionProviderIcon
 import com.Badnng.moe.ui.component.PrivacyConsentBottomSheet
+import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -261,11 +262,7 @@ fun RecognitionSettingsContent(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = if (isMiuix) 0.dp else 16.dp)
-            .pointerInput(focusManager) {
+    val clearFocusModifier = Modifier.pointerInput(focusManager) {
                 awaitEachGesture {
                     val down = awaitFirstDown(
                         requireUnconsumed = false,
@@ -277,12 +274,9 @@ fun RecognitionSettingsContent(
                     }
                 }
             }
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(if (isMiuix) 0.dp else 20.dp),
-    ) {
-        Spacer(Modifier.height(topPadding))
-        if (isMiuix) {
-            MiuixRecognitionSettings(
+
+    if (isMiuix) {
+        val sections = MiuixRecognitionSettingsSections(
                 recognitionMode = recognitionMode,
                 provider = provider,
                 model = model,
@@ -321,7 +315,21 @@ fun RecognitionSettingsContent(
                 onPasteApiKey = ::pasteApiKey,
                 performHaptic = performHaptic,
             )
-        } else {
+        MiuixSettingsLazyColumn(
+            sections = sections,
+            contentPadding = PaddingValues(top = topPadding, bottom = 32.dp),
+            modifier = clearFocusModifier,
+        )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+                .then(clearFocusModifier)
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            Spacer(Modifier.height(topPadding))
             Md3eRecognitionSettings(
                 recognitionMode = recognitionMode,
                 provider = provider,
@@ -363,8 +371,8 @@ fun RecognitionSettingsContent(
                 onPasteApiKey = ::pasteApiKey,
                 performHaptic = performHaptic,
             )
+            Spacer(Modifier.height(32.dp))
         }
-        Spacer(Modifier.height(32.dp))
     }
 
     PrivacyConsentBottomSheet(
@@ -391,7 +399,7 @@ fun RecognitionSettingsContent(
 }
 
 @Composable
-private fun MiuixRecognitionSettings(
+private fun MiuixRecognitionSettingsSections(
     recognitionMode: String,
     provider: OnlineRecognitionProvider,
     model: OnlineRecognitionModel,
@@ -412,30 +420,32 @@ private fun MiuixRecognitionSettings(
     canPasteApiKey: () -> Boolean,
     onPasteApiKey: () -> Unit,
     performHaptic: () -> Unit,
-) {
-    SmallTitle("识别方式")
-    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
-        OverlayDropdownPreference(
-            title = "识别方式",
-            entries = listOf(DropdownEntry(
-                items = listOf(
-                    DropdownItem(
-                        text = "离线识别",
-                        selected = recognitionMode == OnlineRecognitionPreferences.MODE_OFFLINE,
-                        onClick = { onModeSelected(OnlineRecognitionPreferences.MODE_OFFLINE) },
-                    ),
-                    DropdownItem(
-                        text = "在线识别",
-                        selected = recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE,
-                        onClick = { onModeSelected(OnlineRecognitionPreferences.MODE_ONLINE) },
-                    ),
-                )
-            )),
-        )
+): List<@Composable () -> Unit> = buildList {
+    add {
+        SmallTitle("识别方式")
+        MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
+            OverlayDropdownPreference(
+                title = "识别方式",
+                entries = listOf(DropdownEntry(
+                    items = listOf(
+                        DropdownItem(
+                            text = "离线识别",
+                            selected = recognitionMode == OnlineRecognitionPreferences.MODE_OFFLINE,
+                            onClick = { onModeSelected(OnlineRecognitionPreferences.MODE_OFFLINE) },
+                        ),
+                        DropdownItem(
+                            text = "在线识别",
+                            selected = recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE,
+                            onClick = { onModeSelected(OnlineRecognitionPreferences.MODE_ONLINE) },
+                        ),
+                    )
+                )),
+            )
+        }
     }
 
-    if (recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE) {
-        Column {
+    add {
+        if (recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE) {
             SmallTitle("在线识别服务")
             MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 MiuixProviderDropdown(
@@ -510,8 +520,13 @@ private fun MiuixRecognitionSettings(
                     )
                 }
             }
+        }
+    }
 
-            if (provider == OnlineRecognitionProvider.MIMO) {
+    add {
+        if (recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE &&
+            provider == OnlineRecognitionProvider.MIMO
+        ) {
                 SmallTitle("计费模式")
                 MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                     MimoBillingMode.entries.forEach { item ->
@@ -528,8 +543,11 @@ private fun MiuixRecognitionSettings(
                         )
                     }
                 }
-            }
+        }
+    }
 
+    add {
+        if (recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE) {
             SmallTitle("API 密钥")
             Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -575,19 +593,22 @@ private fun MiuixRecognitionSettings(
                     )
                 }
             }
+        }
+    }
 
-            if (provider == OnlineRecognitionProvider.MIMO ||
+    add {
+        if (recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE &&
+            (provider == OnlineRecognitionProvider.MIMO ||
                 provider == OnlineRecognitionProvider.ZHIPU ||
                 provider == OnlineRecognitionProvider.MINIMAX ||
-                provider == OnlineRecognitionProvider.MOONSHOT
-            ) {
-                SmallTitle("使用说明")
-                ProviderUsageGuide(
-                    provider = provider,
-                    isMiuix = true,
-                    performHaptic = performHaptic,
-                )
-            }
+                provider == OnlineRecognitionProvider.MOONSHOT)
+        ) {
+            SmallTitle("使用说明")
+            ProviderUsageGuide(
+                provider = provider,
+                isMiuix = true,
+                performHaptic = performHaptic,
+            )
         }
     }
 }

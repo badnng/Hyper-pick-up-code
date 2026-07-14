@@ -54,6 +54,7 @@ import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsListItem
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
+import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.oobe.OobeCarvedLogoView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1288,15 +1289,9 @@ fun CreditsSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compo
     )
 
     if (isMiuix) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
-        ) {
-            Spacer(Modifier.height(topPadding))
+        val creditsSection: @Composable () -> Unit = {
             Card(
-                modifier = Modifier.padding(horizontal = 12.dp).padding(top = 12.dp),
+                modifier = Modifier.padding(horizontal = 12.dp).padding(top = 12.dp).padding(bottom = 12.dp),
                 colors = CardDefaults.defaultColors(MiuixTheme.colorScheme.surfaceContainer)
             ) {
                 credits.forEach { (name, _, url) ->
@@ -1309,8 +1304,14 @@ fun CreditsSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compo
                     )
                 }
             }
-            Spacer(Modifier.height(32.dp))
         }
+        MiuixSettingsLazyColumn(
+            sections = listOf(creditsSection),
+            contentPadding = PaddingValues(
+                top = topPadding,
+                bottom = 32.dp + WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding(),
+            ),
+        )
     } else {
         Column(
             modifier = Modifier

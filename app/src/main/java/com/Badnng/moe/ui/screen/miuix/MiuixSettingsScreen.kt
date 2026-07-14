@@ -32,7 +32,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun MiuixSettingsScreen(
     bottomLayoutInfo: MiuixHomeBottomLayoutInfo,
-    onNavigateToSubPage: (SettingsPage) -> Unit = {}
+    onExpandNavigationRail: (() -> Unit)? = null,
+    onNavigateToSubPage: (SettingsPage) -> Unit = {},
 ) {
     val context = LocalContext.current
     val topAppBarScrollBehavior = MiuixScrollBehavior()
@@ -45,7 +46,12 @@ fun MiuixSettingsScreen(
                 TopAppBar(
                     title = "设置",
                     color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
-                    scrollBehavior = topAppBarScrollBehavior
+                    scrollBehavior = topAppBarScrollBehavior,
+                    navigationIcon = {
+                        onExpandNavigationRail?.let {
+                            MiuixNavigationRailExpandButton(onClick = it)
+                        }
+                    },
                 )
             }
         }

@@ -7,8 +7,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -20,11 +22,14 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,6 +46,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.basic.Sidebar
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Edit
@@ -70,6 +76,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberDecoratedNavEntries
@@ -93,7 +100,6 @@ import kotlinx.coroutines.runBlocking
 import kotlin.math.roundToInt
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
-import androidx.compose.runtime.collectAsState
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarDefaults
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
@@ -104,8 +110,12 @@ import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDefaults
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
+import top.yukonga.miuix.kmp.basic.NavigationRail
+import top.yukonga.miuix.kmp.basic.NavigationRailItem
+import top.yukonga.miuix.kmp.basic.NavigationRailValue
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -323,6 +333,8 @@ private fun MiuixMainContent(
 
     val configuration = LocalConfiguration.current
     val isLargeScreen = configuration.screenWidthDp >= 700
+    // 大屏默认使用侧边导航；用户显式开启悬浮底栏时继续保留原有底栏样式。
+    val useNavigationRail = isLargeScreen && !useFloatingNavBar
     val isIosLikeFloatingBar = floatingNavBarStyle == MiuixFloatingNavigationBarStyle.IosLike
     val effectiveNavAlignment = if (isIosLikeFloatingBar && !isLargeScreen) {
         "center"
@@ -337,17 +349,19 @@ private fun MiuixMainContent(
     var rulesMenuExport: (() -> Unit)? by remember { mutableStateOf(null) }
     var rulesMenuRename: (() -> Unit)? by remember { mutableStateOf(null) }
     var rulesMenuDelete: (() -> Unit)? by remember { mutableStateOf(null) }
-    var isRulesModalVisible by remember { mutableStateOf(false) }
 
     val activity = context as? android.app.Activity
 
     // 折叠屏检测
     val windowInfoTracker = remember(context) { WindowInfoTracker.getOrCreate(context) }
-    val layoutInfo by windowInfoTracker.windowLayoutInfo(context).collectAsState(initial = null)
+    val layoutInfo by windowInfoTracker.windowLayoutInfo(context)
+        .collectAsStateWithLifecycle(initialValue = null)
     val foldingFeature = layoutInfo?.displayFeatures?.filterIsInstance<FoldingFeature>()?.firstOrNull()
     val isFolded = foldingFeature?.state == FoldingFeature.State.HALF_OPENED
     val imeBottomInset = WindowInsets.ime.getBottom(LocalDensity.current)
-    val isImeVisible = imeBottomInset > 0
+    // 系统可能会把其他悬浮窗口的输入法 Insets 同步给当前窗口；仅当前 App
+    // 仍持有窗口焦点时，才把它视为本应用正在使用输入法。
+    val isImeVisible = imeBottomInset > 0 && LocalWindowInfo.current.isWindowFocused
 
     // 主页面按返回键时，从最近任务移除卡片
     androidx.activity.compose.BackHandler(
@@ -392,10 +406,19 @@ private fun MiuixMainContent(
         WindowInsets.safeDrawing.getBottom(this).toDp()
     }
     var rootBottomInRootPx by remember { mutableIntStateOf(0) }
-    var navigationBarTopInRootPx by remember(useFloatingNavBar, floatingNavBarStyle) {
+    var rootPositionInWindow by remember {
+        mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
+    }
+    var rootWidthPx by remember { mutableIntStateOf(0) }
+    var navigationBarTopInRootPx by remember(
+        useFloatingNavBar,
+        floatingNavBarStyle,
+        useNavigationRail,
+    ) {
         mutableIntStateOf(-1)
     }
     val estimatedNavigationBarTopFromBottom = when {
+        useNavigationRail -> safeBottomInset
         !useFloatingNavBar -> {
             safeBottomInset + NavigationBarDefaults.ItemHeight + NavigationBarDefaults.BottomPadding
         }
@@ -414,10 +437,16 @@ private fun MiuixMainContent(
                 FloatingNavigationBarDefaults.IconPadding
         }
     }
-    val measuredNavigationBarTopFromBottom =
+    // 切换到 NavigationRail 时，退出中的底栏仍可能在最后一帧回写旧坐标。
+    // 窗口随后增高会把这份旧坐标误算成数百 dp 的底部间距，导致工具栏悬在中间。
+    // 侧栏模式没有底部导航，必须直接使用当前窗口的安全区，忽略所有底栏测量值。
+    val measuredNavigationBarTopFromBottom = if (useNavigationRail) {
+        null
+    } else {
         (rootBottomInRootPx - navigationBarTopInRootPx)
             .takeIf { rootBottomInRootPx > 0 && navigationBarTopInRootPx >= 0 && it > 0 }
             ?.let { with(density) { it.toDp() } }
+    }
     val bottomLayoutInfo = MiuixHomeBottomLayoutInfo(
         safeBottomInset = safeBottomInset,
         navigationBarTopFromBottom = measuredNavigationBarTopFromBottom
@@ -426,15 +455,103 @@ private fun MiuixMainContent(
 
     // 模糊效果
     val backdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
+    // 独立采样完整主页（包含底栏与 NavigationRail），供所有主页模态层使用。
+    // 必须与底栏自身使用的 backdrop 分开，避免 layerBackdrop / textureBlur 递归。
+    val homeOverlayBackdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
     val blurEnabled = backdrop != null
+    val animatedMenuAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (rulesMenuShow) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 300),
+        label = "rulesMenuScrimAlpha",
+    )
+    val sheetProgress = com.Badnng.moe.ui.component.BlurState.progress.floatValue
+    val homeOverlayProgress = maxOf(sheetProgress, animatedMenuAlpha)
+    // NavigationRailState 是侧栏展开/完全收起的唯一状态源。
+    val navigationRailState = rememberNavigationRailState(
+        initialValue = NavigationRailValue.Expanded,
+    )
+    val navigationRailAvailable = useNavigationRail &&
+        !isEditMode &&
+        !isManaging
+    val navigationRailVisible = navigationRailAvailable && navigationRailState.isExpanded
+    val onExpandNavigationRail: (() -> Unit)? = if (
+        navigationRailAvailable && !navigationRailState.isExpanded
+    ) {
+        {
+            performHaptic()
+            navigationRailState.expand()
+        }
+    } else {
+        null
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .onGloballyPositioned { coordinates ->
                 rootBottomInRootPx = coordinates.boundsInRoot().bottom.roundToInt()
+                rootPositionInWindow = coordinates.positionInWindow()
+                rootWidthPx = coordinates.size.width
             }
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (homeOverlayBackdrop != null && homeOverlayProgress > 0.01f) {
+                        Modifier.layerBackdrop(homeOverlayBackdrop)
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
+        AnimatedVisibility(
+            visible = navigationRailVisible,
+            enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
+            exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start),
+        ) {
+            NavigationRail(
+                state = navigationRailState,
+                modifier = Modifier.fillMaxHeight(),
+                color = MiuixTheme.colorScheme.surface,
+                expandContentDescription = "展开侧边导航",
+                collapseContentDescription = "收起侧边导航",
+            ) {
+                NavigationRailItem(
+                    selected = currentPage == 0,
+                    onClick = {
+                        performHaptic()
+                        coroutineScope.launch { pagerState.animateScrollToPage(0) }
+                    },
+                    icon = MiuixIcons.Regular.Home,
+                    label = "主页",
+                )
+                NavigationRailItem(
+                    selected = currentPage == 1,
+                    onClick = {
+                        performHaptic()
+                        coroutineScope.launch { pagerState.animateScrollToPage(1) }
+                    },
+                    icon = MiuixIcons.Regular.Edit,
+                    label = "规则",
+                )
+                NavigationRailItem(
+                    selected = currentPage == 2,
+                    onClick = {
+                        performHaptic()
+                        coroutineScope.launch { pagerState.animateScrollToPage(2) }
+                    },
+                    icon = MiuixIcons.Regular.Settings,
+                    label = "设置",
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+        ) {
         // Scaffold 内容层（layerBackdrop 只应用到内容，不包含底栏）
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -501,6 +618,7 @@ private fun MiuixMainContent(
                         when (page) {
                             0 -> MiuixCaptureScreen(
                                 bottomLayoutInfo = bottomLayoutInfo,
+                                onExpandNavigationRail = onExpandNavigationRail,
                                 onScrollStateChange = { isScrollingDown = it },
                                 onEditModeChange = { isEditMode = it },
                                 onAddClick = { showBottomSheet = true },
@@ -511,7 +629,7 @@ private fun MiuixMainContent(
                             )
                             1 -> MiuixRulesScreen(
                                 bottomLayoutInfo = bottomLayoutInfo,
-                                onModalVisibilityChange = { isRulesModalVisible = it },
+                                onExpandNavigationRail = onExpandNavigationRail,
                                 onShowMenu = { position, rename, delete, export ->
                                     rulesMenuPosition = position
                                     rulesMenuRename = rename
@@ -522,6 +640,7 @@ private fun MiuixMainContent(
                             )
                             2 -> MiuixSettingsScreen(
                                 bottomLayoutInfo = bottomLayoutInfo,
+                                onExpandNavigationRail = onExpandNavigationRail,
                                 onNavigateToSubPage = onNavigateToSettingsSubPage
                             )
                         }
@@ -530,31 +649,16 @@ private fun MiuixMainContent(
             } // Box layerBackdrop
         }
 
-        // BottomSheet/菜单 全屏模糊背景（实时跟随 Sheet 拖拽进度）
-        // 先于底栏绘制，使底栏在弹窗打开期间保持可见。
-        val sheetProgress = com.Badnng.moe.ui.component.BlurState.progress.floatValue
-        val menuBlurAlpha by androidx.compose.animation.core.animateFloatAsState(
-            targetValue = if (rulesMenuShow) 1f else 0f,
-            animationSpec = androidx.compose.animation.core.tween(durationMillis = 300),
-            label = "menuBlurAlpha"
-        )
-        val blurAlpha = maxOf(sheetProgress, menuBlurAlpha)
-        com.Badnng.moe.ui.miuix.MiuixModalScrim(
-            backdrop = backdrop,
-            progress = blurAlpha,
-        )
-
-        // 底栏：覆盖在 Scaffold 和模糊遮罩上方，支持模糊效果
-        // 标准底栏（非悬浮）
-        AnimatedVisibility(
+        // 底栏：覆盖在 Scaffold 上方，支持模糊效果。
+        // 模态层的全屏模糊在外层 Row 之后绘制，因此底栏不会消失，但会处于模糊层下方。
+        // 标准底栏（手机/中等宽度设备的非悬浮模式）
+        NavigationOverlayVisibility(
             visible = !isEditMode &&
                 !isManaging &&
                 !isScrollingDown &&
                 !isImeVisible &&
-                !isRulesModalVisible &&
+                !useNavigationRail &&
                 !useFloatingNavBar,
-            enter = fadeIn(),
-            exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             val barColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface
@@ -605,16 +709,13 @@ private fun MiuixMainContent(
         }
 
         // 悬浮底栏
-        AnimatedVisibility(
+        NavigationOverlayVisibility(
             visible = !isEditMode &&
                 !isManaging &&
                 !isScrollingDown &&
                 !isImeVisible &&
-                !isRulesModalVisible &&
                 useFloatingNavBar &&
                 !isFolded,
-            enter = fadeIn(),
-            exit = fadeOut()
         ) {
             if (isIosLikeFloatingBar) {
                 val navigationItems = remember {
@@ -738,12 +839,16 @@ private fun MiuixMainContent(
             viewModel = addOrderViewModel,
             onDismiss = { showBottomSheet = false }
         )
+        } // 内容 Box
+        } // Row
 
-        // 规则页长按菜单（模糊由上方共享处理）
-        val animatedMenuAlpha by androidx.compose.animation.core.animateFloatAsState(
-            targetValue = if (rulesMenuShow) 1f else 0f,
-            animationSpec = androidx.compose.animation.core.tween(durationMillis = 300)
+        // 主页模态层统一覆盖完整 Row，确保 BottomSheet 打开时底栏/侧边栏仍存在但不会漏在模糊上方。
+        com.Badnng.moe.ui.miuix.MiuixModalScrim(
+            backdrop = homeOverlayBackdrop,
+            progress = homeOverlayProgress,
         )
+
+        // 规则长按菜单位于统一模糊层之上。
         val animatedMenuCardAlpha by androidx.compose.animation.core.animateFloatAsState(
             targetValue = if (rulesMenuShow) 1f else 0f,
             animationSpec = androidx.compose.animation.core.tween(durationMillis = 250, delayMillis = 50)
@@ -765,18 +870,24 @@ private fun MiuixMainContent(
                         ) { rulesMenuShow = false }
                 )
                 val configuration = LocalConfiguration.current
-                val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+                val screenWidthPx = rootWidthPx
+                    .takeIf { it > 0 }
+                    ?.toFloat()
+                    ?: with(density) { configuration.screenWidthDp.dp.toPx() }
                 val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
                 val cardMaxHeightPx = with(density) { 160.dp.toPx() }
+                val localMenuPosition = rulesMenuPosition - rootPositionInWindow
 
                 var cardWidthMeasured by remember { mutableIntStateOf(0) }
                 val cardXDp = with(density) {
-                    rulesMenuPosition.x.coerceIn(0f, screenWidthPx - cardWidthMeasured).toDp()
+                    localMenuPosition.x
+                        .coerceIn(0f, (screenWidthPx - cardWidthMeasured).coerceAtLeast(0f))
+                        .toDp()
                 }
                 val cardYDp = with(density) {
-                    val rawY = rulesMenuPosition.y
+                    val rawY = localMenuPosition.y
                     if (rawY + cardMaxHeightPx > screenHeightPx) {
-                        (rulesMenuPosition.y - cardMaxHeightPx).coerceAtLeast(0f).toDp()
+                        (localMenuPosition.y - cardMaxHeightPx).coerceAtLeast(0f).toDp()
                     } else {
                         rawY.toDp()
                     }
@@ -811,12 +922,13 @@ private fun MiuixMainContent(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        rulesMenuShow = false
+                                        performHaptic()
                                         when (item) {
                                             "rename" -> rulesMenuRename?.invoke()
                                             "export" -> rulesMenuExport?.invoke()
                                             "delete" -> rulesMenuDelete?.invoke()
                                         }
+                                        rulesMenuShow = false
                                     }
                             ) {
                                 val (icon, label, color) = when (item) {
@@ -839,7 +951,36 @@ private fun MiuixMainContent(
                 }
             }
         }
-    } // Box
+    } // 根层 Box
+}
+
+@Composable
+internal fun MiuixNavigationRailExpandButton(
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = MiuixIcons.Basic.Sidebar,
+            contentDescription = "展开侧边导航",
+            tint = MiuixTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun NavigationOverlayVisibility(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(),
+        exit = fadeOut(),
+    ) {
+        content()
+    }
 }
 
 @Composable

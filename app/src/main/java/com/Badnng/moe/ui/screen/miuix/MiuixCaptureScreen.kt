@@ -43,7 +43,6 @@ import androidx.compose.material.icons.filled.NotificationAdd
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -68,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.BrandIconResolver
@@ -117,6 +117,7 @@ import java.util.Locale
 @Composable
 fun MiuixCaptureScreen(
     bottomLayoutInfo: MiuixHomeBottomLayoutInfo,
+    onExpandNavigationRail: (() -> Unit)? = null,
     onScrollStateChange: (Boolean) -> Unit = {},
     onEditModeChange: (Boolean) -> Unit = {},
     onAddClick: () -> Unit = {},
@@ -126,10 +127,10 @@ fun MiuixCaptureScreen(
     onNavigateToGroupDetail: (Long) -> Unit = {}
 ) {
     val viewModel: OrderViewModel = viewModel()
-    val incompleteOrders by viewModel.incompleteOrders.collectAsState()
-    val completedOrders by viewModel.completedOrders.collectAsState()
-    val incompleteGroups by viewModel.incompleteGroups.collectAsState()
-    val completedGroups by viewModel.completedGroups.collectAsState()
+    val incompleteOrders by viewModel.incompleteOrders.collectAsStateWithLifecycle()
+    val completedOrders by viewModel.completedOrders.collectAsStateWithLifecycle()
+    val incompleteGroups by viewModel.incompleteGroups.collectAsStateWithLifecycle()
+    val completedGroups by viewModel.completedGroups.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -257,6 +258,11 @@ fun MiuixCaptureScreen(
                         title = "澎湃记",
                         color = topBarColor,
                         scrollBehavior = topAppBarScrollBehavior,
+                        navigationIcon = {
+                            onExpandNavigationRail?.let {
+                                MiuixNavigationRailExpandButton(onClick = it)
+                            }
+                        },
                         actions = {
                             // 多选模式切换按钮
                             IconButton(onClick = {
@@ -956,7 +962,7 @@ private fun MiuixOrderGroupCard(
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
-    val groupOrders by viewModel.getOrdersByGroupId(group.id).collectAsState()
+    val groupOrders by viewModel.getOrdersByGroupId(group.id).collectAsStateWithLifecycle()
 
     // 定时状态
     val groupRequestCode = remember(group.id) { com.Badnng.moe.helper.NotificationScheduler.getGroupRequestCode(group.id) }

@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.Badnng.moe.activity.MainActivity
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
@@ -132,8 +133,8 @@ fun HomeScreen(
     val viewModel: OrderViewModel = viewModel()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    val orders by viewModel.orders.collectAsState()
-    val orderGroups by viewModel.orderGroups.collectAsState()
+    val orders by viewModel.orders.collectAsStateWithLifecycle()
+    val orderGroups by viewModel.orderGroups.collectAsStateWithLifecycle()
     var selectedOrderForQr by remember { mutableStateOf<OrderEntity?>(null) }
     var detailOrder by remember { mutableStateOf<OrderEntity?>(null) }
     var detailGroup by remember { mutableStateOf<OrderGroup?>(null) }
@@ -170,7 +171,8 @@ fun HomeScreen(
 
     // 折叠屏开合检测
     val windowInfoTracker = remember(context) { WindowInfoTracker.getOrCreate(context) }
-    val layoutInfo by windowInfoTracker.windowLayoutInfo(context).collectAsState(initial = null)
+    val layoutInfo by windowInfoTracker.windowLayoutInfo(context)
+        .collectAsStateWithLifecycle(initialValue = null)
     val foldingFeature = layoutInfo?.displayFeatures?.filterIsInstance<FoldingFeature>()?.firstOrNull()
     val isFolded = foldingFeature?.state == FoldingFeature.State.HALF_OPENED
     val imeBottomPadding = WindowInsets.ime.getBottom(LocalDensity.current)

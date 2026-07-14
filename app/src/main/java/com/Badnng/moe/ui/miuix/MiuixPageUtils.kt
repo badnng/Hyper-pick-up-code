@@ -194,3 +194,23 @@ fun MiuixPageContainer(
         )
     }
 }
+
+/**
+ * 设置二级页共用的懒加载容器。每个 [sections] 元素对应一个独立 Lazy item，
+ * 只拆页面区块，不拆区块内部的 Miuix Card。
+ */
+@Composable
+fun MiuixSettingsLazyColumn(
+    sections: List<@Composable () -> Unit>,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+    ) {
+        sections.forEachIndexed { index, section ->
+            item(key = index) { section() }
+        }
+    }
+}

@@ -31,6 +31,7 @@ import com.Badnng.moe.ui.component.PermissionItem
 import com.Badnng.moe.ui.component.PreferenceSection
 import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupSwitchItem
+import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -155,15 +156,7 @@ fun PermissionSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
         }
     }} else null
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = if (isMiuix) 0.dp else 16.dp)
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(if (isMiuix) 0.dp else 32.dp)
-    ) {
-        Spacer(Modifier.height(topPadding))
-        // 第一大类：权限设置
+    val permissionSection: @Composable () -> Unit = {
         PreferenceSection(title = "权限设置") {
             Column(verticalArrangement = Arrangement.spacedBy(if (isMiuix) 0.dp else 16.dp)) {
                 PermissionItem(title = "通知权限", description = "请授予该权限，该权限用于收取取餐码通知，如关闭/拒绝该权限将会无法收到此通知", isGranted = hasNotificationPermission, actionButton = notificationAction)
@@ -172,8 +165,9 @@ fun PermissionSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
                 PermissionItem(title = "通知监听权限", description = "用于自动识别外卖、快递等App通知中的取件码", isGranted = hasNotificationListenerPermission, actionButton = listenerAction)
             }
         }
+    }
 
-        // 第二大类：保活设置
+    val keepAliveSection: @Composable () -> Unit = {
         PreferenceSection(title = "保活设置") {
             Column(verticalArrangement = Arrangement.spacedBy(if (isMiuix) 0.dp else 16.dp)) {
                 // 说明卡片
@@ -245,8 +239,26 @@ fun PermissionSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
                 VendorKeepAliveItem(vendor = "OneUI", steps = listOf("设置 → 应用程序 → 澎湃记", "电池 → 不受限制"), performHaptic = performHaptic)
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(32.dp))
+    val sections = listOf(permissionSection, keepAliveSection)
+    if (isMiuix) {
+        MiuixSettingsLazyColumn(
+            sections = sections,
+            contentPadding = PaddingValues(top = topPadding, bottom = 32.dp),
+        )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(32.dp),
+        ) {
+            Spacer(Modifier.height(topPadding))
+            sections.forEach { it() }
+            Spacer(modifier = Modifier.height(32.dp))
+        }
     }
 }
 

@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -74,6 +75,7 @@ import java.util.*
 @Composable
 fun MiuixRulesScreen(
     bottomLayoutInfo: MiuixHomeBottomLayoutInfo,
+    onExpandNavigationRail: (() -> Unit)? = null,
     onShowMenu: ((position: androidx.compose.ui.geometry.Offset, rename: (() -> Unit)?, delete: (() -> Unit)?, export: (() -> Unit)?) -> Unit)? = null,
     onModalVisibilityChange: (Boolean) -> Unit = {},
 ) {
@@ -113,6 +115,8 @@ fun MiuixRulesScreen(
     val hasVisibleModal = showResetDialog ||
         showAddSourceDialog ||
         editingSource != null ||
+        renamingTarget != null ||
+        deletingCustomSourceId != null ||
         pendingImportRules != null
     val currentOnModalVisibilityChange by rememberUpdatedState(onModalVisibilityChange)
     LaunchedEffect(hasVisibleModal) {
@@ -238,7 +242,7 @@ fun MiuixRulesScreen(
         onlineSourceRules = onlineRulesMap
     }
 
-    val countdowns by com.Badnng.moe.rules.RuleAutoUpdateManager.countdowns.collectAsState()
+    val countdowns by com.Badnng.moe.rules.RuleAutoUpdateManager.countdowns.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -270,7 +274,12 @@ fun MiuixRulesScreen(
                 TopAppBar(
                     title = "识别规则",
                     color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
-                    scrollBehavior = topAppBarScrollBehavior
+                    scrollBehavior = topAppBarScrollBehavior,
+                    navigationIcon = {
+                        onExpandNavigationRail?.let {
+                            MiuixNavigationRailExpandButton(onClick = it)
+                        }
+                    },
                 )
             }
         }
@@ -861,6 +870,135 @@ fun MiuixRulesScreen(
         }
     }
 
+    // 自定义规则重命名。菜单回调只负责写入目标，这里必须实际承载对话框，
+    // 否则点击主页顶层菜单后只会更新状态而不会显示任何操作界面。
+    if (renamingTarget != null) {
+        var showRenameDialog by remember { mutableStateOf(true) }
+        WindowDialog(
+            title = "重命名规则",
+            show = showRenameDialog,
+            onDismissRequest = { showRenameDialog = false },
+            onDismissFinished = { renamingTarget = null },
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextField(
+                    value = renamingName,
+                    onValueChange = { renamingName = it },
+                    label = "规则名称",
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TextButton(
+                        text = "取消",
+                        onClick = {
+                            performHaptic()
+                            showRenameDialog = false
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(
+                        onClick = {
+                            performHaptic()
+                            scope.launch {
+                                val target = renamingTarget ?: return@launch
+                                if (target == "local") {
+                                    val config = RecognitionRuleEngine.loadAllSourcesSystem(context).first
+                                    val newConfig = config.copy(displayName = renamingName)
+                                    val repo = RuleRepository(context)
+                                    val systemConfig = repo.loadSystemConfig()
+                                    repo.saveSystemConfig(systemConfig.copy(localConfig = newConfig))
+                                } else if (target.startsWith("local_custom_")) {
+                                    RecognitionRuleEngine.renameLocalCustomSource(
+                                        context,
+                                        target.removePrefix("local_custom_"),
+                                        renamingName,
+                                    )
+                                } else {
+                                    RecognitionRuleEngine.saveOnlineSources(
+                                        onlineSources.map {
+                                            if (it.id == target) it.copy(name = renamingName) else it
+                                        },
+                                    )
+                                }
+                                val (local, custom, online) =
+                                    RecognitionRuleEngine.loadAllSourcesSystem(context)
+                                localConfig = local
+                                localCustomSources = custom
+                                onlineSources = online
+                                showRenameDialog = false
+                                Toast.makeText(context, "已重命名", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColorsPrimary(),
+                        enabled = renamingName.isNotBlank(),
+                    ) {
+                        Text("确定")
+                    }
+                }
+            }
+        }
+    }
+
+    // 删除本地自定义规则源确认对话框。
+    deletingCustomSourceId?.let { sourceId ->
+        var showDeleteDialog by remember { mutableStateOf(true) }
+        val source = localCustomSources.firstOrNull { it.id == sourceId }
+        WindowDialog(
+            title = "删除规则源",
+            show = showDeleteDialog,
+            onDismissRequest = { showDeleteDialog = false },
+            onDismissFinished = { deletingCustomSourceId = null },
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    text = "确定要删除「${source?.displayName?.ifBlank { "自定义JSON规则" } ?: "自定义JSON规则"}」吗？此操作不可撤销。",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TextButton(
+                        text = "取消",
+                        onClick = {
+                            performHaptic()
+                            showDeleteDialog = false
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(
+                        onClick = {
+                            performHaptic()
+                            scope.launch {
+                                RecognitionRuleEngine.deleteLocalCustomSource(context, sourceId)
+                                val (local, custom, online) =
+                                    RecognitionRuleEngine.loadAllSourcesSystem(context)
+                                localConfig = local
+                                localCustomSources = custom
+                                onlineSources = online
+                                customSourceRules = customSourceRules - sourceId
+                                activeSourceId = RecognitionRuleEngine.currentSourceId
+                                rules = RecognitionRuleEngine.rules
+                                showDeleteDialog = false
+                                Toast.makeText(context, "已删除", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(),
+                    ) {
+                        Text("确定", color = MiuixTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+    }
+
     // 添加/编辑在线源 WindowBottomSheet（始终在树中，由内部 showSheet 控制生命周期）
     if (showAddSourceDialog || editingSource != null) {
         OnlineSourceWindowSheet(
@@ -896,16 +1034,18 @@ fun MiuixRulesScreen(
 
     // 导入重命名对话框
     if (pendingImportRules != null) {
+        var showImportDialog by remember { mutableStateOf(true) }
         val isDuplicateName = localCustomSources.any { it.displayName == pendingImportName.trim() }
-        val dismissImportDialog = {
+        val finishImportDialog = {
             pendingImportRules = null
             pendingImportFileName = ""
             pendingImportName = ""
         }
         WindowDialog(
             title = "导入规则",
-            show = true,
-            onDismissRequest = dismissImportDialog
+            show = showImportDialog,
+            onDismissRequest = { showImportDialog = false },
+            onDismissFinished = finishImportDialog,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("规则名称", style = MiuixTheme.textStyles.body2)
@@ -923,7 +1063,7 @@ fun MiuixRulesScreen(
                         text = "取消",
                         onClick = {
                             performHaptic()
-                            dismissImportDialog()
+                            showImportDialog = false
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -939,9 +1079,7 @@ fun MiuixRulesScreen(
                                 onlineSources = online
                                 customSourceRules = customSourceRules + (newId to rulesToImport)
                                 rules = RecognitionRuleEngine.rules
-                                pendingImportRules = null
-                                pendingImportFileName = ""
-                                pendingImportName = ""
+                                showImportDialog = false
                                 Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
                             }
                         },

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -219,7 +220,7 @@ fun RulesScreen(
     }
 
     // 从后台管理器读取倒计时
-    val countdowns by com.Badnng.moe.rules.RuleAutoUpdateManager.countdowns.collectAsState()
+    val countdowns by com.Badnng.moe.rules.RuleAutoUpdateManager.countdowns.collectAsStateWithLifecycle()
 
     // 后台更新后刷新UI
     LaunchedEffect(Unit) {

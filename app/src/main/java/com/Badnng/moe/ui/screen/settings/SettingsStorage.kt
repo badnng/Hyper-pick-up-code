@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.Badnng.moe.ui.component.PreferenceSection
+import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import java.io.File
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
@@ -95,18 +97,11 @@ fun StorageSettingsContent(performHaptic: () -> Unit, prefs: android.content.Sha
 
     val isMiuix = rememberMiuixStyle()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = if (isMiuix) 0.dp else 16.dp)
-            .verticalScroll(scrollState),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(topPadding))
-
+    val chartSection: @Composable () -> Unit = {
         // 圆形进度条
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(220.dp)) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(220.dp)) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
                 val strokeWidth = 32.dp.toPx()
                 val gap = 2f  // 分段间隙
                 var startAngle = -90f
@@ -135,38 +130,41 @@ fun StorageSettingsContent(performHaptic: () -> Unit, prefs: android.content.Sha
                 }
             }
 
-            // 中心内容
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (isMiuix) {
-                    MiuixText(
-                        text = formatFileSize(totalSize),
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MiuixTheme.colorScheme.onSurface
-                    )
-                    MiuixText(
-                        text = "总占用",
-                        fontSize = 13.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-                    )
-                } else {
-                    Text(
-                        text = formatFileSize(totalSize),
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "总占用",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // 中心内容
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (isMiuix) {
+                        MiuixText(
+                            text = formatFileSize(totalSize),
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MiuixTheme.colorScheme.onSurface
+                        )
+                        MiuixText(
+                            text = "总占用",
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        )
+                    } else {
+                        Text(
+                            text = formatFileSize(totalSize),
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "总占用",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
 
         Spacer(Modifier.height(28.dp))
+    }
 
+    val legendSection: @Composable () -> Unit = {
         // 卡片式图例
         if (isMiuix) {
             MiuixCard(
@@ -269,7 +267,9 @@ fun StorageSettingsContent(performHaptic: () -> Unit, prefs: android.content.Sha
         }
 
         Spacer(Modifier.height(32.dp))
+    }
 
+    val actionsSection: @Composable () -> Unit = {
         if (isMiuix) {
             Column {
                 StorageActionCard(title = "清理系统缓存", description = "删除 App 运行产生的临时文件", size = formatFileSize(cacheSize), isMiuix = isMiuix, onClear = { performHaptic(); deleteFolderContents(context.cacheDir); refreshSizes() })
@@ -285,8 +285,26 @@ fun StorageSettingsContent(performHaptic: () -> Unit, prefs: android.content.Sha
                 }
             }
         }
+    }
 
-        Spacer(Modifier.height(24.dp))
+    val sections = listOf(chartSection, legendSection, actionsSection)
+    if (isMiuix) {
+        MiuixSettingsLazyColumn(
+            sections = sections,
+            contentPadding = PaddingValues(top = topPadding, bottom = 24.dp),
+        )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(scrollState),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(topPadding))
+            sections.forEach { it() }
+            Spacer(Modifier.height(24.dp))
+        }
     }
 }
 

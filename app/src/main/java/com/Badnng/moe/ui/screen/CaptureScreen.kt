@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.Badnng.moe.R
 import com.Badnng.moe.activity.MainActivity
 import com.Badnng.moe.data.db.OrderEntity
@@ -100,10 +101,10 @@ fun CaptureScreen(
     onScrollStateChange: (Boolean) -> Unit = {}
 ) {
     val viewModel: OrderViewModel = viewModel()
-    val incompleteOrders by viewModel.incompleteOrders.collectAsState()
-    val completedOrders by viewModel.completedOrders.collectAsState()
-    val incompleteGroups by viewModel.incompleteGroups.collectAsState()
-    val completedGroups by viewModel.completedGroups.collectAsState()
+    val incompleteOrders by viewModel.incompleteOrders.collectAsStateWithLifecycle()
+    val completedOrders by viewModel.completedOrders.collectAsStateWithLifecycle()
+    val incompleteGroups by viewModel.incompleteGroups.collectAsStateWithLifecycle()
+    val completedGroups by viewModel.completedGroups.collectAsStateWithLifecycle()
 
     // 🚀 监听分享识别完成的广播，刷新数据
     val context = LocalContext.current
@@ -1169,7 +1170,7 @@ fun OrderGroupCard(
     }
 
     // 获取组内的订单列表
-    val groupOrders by viewModel.getOrdersByGroupId(group.id).collectAsState()
+    val groupOrders by viewModel.getOrdersByGroupId(group.id).collectAsStateWithLifecycle()
 
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }

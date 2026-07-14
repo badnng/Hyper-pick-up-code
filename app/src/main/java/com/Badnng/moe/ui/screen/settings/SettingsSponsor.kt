@@ -4,9 +4,11 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
@@ -57,16 +60,7 @@ fun SponsorSettingsContent(
         }.getOrNull()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = if (isMiuix) 0.dp else 16.dp)
-            .verticalScroll(scrollState)
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
-
+    val introSection: @Composable () -> Unit = {
         if (isMiuix) {
             MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 MiuixText(
@@ -93,14 +87,20 @@ fun SponsorSettingsContent(
                 )
             }
         }
+    }
 
+    val alipaySection: @Composable () -> Unit = {
         if (!isMiuix) Spacer(modifier = Modifier.height(16.dp))
         SponsorImageCard(alipayImage, "支付宝赞助码", isMiuix)
+    }
+    val wechatSection: @Composable () -> Unit = {
         if (!isMiuix && alipayImage != null && wechatImage != null) {
             Spacer(modifier = Modifier.height(12.dp))
         }
         SponsorImageCard(wechatImage, "微信赞助码", isMiuix)
+    }
 
+    val emptySection: @Composable () -> Unit = {
         if (alipayImage == null && wechatImage == null) {
             if (!isMiuix) Spacer(modifier = Modifier.height(12.dp))
             if (isMiuix) {
@@ -115,8 +115,30 @@ fun SponsorSettingsContent(
                 )
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(32.dp))
+    val sections = listOf(introSection, alipaySection, wechatSection, emptySection)
+    if (isMiuix) {
+        MiuixSettingsLazyColumn(
+            sections = sections,
+            contentPadding = PaddingValues(
+                top = topPadding,
+                bottom = 32.dp + WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding(),
+            ),
+        )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(scrollState)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(modifier = Modifier.height(topPadding))
+            sections.forEach { it() }
+            Spacer(modifier = Modifier.height(32.dp))
+        }
     }
 }
 

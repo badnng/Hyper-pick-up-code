@@ -8,10 +8,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.Badnng.moe.ui.component.PermissionItem
 import com.Badnng.moe.ui.component.PreferenceSection
+import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
@@ -99,22 +103,15 @@ fun KeepAliveSettingsContent(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = if (isMiuix) 0.dp else 16.dp)
-            .verticalScroll(scrollState)
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)),
-        verticalArrangement = Arrangement.spacedBy(if (isMiuix) 0.dp else 24.dp)
-    ) {
-        Spacer(Modifier.height(topPadding))
-
+    val infoSection: @Composable () -> Unit = {
         if (isMiuix) {
             MiuixInfoCard()
         } else {
             Md3eInfoCard()
         }
+    }
 
+    val batterySection: @Composable () -> Unit = {
         PreferenceSection(title = "电池优化") {
             PermissionItem(
                 title = "忽略电池优化",
@@ -151,7 +148,9 @@ fun KeepAliveSettingsContent(
                 }
             )
         }
+    }
 
+    val lockSection: @Composable () -> Unit = {
         PreferenceSection(title = "锁定后台") {
             if (isMiuix) {
                 MiuixLockBackgroundContent()
@@ -159,7 +158,9 @@ fun KeepAliveSettingsContent(
                 Md3eLockBackgroundContent()
             }
         }
+    }
 
+    val vendorSection: @Composable () -> Unit = {
         PreferenceSection(title = "厂商后台管理") {
             if (isMiuix) {
                 MiuixText(
@@ -203,8 +204,30 @@ fun KeepAliveSettingsContent(
                 )
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(48.dp))
+    val sections = listOf(infoSection, batterySection, lockSection, vendorSection)
+    if (isMiuix) {
+        MiuixSettingsLazyColumn(
+            sections = sections,
+            contentPadding = PaddingValues(
+                top = topPadding,
+                bottom = 48.dp + WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding(),
+            ),
+        )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(scrollState)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            Spacer(Modifier.height(topPadding))
+            sections.forEach { it() }
+            Spacer(modifier = Modifier.height(48.dp))
+        }
     }
 }
 
@@ -365,7 +388,7 @@ private fun ThemedVendorKeepAliveItem(
     isMiuix: Boolean,
     performHaptic: () -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable(vendor) { mutableStateOf(false) }
     val onClick = {
         performHaptic()
         expanded = !expanded
