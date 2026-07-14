@@ -52,6 +52,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -102,6 +103,7 @@ import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.basic.TextField as MiuixTextField
+import top.yukonga.miuix.kmp.basic.TextFieldDefaults as MiuixTextFieldDefaults
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
@@ -412,7 +414,7 @@ private fun MiuixRecognitionSettings(
     performHaptic: () -> Unit,
 ) {
     SmallTitle("识别方式")
-    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
         OverlayDropdownPreference(
             title = "识别方式",
             entries = listOf(DropdownEntry(
@@ -435,26 +437,10 @@ private fun MiuixRecognitionSettings(
     if (recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE) {
         Column {
             SmallTitle("在线识别服务")
-            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
-                OverlayDropdownPreference(
-                    title = "供应商",
-                    entries = listOf(DropdownEntry(
-                        items = OnlineRecognitionProvider.entries.map { item ->
-                            DropdownItem(
-                                text = item.displayName,
-                                selected = provider == item,
-                                onClick = { onProviderSelected(item) },
-                                icon = { _ ->
-                                    Box(
-                                        modifier = Modifier.size(width = 38.dp, height = 28.dp),
-                                        contentAlignment = Alignment.CenterStart,
-                                    ) {
-                                        OnlineRecognitionProviderIcon(item, Modifier.size(28.dp))
-                                    }
-                                },
-                            )
-                        }
-                    )),
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
+                MiuixProviderDropdown(
+                    provider = provider,
+                    onSelected = onProviderSelected,
                 )
                 if (provider == OnlineRecognitionProvider.CUSTOM) {
                     OverlayDropdownPreference(
@@ -527,7 +513,7 @@ private fun MiuixRecognitionSettings(
 
             if (provider == OnlineRecognitionProvider.MIMO) {
                 SmallTitle("计费模式")
-                MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+                MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                     MimoBillingMode.entries.forEach { item ->
                         RadioButtonPreference(
                             title = item.displayName,
@@ -549,38 +535,45 @@ private fun MiuixRecognitionSettings(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                MiuixTextField(
-                    value = apiKeyInput,
-                    onValueChange = onApiKeyChange,
-                    label = "${provider.displayName} API 密钥",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .apiKeyPasteContextMenu(canPasteApiKey, onPasteApiKey),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                    visualTransformation = if (apiKeyVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    trailingIcon = {
-                        MiuixIconButton(onClick = onApiKeyVisibilityChange) {
-                            MiuixIcon(
-                                imageVector = if (apiKeyVisible) {
-                                    MiuixIcons.Regular.Hide
-                                } else {
-                                    MiuixIcons.Regular.Show
-                                },
-                                contentDescription = if (apiKeyVisible) "隐藏密钥" else "显示密钥",
-                            )
-                        }
-                    },
-                )
-                MiuixText(
-                    text = "密钥使用 Android Keystore 加密，仅保存在当前设备。",
-                    style = MiuixTheme.textStyles.body2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    MiuixTextField(
+                        value = apiKeyInput,
+                        onValueChange = onApiKeyChange,
+                        label = "${provider.displayName} API 密钥",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .apiKeyPasteContextMenu(canPasteApiKey, onPasteApiKey),
+                        colors = MiuixTextFieldDefaults.textFieldColors(
+                            backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
+                            borderColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                        ),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                        visualTransformation = if (apiKeyVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        trailingIcon = {
+                            MiuixIconButton(onClick = onApiKeyVisibilityChange) {
+                                MiuixIcon(
+                                    imageVector = if (apiKeyVisible) {
+                                        MiuixIcons.Regular.Hide
+                                    } else {
+                                        MiuixIcons.Regular.Show
+                                    },
+                                    contentDescription = if (apiKeyVisible) "隐藏密钥" else "显示密钥",
+                                )
+                            }
+                        },
+                    )
+                    MiuixText(
+                        text = "密钥由 Android Keystore 加密，仅保存在当前设备",
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        style = MiuixTheme.textStyles.body2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                }
             }
 
             if (provider == OnlineRecognitionProvider.MIMO ||
@@ -595,6 +588,60 @@ private fun MiuixRecognitionSettings(
                     performHaptic = performHaptic,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MiuixProviderDropdown(
+    provider: OnlineRecognitionProvider,
+    onSelected: (OnlineRecognitionProvider) -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OverlayDropdownPreference(
+            title = "供应商",
+            entries = listOf(
+                DropdownEntry(
+                    items = OnlineRecognitionProvider.entries.map { item ->
+                        DropdownItem(
+                            text = item.displayName,
+                            selected = provider == item,
+                            onClick = { onSelected(item) },
+                            icon = { _ ->
+                                Box(
+                                    modifier = Modifier.size(width = 38.dp, height = 28.dp),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    OnlineRecognitionProviderIcon(
+                                        provider = item,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                }
+                            },
+                        )
+                    },
+                ),
+            ),
+            showValue = false,
+        )
+        Row(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 48.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OnlineRecognitionProviderIcon(
+                provider = provider,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            MiuixText(
+                text = provider.displayName,
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -782,12 +829,14 @@ private fun Md3eRecognitionSettings(
                             )
                         }
                     },
+                    supportingText = {
+                        Text("密钥由 Android Keystore 加密，仅保存在当前设备")
+                    },
                     shape = RoundedCornerShape(15.dp),
-                )
-                Text(
-                    "密钥使用 Android Keystore 加密，仅保存在当前设备。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    ),
                 )
             }
 
@@ -840,7 +889,8 @@ internal fun ProviderUsageGuide(
             onClick = toggleExpanded,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = miuixHorizontalPadding),
+                .padding(horizontal = miuixHorizontalPadding)
+                .padding(bottom = 12.dp),
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -1199,7 +1249,7 @@ private fun Md3eProviderDropdown(
             title = "供应商",
             selectedText = provider.displayName,
             expanded = expanded,
-            leadingIcon = { OnlineRecognitionProviderIcon(provider, Modifier.size(28.dp)) },
+            selectedIcon = { OnlineRecognitionProviderIcon(provider, Modifier.size(28.dp)) },
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
@@ -1303,7 +1353,7 @@ private fun Md3eDropdownAnchor(
     selectedText: String,
     expanded: Boolean,
     modifier: Modifier = Modifier,
-    leadingIcon: (@Composable () -> Unit)? = null,
+    selectedIcon: (@Composable () -> Unit)? = null,
 ) {
     Surface(
         modifier = modifier,
@@ -1318,25 +1368,33 @@ private fun Md3eDropdownAnchor(
                 .padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (leadingIcon != null) {
-                leadingIcon()
-                Spacer(Modifier.width(12.dp))
-            }
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.width(12.dp))
-            Text(
-                text = selectedText,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (selectedIcon != null) {
+                    selectedIcon()
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    text = selectedText,
+                    modifier = Modifier.weight(1f, fill = false),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
         }
     }

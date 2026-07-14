@@ -66,7 +66,7 @@ class OrderQuickViewActivity : ComponentActivity() {
         val fromNotification = intent.getBooleanExtra("from_notification", false)
 
         setContent {
-            澎湃记Theme {
+            澎湃记Theme(transparentBackground = true) {
                 OrderQuickViewScreen(
                     orderId = orderId,
                     fromNotification = fromNotification,

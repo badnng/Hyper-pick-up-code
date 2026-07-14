@@ -36,5 +36,5 @@ internal object MiuixHomeBottomLayoutDefaults {
     val IosLikeBarHeight = 64.dp
     val IosLikeBottomSpacing = 8.dp
     val IosLikeNoInsetBottomSpacing = 36.dp
-    val IosLikeLargeScreenMaxWidth = 480.dp
+    val IosLikeLargeScreenMaxWidth = 440.dp
 }

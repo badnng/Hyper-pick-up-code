@@ -165,7 +165,7 @@ fun PermissionSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
         Spacer(Modifier.height(topPadding))
         // 第一大类：权限设置
         PreferenceSection(title = "权限设置") {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(if (isMiuix) 0.dp else 16.dp)) {
                 PermissionItem(title = "通知权限", description = "请授予该权限，该权限用于收取取餐码通知，如关闭/拒绝该权限将会无法收到此通知", isGranted = hasNotificationPermission, actionButton = notificationAction)
                 PermissionItem(title = "应用使用情况", description = "此权限能更好的识别当前处在的app是哪个 brand，推荐授权！", isGranted = hasUsageStatsPermission, actionButton = usageAction)
                 PermissionItem(title = "Shizuku 运行状态", description = "该软件用于免授权截图识别的必须条件，如无则无法使用免授权截图", isGranted = shizukuReady, actionButton = shizukuAction)
@@ -175,10 +175,10 @@ fun PermissionSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
 
         // 第二大类：保活设置
         PreferenceSection(title = "保活设置") {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(if (isMiuix) 0.dp else 16.dp)) {
                 // 说明卡片
                 if (isMiuix) {
-                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         Row(modifier = Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             MiuixIcon(imageVector = MiuixIcons.Regular.Info, contentDescription = null, tint = MiuixTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(12.dp))
@@ -205,7 +205,7 @@ fun PermissionSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
 
                 // 锁定后台
                 if (isMiuix) {
-                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         Column(modifier = Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.3f)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             MiuixText(text = "锁定方法", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.primary)
                             MiuixText(text = "1. 打开最近任务界面（多任务键或手势上滑悬停）\n2. 找到澎湃记卡片\n3. 长按卡片后点击卡片上的锁图标/下滑卡片使其变为锁定状态", fontSize = 13.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary, lineHeight = 20.sp)

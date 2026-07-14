@@ -210,7 +210,7 @@ fun KeepAliveSettingsContent(
 
 @Composable
 private fun MiuixInfoCard() {
-    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -266,7 +266,7 @@ private fun MiuixLockBackgroundContent() {
         color = MiuixTheme.colorScheme.onSurfaceVariantSummary
     )
     Spacer(Modifier.height(8.dp))
-    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             MiuixText(
                 text = "锁定方法",
@@ -372,7 +372,10 @@ private fun ThemedVendorKeepAliveItem(
     }
 
     if (isMiuix) {
-        MiuixCard(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        MiuixCard(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp)
+        ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

@@ -23,6 +23,12 @@ class SmsRecognitionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+        if (!context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getBoolean("sms_recognition_enabled", false)
+        ) {
+            Log.d("SmsRecognition", "短信识别未开启，忽略系统短信广播")
+            return
+        }
 
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
         if (messages.isNullOrEmpty()) return

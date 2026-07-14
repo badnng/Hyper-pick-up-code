@@ -72,8 +72,10 @@ internal object OobeActivityTransition {
         val sourceContainer = source.tag as? View ?: source
         val onExitStarted = Runnable { sourceContainer.visibility = View.INVISIBLE }
         val onExitFinished = Runnable {
-            source.visibility = View.VISIBLE
-            sourceContainer.visibility = View.VISIBLE
+            // 转场快照在返回动画结束前仍会绘制箭头；此处提前恢复真实 View
+            // 会形成两枚箭头叠加。真实箭头统一交由 Activity result 回调恢复。
+            source.visibility = View.INVISIBLE
+            sourceContainer.visibility = View.INVISIBLE
         }
         val commonParameterTypes = arrayOf<Class<*>>(
             View::class.java,

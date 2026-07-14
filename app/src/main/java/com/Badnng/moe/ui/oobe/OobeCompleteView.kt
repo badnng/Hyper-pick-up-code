@@ -168,7 +168,9 @@ internal class OobeCompleteView(
             contentDescription = "进入澎湃记"
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
             isFocusable = true
+            installOobeMiuixPressFeedback()
             setOnClickListener {
+                performOobeMiuixClickFeedback()
                 if (introFinished && actionEnabled) {
                     actionEnabled = false
                     updateActionEnabled()

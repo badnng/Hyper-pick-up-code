@@ -11,7 +11,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -19,20 +19,16 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +36,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.Badnng.moe.helper.BrandIconResolver
 import com.Badnng.moe.rules.*
+import com.Badnng.moe.ui.miuix.MiuixBlurredBar
+import com.Badnng.moe.ui.miuix.miuixScrollModifiers
+import com.Badnng.moe.ui.miuix.rememberMiuixBackdrop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -65,6 +64,8 @@ import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.squircle.squircleClip
+import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import java.io.BufferedReader
@@ -260,24 +261,33 @@ fun MiuixRulesScreen(
     }
 
     val topAppBarScrollBehavior = MiuixScrollBehavior()
+    val backdrop = rememberMiuixBackdrop()
+    val blurEnabled = backdrop != null
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = "识别规则",
-                color = MiuixTheme.colorScheme.surface,
-                scrollBehavior = topAppBarScrollBehavior
-            )
+            MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
+                TopAppBar(
+                    title = "识别规则",
+                    color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
+                    scrollBehavior = topAppBarScrollBehavior
+                )
+            }
         }
     ) { innerPadding ->
         val lazyListState = rememberLazyListState()
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = if (backdrop != null) {
+                Modifier.fillMaxSize().layerBackdrop(backdrop)
+            } else {
+                Modifier.fillMaxSize()
+            }
+        ) {
             LazyColumn(
                 state = lazyListState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .miuixScrollModifiers(topAppBarScrollBehavior),
                 contentPadding = PaddingValues(
                     top = innerPadding.calculateTopPadding(),
                     bottom = bottomLayoutInfo.pageContentBottomPadding
@@ -290,7 +300,7 @@ fun MiuixRulesScreen(
 
                 // 内置默认规则
                 item {
-                    Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         RuleSourceRow(
                             name = "内置默认规则",
                             subtitle = "应用自带规则",
@@ -325,7 +335,7 @@ fun MiuixRulesScreen(
                 items(localCustomSources.size, key = { localCustomSources[it].id }) { index ->
                     val source = localCustomSources[index]
                     val sourceRules = customSourceRules[source.id]
-                    Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         RuleSourceRow(
                             name = source.displayName.ifBlank { "自定义JSON规则" },
                             subtitle = "从文件导入的规则",
@@ -378,7 +388,7 @@ fun MiuixRulesScreen(
 
                 // 操作按钮
                 item {
-                    Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         Column(
                             modifier = Modifier.padding(vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -408,7 +418,7 @@ fun MiuixRulesScreen(
                 // 空状态提示
                 if (onlineSources.isEmpty()) {
                     item {
-                        Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                             Text(
                                 text = "暂无在线规则源",
                                 style = MiuixTheme.textStyles.body2,
@@ -427,7 +437,7 @@ fun MiuixRulesScreen(
                     val subtitleText = if (source.enabled && cd != null) {
                         "${source.url}\n${cd}分钟后更新"
                     } else source.url
-                    Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         RuleSourceRow(
                             name = source.name,
                             subtitle = subtitleText,
@@ -543,7 +553,7 @@ fun MiuixRulesScreen(
 
                 // 添加规则源按钮
                 item {
-                    Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         Button(
                             onClick = { performHaptic(); showAddSourceDialog = true },
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
@@ -565,7 +575,7 @@ fun MiuixRulesScreen(
 
                     SmallTitle(text = "自定义取件地点")
                     Card(
-                        modifier = Modifier.padding(horizontal = 12.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
                         onClick = { performHaptic(); customLocationsExpanded = !customLocationsExpanded }
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
@@ -648,7 +658,7 @@ fun MiuixRulesScreen(
 
                     SmallTitle(text = "自定义品牌图标")
                     Card(
-                        modifier = Modifier.padding(horizontal = 12.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
                         onClick = { performHaptic(); brandIconExpanded = !brandIconExpanded }
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
@@ -707,10 +717,10 @@ fun MiuixRulesScreen(
                                                         contentAlignment = Alignment.Center,
                                                         modifier = Modifier
                                                             .size(48.dp)
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .background(
+                                                            .squircleSurface(
                                                                 if (mapping.iconPath.isNotEmpty()) Color.Transparent
-                                                                else MiuixTheme.colorScheme.surfaceVariant
+                                                                else MiuixTheme.colorScheme.surfaceVariant,
+                                                                8.dp,
                                                             )
                                                             .clickable {
                                                                 performHaptic()
@@ -722,7 +732,7 @@ fun MiuixRulesScreen(
                                                             coil.compose.AsyncImage(
                                                                 model = java.io.File(mapping.iconPath),
                                                                 contentDescription = null,
-                                                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+                                                                modifier = Modifier.fillMaxSize().squircleClip(8.dp)
                                                             )
                                                         } else {
                                                             Icon(
@@ -968,7 +978,10 @@ private fun RuleSourceRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .squircleSurface(
+                if (isActive) MiuixTheme.colorScheme.primaryContainer else Color.Transparent,
+                12.dp,
+            )
             .onGloballyPositioned { coordinates ->
                 globalPosition = coordinates.positionInWindow()
             }
@@ -991,10 +1004,6 @@ private fun RuleSourceRow(
                     }
                 )
             }
-            .background(
-                if (isActive) MiuixTheme.colorScheme.primaryContainer
-                else Color.Transparent
-            )
             .padding(horizontal = 4.dp)
     ) {
         Row(

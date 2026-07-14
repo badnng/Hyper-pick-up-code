@@ -10,17 +10,14 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
@@ -43,14 +40,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.material.icons.Icons
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Edit
+import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.UploadCloud
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -67,7 +63,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -87,6 +82,7 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.miuix.MIUIX_FLOATING_NAV_BAR_STYLE_KEY
 import com.Badnng.moe.ui.miuix.MiuixFloatingNavigationBarStyle
+import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.liquid.IosLiquidGlassNavigationBar
 import com.Badnng.moe.ui.screen.rememberSaveablePagerState
 import com.Badnng.moe.ui.screen.settings.SettingsPage
@@ -111,13 +107,11 @@ import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
-import top.yukonga.miuix.kmp.blur.BlurBlendMode
 import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
+import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.basic.FloatingToolbarDefaults
 
@@ -545,26 +539,10 @@ private fun MiuixMainContent(
             label = "menuBlurAlpha"
         )
         val blurAlpha = maxOf(sheetProgress, menuBlurAlpha)
-        if (blurAlpha > 0.01f && backdrop != null) {
-            val isInDark = isInDarkTheme
-            val baseBrightness = if (isInDark) -0.3f else -0.5f
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f * blurAlpha))
-                    .textureBlur(
-                        backdrop = backdrop,
-                        shape = RectangleShape,
-                        blurRadius = 56f * blurAlpha,
-                        colors = BlurDefaults.blurColors(
-                            brightness = baseBrightness * blurAlpha,
-                            contrast = 1f + 0.2f * blurAlpha,
-                            saturation = 1f + 0.08f * blurAlpha,
-                        ),
-                    )
-                    .graphicsLayer(alpha = blurAlpha)
-            )
-        }
+        com.Badnng.moe.ui.miuix.MiuixModalScrim(
+            backdrop = backdrop,
+            progress = blurAlpha,
+        )
 
         // 底栏：覆盖在 Scaffold 和模糊遮罩上方，支持模糊效果
         // 标准底栏（非悬浮）
@@ -607,7 +585,7 @@ private fun MiuixMainContent(
                     NavigationBarItem(
                         selected = currentPage == 0,
                         onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                        icon = Icons.Default.Home,
+                        icon = MiuixIcons.Regular.Home,
                         label = "主页"
                     )
                     NavigationBarItem(
@@ -641,7 +619,7 @@ private fun MiuixMainContent(
             if (isIosLikeFloatingBar) {
                 val navigationItems = remember {
                     listOf(
-                        NavigationItem(label = "主页", icon = Icons.Default.Home),
+                        NavigationItem(label = "主页", icon = MiuixIcons.Regular.Home),
                         NavigationItem(label = "规则", icon = MiuixIcons.Regular.Edit),
                         NavigationItem(label = "设置", icon = MiuixIcons.Regular.Settings),
                     )
@@ -733,7 +711,7 @@ private fun MiuixMainContent(
                         FloatingNavigationBarItem(
                             selected = currentPage == 0,
                             onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                            icon = Icons.Default.Home,
+                            icon = MiuixIcons.Regular.Home,
                             label = "主页"
                         )
                         FloatingNavigationBarItem(
@@ -813,10 +791,10 @@ private fun MiuixMainContent(
                             scaleX = animatedMenuCardScale
                             scaleY = animatedMenuCardScale
                         }
-                        .border(
-                            width = 1.dp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f),
-                            shape = RoundedCornerShape(16.dp)
+                        .squircleBorder(
+                            1.dp,
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f),
+                            16.dp,
                         ),
                     colors = top.yukonga.miuix.kmp.basic.CardDefaults.defaultColors(
                         MiuixTheme.colorScheme.surface.copy(alpha = 0.95f)
@@ -828,19 +806,10 @@ private fun MiuixMainContent(
                         if (rulesMenuDelete != null) add("delete")
                     }
                     Column {
-                        menuItems.forEachIndexed { index, item ->
-                            val isFirst = index == 0
-                            val isLast = index == menuItems.lastIndex
-                            val shape = when {
-                                isFirst && isLast -> RoundedCornerShape(16.dp)
-                                isFirst -> RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-                                isLast -> RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
-                                else -> RoundedCornerShape(0.dp)
-                            }
+                        menuItems.forEach { item ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(shape)
                                     .clickable {
                                         rulesMenuShow = false
                                         when (item) {
@@ -905,17 +874,8 @@ private fun MiuixSettingsSubPageDirect(
     }
     var showSystemApps by remember(page) { mutableStateOf(false) }
 
-    // 模糊效果 - 和示例项目 NavigateTestPage 一致的实现
-    val blurSupported = top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported()
-    val surfaceColor = MiuixTheme.colorScheme.surface
-    val backdrop = if (blurSupported) {
-        top.yukonga.miuix.kmp.blur.rememberLayerBackdrop {
-            drawRect(surfaceColor)
-            drawContent()
-        }
-    } else {
-        null
-    }
+    // 顶栏采样层统一受 Miuix 视觉性能策略控制。
+    val backdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
     val blurEnabled = backdrop != null
 
     if (page == SettingsPage.About) {
@@ -983,7 +943,7 @@ private fun MiuixSettingsSubPageDirect(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+                                .miuixScrollModifiers(topAppBarScrollBehavior)
                         ) {
                             when (page) {
                                 SettingsPage.Screenshot -> com.Badnng.moe.ui.screen.settings.ScreenshotSettingsContent(performHaptic, topBarHeight, scrollState)
@@ -1008,34 +968,10 @@ private fun MiuixSettingsSubPageDirect(
             }
 
             val sheetProgress = com.Badnng.moe.ui.component.BlurState.progress.floatValue
-            if (sheetProgress > 0.01f) {
-                if (sheetBackdrop != null) {
-                    val isDarkTheme = MiuixTheme.colorScheme.background.luminance() < 0.5f
-                    val baseBrightness = if (isDarkTheme) -0.3f else -0.5f
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.5f))
-                            .textureBlur(
-                                backdrop = sheetBackdrop,
-                                shape = RectangleShape,
-                                blurRadius = 56f * sheetProgress,
-                                colors = BlurDefaults.blurColors(
-                                    brightness = baseBrightness * sheetProgress,
-                                    contrast = 1f + 0.2f * sheetProgress,
-                                    saturation = 1f + 0.08f * sheetProgress,
-                                ),
-                            )
-                            .graphicsLayer(alpha = sheetProgress),
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.32f * sheetProgress)),
-                    )
-                }
-            }
+            com.Badnng.moe.ui.miuix.MiuixModalScrim(
+                backdrop = sheetBackdrop,
+                progress = sheetProgress,
+            )
         }
     }
 }

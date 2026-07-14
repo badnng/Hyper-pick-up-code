@@ -52,6 +52,7 @@ private fun normalizedUiStyle(value: String?): String =
 
 @Composable
 fun 澎湃记Theme(
+    transparentBackground: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -195,7 +196,13 @@ fun 澎湃记Theme(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(transitionBackground),
+            .then(
+                if (transparentBackground) {
+                    Modifier
+                } else {
+                    Modifier.background(transitionBackground)
+                },
+            ),
     ) {
         styleTransition.AnimatedContent(
             modifier = Modifier

@@ -68,7 +68,7 @@ fun SponsorSettingsContent(
         Spacer(modifier = Modifier.height(topPadding))
 
         if (isMiuix) {
-            MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 MiuixText(
                     text = "感谢您使用我的项目，项目制作花费的时间精力很大，在上学期间做的小项目，软件完全免费，如果倒卖请联系退款并举报！！",
                     modifier = Modifier.padding(16.dp),
@@ -94,15 +94,15 @@ fun SponsorSettingsContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        if (!isMiuix) Spacer(modifier = Modifier.height(16.dp))
         SponsorImageCard(alipayImage, "支付宝赞助码", isMiuix)
-        if (alipayImage != null && wechatImage != null) {
+        if (!isMiuix && alipayImage != null && wechatImage != null) {
             Spacer(modifier = Modifier.height(12.dp))
         }
         SponsorImageCard(wechatImage, "微信赞助码", isMiuix)
 
         if (alipayImage == null && wechatImage == null) {
-            Spacer(modifier = Modifier.height(12.dp))
+            if (!isMiuix) Spacer(modifier = Modifier.height(12.dp))
             if (isMiuix) {
                 MiuixText(
                     text = "未找到赞助图片资源",
@@ -124,7 +124,7 @@ fun SponsorSettingsContent(
 private fun SponsorImageCard(image: ImageBitmap?, contentDescription: String, isMiuix: Boolean) {
     image ?: return
     if (isMiuix) {
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
             Image(
                 bitmap = image,
                 contentDescription = contentDescription,

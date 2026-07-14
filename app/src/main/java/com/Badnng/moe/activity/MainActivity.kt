@@ -321,7 +321,8 @@ class MainActivity : ComponentActivity() {
                 } else {
                     onboardingContentLauncher.launch(intent)
                 }
-                hideOnboardingSource()
+                // HyperOS 会在 Activity 转场首帧通过 onExitStarted 隐藏源 View。
+                // 此处提前隐藏会在 PixelCopy 完成与转场启动之间留下可见空档。
             }.onFailure {
                 restoreOnboardingLaunchState()
             }

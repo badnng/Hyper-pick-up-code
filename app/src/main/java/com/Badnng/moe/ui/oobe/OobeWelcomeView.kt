@@ -125,7 +125,9 @@ internal class OobeWelcomeView(
             contentDescription = "开始设置"
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
             isFocusable = true
+            installOobeMiuixPressFeedback(oval = true, insetDp = 4.5f)
             setOnClickListener {
+                performOobeMiuixClickFeedback()
                 if (introFinished && startEnabled) {
                     startEnabled = false
                     updateStartEnabled()

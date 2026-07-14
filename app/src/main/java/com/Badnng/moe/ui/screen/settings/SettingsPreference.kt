@@ -161,6 +161,38 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
         }
     }
 
+    val runSmsRecognitionTest: () -> Unit = {
+        val hasSmsPermissions =
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECEIVE_SMS,
+            ) == PackageManager.PERMISSION_GRANTED &&
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.READ_SMS,
+                ) == PackageManager.PERMISSION_GRANTED
+
+        if (!smsRecognitionEnabled || !hasSmsPermissions) {
+            Toast.makeText(
+                context,
+                "请先开启短信识别并授予短信权限",
+                Toast.LENGTH_SHORT,
+            ).show()
+        } else {
+            val testSms = "【丰巢】凭取件码88306313至XX丰巢柜取您的包裹，超时将收费"
+            val intent = android.content.Intent(
+                context,
+                com.Badnng.moe.service.SmsRecognitionService::class.java,
+            ).apply {
+                putExtra("smsText", testSms)
+                putExtra("sender", "内置测试文本")
+                putExtra(com.Badnng.moe.service.SmsRecognitionService.EXTRA_TEST_MODE, true)
+            }
+            context.startService(intent)
+            Toast.makeText(context, "已开始识别内置测试文本", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     androidx.compose.runtime.LaunchedEffect(Unit) {
         PrivacyConsent.discardLegacyNetworkUpdatePreference(prefs)
         while (true) {
@@ -208,7 +240,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
         Spacer(Modifier.height(topPadding))
         if (isMiuix) {
             SmallTitle(text = "底栏设置")
-            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 SwitchPreference(
                     title = "悬浮底栏",
                     checked = useFloatingNavBar,
@@ -254,8 +286,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 exit = shrinkVertically() + fadeOut()
             ) {
                 Column {
-                    Spacer(Modifier.height(12.dp))
-                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         if (isLargeScreen) {
                             SwitchPreference(
                                 title = "底栏自适应",
@@ -371,7 +402,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
         if (isMiuix) {
             // Miuix 模式：外观设置（颜色模式 + 界面风格）
             SmallTitle(text = "外观设置")
-            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 OverlayDropdownPreference(
                     title = "颜色模式",
                     summary = colorModeLabels[currentColorModeIndex],
@@ -516,7 +547,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
 
         if (isMiuix) {
             SmallTitle(text = "功能设置")
-            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 SwitchPreference(
                     title = "快递自动合并",
                     summary = "自动将同一天的快递订单合并为一个组",
@@ -546,20 +577,14 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 )
                 ArrowPreference(
                     title = "测试短信识别",
+                    summary = "使用内置示例文本验证识别流程",
                     onClick = {
                         performHaptic()
-                        val testSms = "【丰巢】凭取件码88306313至XX丰巢柜取您的包裹，超时将收费"
-                        val intent = android.content.Intent(context, com.Badnng.moe.service.SmsRecognitionService::class.java).apply {
-                            putExtra("smsText", testSms)
-                            putExtra("sender", "测试号码")
-                        }
-                        androidx.core.content.ContextCompat.startForegroundService(context, intent)
-                        Toast.makeText(context, "已发送测试短信", Toast.LENGTH_SHORT).show()
+                        runSmsRecognitionTest()
                     }
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 SwitchPreference(
                     title = "通知识别取件码",
                     summary = "自动识别其他应用通知中的取件码和取餐码",
@@ -625,16 +650,11 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                         )
                         SettingsGroupItem(
                             title = "测试短信识别",
+                            description = "使用内置示例文本验证识别流程",
                             position = GroupPosition.Last,
                             onClick = {
                                 performHaptic()
-                                val testSms = "【丰巢】凭取件码88306313至XX丰巢柜取您的包裹，超时将收费"
-                                val intent = android.content.Intent(context, com.Badnng.moe.service.SmsRecognitionService::class.java).apply {
-                                    putExtra("smsText", testSms)
-                                    putExtra("sender", "测试号码")
-                                }
-                                androidx.core.content.ContextCompat.startForegroundService(context, intent)
-                                Toast.makeText(context, "已发送测试短信", Toast.LENGTH_SHORT).show()
+                                runSmsRecognitionTest()
                             }
                         )
                     }
@@ -695,8 +715,6 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
             }
         }
 
-        if (isMiuix) Spacer(Modifier.height(12.dp))
-
         PreferenceSection(title = "引导设置") {
             SettingsGroup {
                 SettingsGroupSwitchItem(
@@ -716,7 +734,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
         if (isMiuix) {
             val isIslandSupported = com.Badnng.moe.helper.SuperIslandHelper.isDeviceSupported(context)
             SmallTitle(text = "通知类型")
-            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 OverlayDropdownPreference(
                     title = "通知类型",
                     entries = listOf(
@@ -746,7 +764,6 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                     )
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
             AnimatedVisibility(
                 visible = notificationType == "island",
                 enter = expandVertically() + fadeIn(),
@@ -774,7 +791,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -868,7 +885,7 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
 
         if (isMiuix) {
             SmallTitle(text = "联网更新")
-            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 SwitchPreference(
                     title = "联网更新",
                     summary = "仅用于检测App新版本并下载，不用于其他用途",

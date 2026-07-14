@@ -170,7 +170,10 @@ fun StorageSettingsContent(performHaptic: () -> Unit, prefs: android.content.Sha
         // 卡片式图例
         if (isMiuix) {
             MiuixCard(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     StorageLegendRow(
@@ -268,7 +271,7 @@ fun StorageSettingsContent(performHaptic: () -> Unit, prefs: android.content.Sha
         Spacer(Modifier.height(32.dp))
 
         if (isMiuix) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(horizontal = 12.dp)) {
+            Column {
                 StorageActionCard(title = "清理系统缓存", description = "删除 App 运行产生的临时文件", size = formatFileSize(cacheSize), isMiuix = isMiuix, onClear = { performHaptic(); deleteFolderContents(context.cacheDir); refreshSizes() })
                 StorageActionCard(title = "清理识别截图", description = "删除保存在本地的识别原始截图\n(不影响已生成的记录)", size = formatFileSize(screenshotSize), isMiuix = isMiuix, onClear = { performHaptic(); deleteFolderContents(File(context.filesDir, "screenshots")); refreshSizes() })
                 StorageActionCard(title = "清理下载文件", description = "删除下载的更新包等文件", size = formatFileSize(downloadSize), isMiuix = isMiuix, onClear = { performHaptic(); deleteFolderContents(File(context.filesDir, "downloads")); refreshSizes() })
@@ -342,7 +345,10 @@ fun StorageLegendRow(color: Color, label: String, size: String, description: Str
 fun StorageActionCard(title: String, description: String, size: String, isMiuix: Boolean = false, onClear: () -> Unit) {
     if (isMiuix) {
         MiuixCard(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+                .padding(bottom = 12.dp)
         ) {
             Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {

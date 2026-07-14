@@ -129,7 +129,9 @@ private const val GRAVITY_DIR_THRESHOLD_SQ = 0.01f // |g_xy| > 0.1, ≈ 6° tilt
 private fun rememberGravityRotatedHighlight(
     base: Highlight,
     extraDegrees: Float = 0f,
+    enabled: Boolean = true,
 ): Highlight {
+    if (!enabled) return base
     val baseStyle = base.style as BloomStroke
     val tilt by rememberDeviceTilt()
     val rotatedPrimary = remember(tilt, baseStyle.primaryLight, extraDegrees) {
@@ -171,13 +173,18 @@ internal fun IosLiquidGlassNavigationBar(
     isDark: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val glassEffectsActive = isBlurActive && backdrop != null
     val pillShape = remember { CircleShape }
     val accentColor = MiuixTheme.colorScheme.primary
     val tabContentColor = MiuixTheme.colorScheme.onSurface
     val surfaceContainer = MiuixTheme.colorScheme.surfaceContainer
-    val containerColor = if (isBlurActive) surfaceContainer.copy(alpha = 0.4f) else surfaceContainer
+    val containerColor = if (glassEffectsActive) {
+        surfaceContainer.copy(alpha = 0.4f)
+    } else {
+        surfaceContainer
+    }
 
-    val tabsBackdrop = rememberLayerBackdrop()
+    val tabsBackdrop = if (glassEffectsActive) rememberLayerBackdrop() else null
     val density = LocalDensity.current
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
@@ -281,10 +288,22 @@ internal fun IosLiquidGlassNavigationBar(
         )
     }
 
-    val baseHighlight = rememberGravityRotatedHighlight(iosIndicatorSpecular, extraDegrees = -45f)
-    val pillHighlight = rememberGravityRotatedHighlight(iosIndicatorSpecular, extraDegrees = 90f)
+    val baseHighlight = rememberGravityRotatedHighlight(
+        base = iosIndicatorSpecular,
+        extraDegrees = -45f,
+        enabled = glassEffectsActive,
+    )
+    val pillHighlight = rememberGravityRotatedHighlight(
+        base = iosIndicatorSpecular,
+        extraDegrees = 90f,
+        enabled = glassEffectsActive,
+    )
 
-    val combinedBackdrop = backdrop?.let { rememberCombinedBackdrop(it, tabsBackdrop) }
+    val combinedBackdrop = if (backdrop != null && tabsBackdrop != null) {
+        rememberCombinedBackdrop(backdrop, tabsBackdrop)
+    } else {
+        null
+    }
 
     val navBarBottomPadding = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom).asPaddingValues().calculateBottomPadding()
     val bottomPaddingValue = when (platform()) {
@@ -337,7 +356,7 @@ internal fun IosLiquidGlassNavigationBar(
     Column(modifier = modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
-                .padding(bottom = bottomPaddingValue, start = 32.dp, end = 32.dp)
+                .padding(bottom = bottomPaddingValue, start = 40.dp, end = 40.dp)
                 .fillMaxWidth(),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -365,7 +384,7 @@ internal fun IosLiquidGlassNavigationBar(
                             onClick = {},
                         )
                         .then(
-                            if (isBlurActive && backdrop != null) {
+                            if (glassEffectsActive && backdrop != null) {
                                 Modifier.drawBackdrop(
                                     backdrop = backdrop,
                                     shape = { pillShape },
@@ -394,7 +413,7 @@ internal fun IosLiquidGlassNavigationBar(
                                     .background(containerColor, pillShape)
                             },
                         )
-                        .then(if (isBlurActive) interactiveHighlight.modifier else Modifier)
+                        .then(if (glassEffectsActive) interactiveHighlight.modifier else Modifier)
                         .height(64.dp)
                         .padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -402,7 +421,7 @@ internal fun IosLiquidGlassNavigationBar(
                 )
             }
 
-            if (isBlurActive && backdrop != null) {
+            if (glassEffectsActive && backdrop != null && tabsBackdrop != null) {
                 CompositionLocalProvider(
                     LocalIosTabScale provides { lerp(1f, 1.2f, dampedDrag.pressProgress) },
                     LocalContentColor provides accentColor,
@@ -437,7 +456,7 @@ internal fun IosLiquidGlassNavigationBar(
 
             if (tabWidthPx > 0f) {
                 val tabWidthDp = with(density) { tabWidthPx.toDp() }
-                if (isBlurActive && combinedBackdrop != null) {
+                if (glassEffectsActive && combinedBackdrop != null) {
                     Box(
                         modifier = Modifier
                             .padding(horizontal = 4.dp)

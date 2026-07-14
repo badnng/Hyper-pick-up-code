@@ -7,17 +7,19 @@
 package com.Badnng.moe.ui.oobe
 
 import com.Badnng.moe.R
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -51,6 +53,7 @@ internal class OobeContentHeaderView(context: Context) : LinearLayout(context) {
             isFocusable = true
             isClickable = true
             setImageResource(R.drawable.oobe_miuix_back)
+            installOobeMiuixPressFeedback()
         }
         actionBar.addView(backIcon, LayoutParams(dp(40f), dp(40f)))
 
@@ -126,7 +129,10 @@ internal class OobeContentHeaderView(context: Context) : LinearLayout(context) {
         titleView.setTextColor(primaryText)
         subtitleView.setTextColor(secondaryText)
         backIcon.imageTintList = ColorStateList.valueOf(navigationIcon)
-        backIcon.setOnClickListener { onBack() }
+        backIcon.setOnClickListener {
+            backIcon.performOobeMiuixClickFeedback()
+            onBack()
+        }
     }
 
     private fun dp(value: Float): Int =
@@ -134,9 +140,11 @@ internal class OobeContentHeaderView(context: Context) : LinearLayout(context) {
 }
 
 internal class OobePrimaryButtonView(context: Context) : FrameLayout(context) {
+    private val buttonFill = roundedRect(ENABLED_BACKGROUND_COLOR)
+    private val argbEvaluator = ArgbEvaluator()
     private val labelView = TextView(context).apply {
         gravity = Gravity.CENTER
-        setTextColor(Color.WHITE)
+        setTextColor(ENABLED_LABEL_COLOR)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
         typeface = Typeface.create(Typeface.DEFAULT, 500, false)
         maxLines = 1
@@ -144,10 +152,16 @@ internal class OobePrimaryButtonView(context: Context) : FrameLayout(context) {
         isClickable = false
         isFocusable = false
     }
+    private var enabledState: Boolean? = null
+    private var colorAnimator: ValueAnimator? = null
+    private var currentBackgroundColor = ENABLED_BACKGROUND_COLOR
+    private var currentLabelColor = ENABLED_LABEL_COLOR
 
     init {
         minimumHeight = dp(50f)
         isFocusable = true
+        background = buttonFill
+        installOobeMiuixPressFeedback()
         addView(
             labelView,
             LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
@@ -158,16 +172,80 @@ internal class OobePrimaryButtonView(context: Context) : FrameLayout(context) {
         labelView.text = label
         isEnabled = enabled
         isClickable = enabled
-        alpha = if (enabled) 1f else 0.5f
-        background = createBackground()
+        alpha = 1f
         contentDescription = label
-        setOnClickListener(if (enabled) View.OnClickListener { onClick() } else null)
+        setOnClickListener(
+            if (enabled) {
+                View.OnClickListener {
+                    performOobeMiuixClickFeedback()
+                    onClick()
+                }
+            } else {
+                null
+            },
+        )
+
+        val previousState = enabledState
+        enabledState = enabled
+        when {
+            previousState == null -> applyEnabledColors(enabled)
+            previousState != enabled -> animateEnabledColors(enabled)
+        }
     }
 
-    private fun createBackground(): RippleDrawable {
-        val content = roundedRect(0xFF3482FF.toInt())
-        val mask = roundedRect(Color.WHITE)
-        return RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), content, mask)
+    override fun onDetachedFromWindow() {
+        colorAnimator?.cancel()
+        colorAnimator = null
+        super.onDetachedFromWindow()
+    }
+
+    private fun animateEnabledColors(enabled: Boolean) {
+        colorAnimator?.cancel()
+        val targetBackground = if (enabled) ENABLED_BACKGROUND_COLOR else DISABLED_BACKGROUND_COLOR
+        val targetLabel = if (enabled) ENABLED_LABEL_COLOR else DISABLED_LABEL_COLOR
+        if (!isAttachedToWindow || !ValueAnimator.areAnimatorsEnabled()) {
+            applyColors(targetBackground, targetLabel)
+            return
+        }
+
+        val startBackground = currentBackgroundColor
+        val startLabel = currentLabelColor
+        colorAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = ENABLED_COLOR_TRANSITION_MILLIS
+            interpolator = ENABLED_COLOR_INTERPOLATOR
+            addUpdateListener { animator ->
+                val fraction = animator.animatedFraction
+                applyColors(
+                    backgroundColor = argbEvaluator.evaluate(
+                        fraction,
+                        startBackground,
+                        targetBackground,
+                    ) as Int,
+                    labelColor = argbEvaluator.evaluate(
+                        fraction,
+                        startLabel,
+                        targetLabel,
+                    ) as Int,
+                )
+            }
+            start()
+        }
+    }
+
+    private fun applyEnabledColors(enabled: Boolean) {
+        colorAnimator?.cancel()
+        colorAnimator = null
+        applyColors(
+            backgroundColor = if (enabled) ENABLED_BACKGROUND_COLOR else DISABLED_BACKGROUND_COLOR,
+            labelColor = if (enabled) ENABLED_LABEL_COLOR else DISABLED_LABEL_COLOR,
+        )
+    }
+
+    private fun applyColors(backgroundColor: Int, labelColor: Int) {
+        currentBackgroundColor = backgroundColor
+        currentLabelColor = labelColor
+        buttonFill.setColor(backgroundColor)
+        labelView.setTextColor(labelColor)
     }
 
     private fun roundedRect(color: Int) = GradientDrawable().apply {
@@ -178,4 +256,14 @@ internal class OobePrimaryButtonView(context: Context) : FrameLayout(context) {
 
     private fun dp(value: Float): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private companion object {
+        val ENABLED_BACKGROUND_COLOR = 0xFF3482FF.toInt()
+        val DISABLED_BACKGROUND_COLOR = 0x803482FF.toInt()
+        val ENABLED_LABEL_COLOR = 0xFFFFFFFF.toInt()
+        val DISABLED_LABEL_COLOR = 0x99FFFFFF.toInt()
+        const val ENABLED_COLOR_TRANSITION_MILLIS = 240L
+
+        val ENABLED_COLOR_INTERPOLATOR = PathInterpolator(0.2f, 0f, 0f, 1f)
+    }
 }

@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
@@ -94,6 +95,7 @@ import com.Badnng.moe.ui.oobe.OobeVisualBackend
 import com.Badnng.moe.ui.oobe.OobeVisualBackendResolver
 import com.Badnng.moe.ui.oobe.OobeWelcomeView
 import com.Badnng.moe.ui.oobe.oobeCircularReveal
+import com.Badnng.moe.ui.oobe.oobeMiuixPressFeedback
 import com.Badnng.moe.ui.oobe.rememberOobeVisualBackend
 import rikka.shizuku.Shizuku
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -101,6 +103,7 @@ import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
+import top.yukonga.miuix.kmp.basic.RadioButton as MiuixRadioButton
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.basic.TextField as MiuixTextField
 import top.yukonga.miuix.kmp.blur.BlurDefaults
@@ -124,6 +127,8 @@ private enum class OnboardingStep {
 
 private val LocalOobeBackend = staticCompositionLocalOf { OobeVisualBackend.AndroidFallback }
 private val LocalOobeDarkTheme = staticCompositionLocalOf { false }
+private const val OOBE_ONLINE_RECOGNITION_DESCRIPTION =
+    "使用在线多模态模型。截图、分享图片、通知文字、短信内容或所选文字会发送给您选择的供应商，请在下方完成供应商和 API 密钥配置。"
 
 @Composable
 fun OnboardingScreen(
@@ -416,8 +421,8 @@ fun OnboardingScreen(
                                 )
                             }
                             OnboardingStep.Features -> OobePageScaffold(
-                                title = "使用澎湃记",
-                                subtitle = "选择适合当前场景的识别方式",
+                                title = "了解如何识别",
+                                subtitle = "了解适合当前场景的识别方式",
                                 previewDrawable = R.drawable.oobe_features_preview,
                                 primaryLabel = if (featuresAckCountdown == 0) "完成设置" else "完成设置（${featuresAckCountdown}s）",
                                 primaryEnabled = featuresAckCountdown == 0 && !transitionLocked,
@@ -740,6 +745,7 @@ private fun RecognitionPreferenceStep(
     onOnlineConfigurationReady: (Boolean) -> Unit,
     onModeSelected: (String) -> Unit,
 ) {
+    val motionScheme = MaterialTheme.motionScheme
     OobePermissionContent {
         OobeRecognitionModeRow(
             title = "离线识别",
@@ -761,23 +767,24 @@ private fun RecognitionPreferenceStep(
             OnlineRecognitionPreferences.MODE_OFFLINE ->
                 "使用本地 OCR 与识别规则，无需网络或 API 密钥，识别内容不会上传。"
             OnlineRecognitionPreferences.MODE_ONLINE ->
-                "使用在线多模态模型。截图、分享图片、通知文字、短信内容或所选文字会发送给您选择的供应商，请在下方完成供应商和 API 密钥配置。"
+                OOBE_ONLINE_RECOGNITION_DESCRIPTION
             else -> "请选择一种识别方式，之后仍可在设置中更改。"
         }
-        Text(
-            text = description,
-            fontSize = 13.sp,
-            lineHeight = 19.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp),
-        )
+        Spacer(Modifier.height(16.dp))
+        OobeRecognitionHint(description)
 
-        if (selectedMode == OnlineRecognitionPreferences.MODE_ONLINE) {
-            Spacer(Modifier.height(16.dp))
-            OobeOnlineRecognitionSetup(
-                performHaptic = performHaptic,
-                onConfigurationReady = onOnlineConfigurationReady,
-            )
+        AnimatedVisibility(
+            visible = selectedMode == OnlineRecognitionPreferences.MODE_ONLINE,
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec<Float>()),
+            exit = fadeOut(animationSpec = motionScheme.defaultEffectsSpec<Float>()),
+        ) {
+            Column {
+                Spacer(Modifier.height(16.dp))
+                OobeOnlineRecognitionSetup(
+                    performHaptic = performHaptic,
+                    onConfigurationReady = onOnlineConfigurationReady,
+                )
+            }
         }
     }
 }
@@ -1129,15 +1136,45 @@ private fun OobeRecognitionModeRow(
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
-        if (selected) {
-            Spacer(Modifier.width(12.dp))
-            Icon(
-                painter = painterResource(R.drawable.oobe_picker_check),
-                contentDescription = "已选择",
-                tint = Color.Unspecified,
-                modifier = Modifier.size(22.dp),
-            )
-        }
+        Spacer(Modifier.width(12.dp))
+        MiuixRadioButton(
+            selected = selected,
+            onClick = null,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+@Composable
+private fun OobeRecognitionHint(text: String) {
+    val darkTheme = LocalOobeDarkTheme.current
+    val shape = RoundedCornerShape(15.dp)
+    val backgroundColor = if (darkTheme) Color(0x293482FF) else Color(0xFFE8F2FF)
+    val contentColor = if (darkTheme) Color(0xFF8BB8FF) else Color(0xFF2F7FEA)
+    val textStyle = TextStyle(
+        fontSize = 13.sp,
+        lineHeight = 19.sp,
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(backgroundColor, shape)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        // 以最长说明固定提示块高度，切换识别方式时不会推动下方内容。
+        Text(
+            text = OOBE_ONLINE_RECOGNITION_DESCRIPTION,
+            style = textStyle,
+            color = Color.Transparent,
+            modifier = Modifier.clearAndSetSemantics { },
+        )
+        Text(
+            text = text,
+            style = textStyle,
+            color = contentColor,
+        )
     }
 }
 
@@ -1425,12 +1462,17 @@ private fun OobeSettingSurface(
     onClick: () -> Unit,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val shape = RoundedCornerShape(15.dp)
     Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(15.dp),
+        shape = shape,
         color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .oobeMiuixPressFeedback(
+                shape = shape,
+                enabled = enabled,
+                onClick = onClick,
+            ),
     ) {
         Row(
             modifier = Modifier
@@ -1460,14 +1502,19 @@ private fun OobeFeatureRow(
         animationSpec = motionScheme.defaultSpatialSpec<Float>(),
         label = "oobe_feature_arrow",
     )
+    val cardShape = RoundedCornerShape(15.dp)
     Surface(
-        onClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            expanded = !expanded
-        },
-        shape = RoundedCornerShape(15.dp),
+        shape = cardShape,
         color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .oobeMiuixPressFeedback(
+                shape = cardShape,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    expanded = !expanded
+                },
+            ),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -1553,14 +1600,19 @@ private fun OobeFeatureRow(
                             }
                         }
                         if (actionLabel != null && onAction != null) {
+                            val actionShape = RoundedCornerShape(15.dp)
                             Surface(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onAction()
-                                },
-                                shape = RoundedCornerShape(15.dp),
+                                shape = actionShape,
                                 color = Color.Transparent,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .oobeMiuixPressFeedback(
+                                        shape = actionShape,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onAction()
+                                        },
+                                    ),
                             ) {
                                 Row(
                                     modifier = Modifier

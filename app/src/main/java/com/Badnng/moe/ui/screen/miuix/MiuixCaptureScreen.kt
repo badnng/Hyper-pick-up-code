@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandHorizontally
@@ -19,12 +20,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -34,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -55,10 +55,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -73,6 +71,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.BrandIconResolver
+import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.screen.openTaobaoIdentityEntry
 import com.Badnng.moe.ui.screen.openPddIdentityEntry
 import com.Badnng.moe.viewmodel.OrderViewModel
@@ -90,7 +89,6 @@ import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Surface
-import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -109,12 +107,8 @@ import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.FloatingToolbar
 import top.yukonga.miuix.kmp.basic.ToolbarPosition
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
-import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
-import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -178,6 +172,23 @@ fun MiuixCaptureScreen(
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var selectedGroupIds by remember { mutableStateOf(setOf<Long>()) }
 
+    val currentSelectableOrders = if (selectedTab == 0) {
+        filteredIncompleteOrders.filter { it.groupId == null }
+    } else {
+        standaloneCompletedOrders
+    }
+    val currentSelectableGroups = if (selectedTab == 0) {
+        filteredIncompleteGroups
+    } else {
+        completedGroups
+    }
+    val currentOrderIds = currentSelectableOrders.mapTo(mutableSetOf()) { it.id }
+    val currentGroupIds = currentSelectableGroups.mapTo(mutableSetOf()) { it.id }
+    val selectedCurrentOrderCount = currentOrderIds.count { it in selectedIds }
+    val selectedCurrentGroupCount = currentGroupIds.count { it in selectedGroupIds }
+    val hasCurrentSelectableItems = currentOrderIds.isNotEmpty() || currentGroupIds.isNotEmpty()
+    val hasSelection = selectedIds.isNotEmpty() || selectedGroupIds.isNotEmpty()
+
     val density = LocalDensity.current
     var editActionToolbarHeightPx by remember { mutableIntStateOf(0) }
     var editSelectionToolbarHeightPx by remember { mutableIntStateOf(0) }
@@ -192,11 +203,17 @@ fun MiuixCaptureScreen(
         MiuixHomeBottomLayoutDefaults.EstimatedEditToolbarHeight
     }
     val editActionBottomPadding = bottomLayoutInfo.editActionBottomPadding
-    val editSelectionBottomPadding = editActionBottomPadding +
-        editActionToolbarHeight +
-        MiuixHomeBottomLayoutDefaults.EditToolbarGap
+    val editSelectionBottomPadding by animateDpAsState(
+        targetValue = editActionBottomPadding + if (hasSelection) {
+            editActionToolbarHeight + MiuixHomeBottomLayoutDefaults.EditToolbarGap
+        } else {
+            0.dp
+        },
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = 320f),
+        label = "editSelectionToolbarBottomPadding",
+    )
     val editContentBottomPadding = editSelectionBottomPadding +
-        editSelectionToolbarHeight +
+        (if (hasCurrentSelectableItems) editSelectionToolbarHeight else 0.dp) +
         MiuixHomeBottomLayoutDefaults.ContentSpacing
     val pageContentBottomPadding = if (isEditMode) {
         editContentBottomPadding
@@ -216,17 +233,8 @@ fun MiuixCaptureScreen(
 
     val topAppBarScrollBehavior = MiuixScrollBehavior()
 
-    // 模糊效果 - 和示例项目 NavigateTestPage 一致的实现
-    val blurSupported = top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported()
-    val surfaceColor = MiuixTheme.colorScheme.surface
-    val backdrop = if (blurSupported) {
-        top.yukonga.miuix.kmp.blur.rememberLayerBackdrop {
-            drawRect(surfaceColor)
-            drawContent()
-        }
-    } else {
-        null
-    }
+    // 顶栏采样层统一受 Miuix 视觉性能策略控制。
+    val backdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
     val blurEnabled = backdrop != null
     val lazyListState = rememberLazyListState()
     val isListScrolling by remember {
@@ -268,8 +276,8 @@ fun MiuixCaptureScreen(
                         }
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    // 主 TabRow
-                TabRow(
+                // 使用带轮廓样式，避免 Miuix 0.9.3 默认 TabRow 的直接切换行为。
+                TabRowWithContour(
                     tabs = listOf("待取", "已取"),
                     selectedTabIndex = selectedTab,
                     onTabSelected = { tabIndex ->
@@ -329,13 +337,12 @@ fun MiuixCaptureScreen(
             state = lazyListState,
             modifier = Modifier
                 .fillMaxSize()
-                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .miuixScrollModifiers(topAppBarScrollBehavior),
             contentPadding = PaddingValues(
                 top = innerPadding.calculateTopPadding() + 8.dp,
                 bottom = pageContentBottomPadding,
-                start = 16.dp,
-                end = 16.dp
+                start = 12.dp,
+                end = 12.dp
             )
         ) {
             if (selectedTab == 0) {
@@ -344,9 +351,11 @@ fun MiuixCaptureScreen(
                     items(items = filteredIncompleteGroups, key = { "group_${it.id}" }) { group ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.animateItem(
-                                placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
-                            )
+                            modifier = Modifier
+                                .animateItem(
+                                    placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                )
+                                .padding(bottom = 12.dp)
                         ) {
                             // 多选框（左侧，动画显示）
                             Box(modifier = Modifier.width(if (isEditMode) 40.dp else 0.dp)) {
@@ -394,9 +403,11 @@ fun MiuixCaptureScreen(
                     items(items = standaloneOrders, key = { it.id }) { order ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.animateItem(
-                                placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
-                            )
+                            modifier = Modifier
+                                .animateItem(
+                                    placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                )
+                                .padding(bottom = 12.dp)
                         ) {
                             // 多选框（左侧，动画显示）
                             Box(modifier = Modifier.width(if (isEditMode) 40.dp else 0.dp)) {
@@ -463,9 +474,11 @@ fun MiuixCaptureScreen(
                     items(items = completedGroups, key = { "completed_group_${it.id}" }) { group ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.animateItem(
-                                placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
-                            )
+                            modifier = Modifier
+                                .animateItem(
+                                    placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                )
+                                .padding(bottom = 12.dp)
                         ) {
                             Box(modifier = Modifier.width(if (isEditMode) 40.dp else 0.dp)) {
                                 androidx.compose.animation.AnimatedVisibility(
@@ -510,9 +523,11 @@ fun MiuixCaptureScreen(
                     items(items = standaloneCompletedOrders, key = { "completed_${it.id}" }) { order ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.animateItem(
-                                placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
-                            )
+                            modifier = Modifier
+                                .animateItem(
+                                    placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                )
+                                .padding(bottom = 12.dp)
                         ) {
                             Box(modifier = Modifier.width(if (isEditMode) 40.dp else 0.dp)) {
                                 androidx.compose.animation.AnimatedVisibility(
@@ -581,63 +596,53 @@ fun MiuixCaptureScreen(
 
     // 全选按钮（编辑模式下显示，底部 FloatingToolbar 上方）
     AnimatedVisibility(
-        visible = isEditMode,
+        visible = isEditMode && hasCurrentSelectableItems,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically(),
         modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = editSelectionBottomPadding)
     ) {
         FloatingToolbar(
-            modifier = Modifier.onSizeChanged { editSelectionToolbarHeightPx = it.height },
-            color = MiuixTheme.colorScheme.surfaceVariant,
-            cornerRadius = 16.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.88f)
+                .widthIn(max = 420.dp)
+                .onSizeChanged { editSelectionToolbarHeightPx = it.height },
+            color = MiuixTheme.colorScheme.surface,
+            cornerRadius = 20.dp,
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth().padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Button(
-                    onClick = {
-                        performHaptic()
-                        val currentOrders = if (selectedTab == 0) filteredIncompleteOrders.filter { it.groupId == null } else standaloneCompletedOrders
-                        if (selectedIds.size == currentOrders.size && currentOrders.isNotEmpty()) {
-                            selectedIds = emptySet()
-                        } else {
-                            selectedIds = currentOrders.map { it.id }.toSet()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                    cornerRadius = 12.dp
-                ) {
-                    Text(
-                        text = if (selectedTab == 0) {
-                            val currentOrders = filteredIncompleteOrders.filter { it.groupId == null }
-                            if (selectedIds.size == currentOrders.size && currentOrders.isNotEmpty()) "取消全选订单" else "全选订单"
-                        } else {
-                            if (selectedIds.size == standaloneCompletedOrders.size && standaloneCompletedOrders.isNotEmpty()) "取消全选订单" else "全选订单"
+                if (currentOrderIds.isNotEmpty()) {
+                    MiuixSelectionScopeButton(
+                        title = "订单",
+                        selectedCount = selectedCurrentOrderCount,
+                        totalCount = currentOrderIds.size,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            performHaptic()
+                            selectedIds = if (selectedCurrentOrderCount == currentOrderIds.size) {
+                                selectedIds - currentOrderIds
+                            } else {
+                                selectedIds + currentOrderIds
+                            }
                         },
-                        fontSize = 13.sp
                     )
                 }
-                Button(
-                    onClick = {
-                        performHaptic()
-                        val currentGroups = if (selectedTab == 0) filteredIncompleteGroups else completedGroups
-                        if (selectedGroupIds.size == currentGroups.size && currentGroups.isNotEmpty()) {
-                            selectedGroupIds = emptySet()
-                        } else {
-                            selectedGroupIds = currentGroups.map { it.id }.toSet()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                    cornerRadius = 12.dp
-                ) {
-                    Text(
-                        text = if (selectedTab == 0) {
-                            if (selectedGroupIds.size == filteredIncompleteGroups.size && filteredIncompleteGroups.isNotEmpty()) "取消全选组" else "全选组"
-                        } else {
-                            if (selectedGroupIds.size == completedGroups.size && completedGroups.isNotEmpty()) "取消全选组" else "全选组"
+                if (currentGroupIds.isNotEmpty()) {
+                    MiuixSelectionScopeButton(
+                        title = "订单组",
+                        selectedCount = selectedCurrentGroupCount,
+                        totalCount = currentGroupIds.size,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            performHaptic()
+                            selectedGroupIds = if (selectedCurrentGroupCount == currentGroupIds.size) {
+                                selectedGroupIds - currentGroupIds
+                            } else {
+                                selectedGroupIds + currentGroupIds
+                            }
                         },
-                        fontSize = 13.sp
                     )
                 }
             }
@@ -864,6 +869,74 @@ fun MiuixCaptureScreen(
 }
 
 @Composable
+private fun MiuixSelectionScopeButton(
+    title: String,
+    selectedCount: Int,
+    totalCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val allSelected = totalCount > 0 && selectedCount == totalCount
+    val partiallySelected = selectedCount in 1 until totalCount
+    val containerColor = when {
+        allSelected -> MiuixTheme.colorScheme.primary
+        partiallySelected -> MiuixTheme.colorScheme.primaryContainer
+        else -> MiuixTheme.colorScheme.surfaceVariant
+    }
+    val contentColor = when {
+        allSelected -> MiuixTheme.colorScheme.onPrimary
+        partiallySelected -> MiuixTheme.colorScheme.onPrimaryContainer
+        else -> MiuixTheme.colorScheme.onSurface
+    }
+    val status = when {
+        allSelected -> "已全选 · 点击取消"
+        partiallySelected -> "已选 $selectedCount/$totalCount · 点击全选"
+        else -> "$totalCount 项 · 点击全选"
+    }
+
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(64.dp),
+        colors = ButtonDefaults.buttonColors(
+            color = containerColor,
+            contentColor = contentColor,
+        ),
+        cornerRadius = 15.dp,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                if (allSelected) {
+                    Icon(
+                        imageVector = MiuixIcons.Regular.Ok,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = contentColor,
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                }
+                Text(
+                    text = title,
+                    color = contentColor,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = status,
+                color = contentColor.copy(alpha = 0.72f),
+                fontSize = 11.sp,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
 private fun MiuixOrderGroupCard(
     group: OrderGroup,
     viewModel: OrderViewModel,
@@ -973,10 +1046,10 @@ private fun MiuixOrderGroupCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                    .background(
+                    .squircleSurface(
                         if (isExpanded) MiuixTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-                        else Color.Transparent
+                        else Color.Transparent,
+                        12.dp,
                     )
                     .clickable {
                         performHaptic()
@@ -1095,9 +1168,9 @@ private fun MiuixOrderGroupCard(
                                 modifier = Modifier
                                     .height(44.dp)
                                     .width(44.dp)
-                                    .background(
+                                    .squircleSurface(
                                         if (isScheduled) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.primary,
-                                        androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                                        16.dp,
                                     )
                                     .clickable {
                                         performHaptic()
@@ -1395,9 +1468,9 @@ private fun MiuixOrderCard(
                         modifier = Modifier
                             .height(44.dp)
                             .width(44.dp)
-                            .background(
+                            .squircleSurface(
                                 if (isScheduled) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.primary,
-                                androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                                16.dp,
                             )
                             .clickable {
                                 performHaptic()

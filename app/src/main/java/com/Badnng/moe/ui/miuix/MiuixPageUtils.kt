@@ -2,6 +2,7 @@ package com.Badnng.moe.ui.miuix
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
@@ -21,6 +22,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -32,9 +35,9 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.VerticalScrollBar
 import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
-import top.yukonga.miuix.kmp.blur.BlurColors
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.shader.isRenderEffectSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
@@ -63,7 +66,8 @@ fun rememberMiuixStyle(): Boolean {
 
 @Composable
 fun rememberMiuixBackdrop(): LayerBackdrop? {
-    if (!isRenderEffectSupported()) return null
+    val blurAllowed = rememberMiuixBlurAllowed()
+    if (!blurAllowed || !isRenderEffectSupported() || !isRuntimeShaderSupported()) return null
     val surfaceColor = MiuixTheme.colorScheme.surface
     return rememberLayerBackdrop {
         drawRect(surfaceColor)
@@ -94,6 +98,51 @@ fun MiuixBlurredBar(
         },
     ) {
         content()
+    }
+}
+
+/**
+ * Miuix 弹层共用的全屏背景。设备允许时使用 Backdrop 模糊；低性能设备或平台不支持
+ * RenderEffect 时使用灰色半透明遮罩，避免每个页面各自维护一套降级逻辑。
+ */
+@Composable
+fun MiuixModalScrim(
+    backdrop: LayerBackdrop?,
+    progress: Float,
+    modifier: Modifier = Modifier,
+) {
+    val visibleProgress = progress.coerceIn(0f, 1f)
+    if (visibleProgress <= 0.01f) return
+
+    if (backdrop != null) {
+        val isDarkTheme = MiuixTheme.colorScheme.background.luminance() < 0.5f
+        val baseBrightness = if (isDarkTheme) -0.3f else -0.5f
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .textureBlur(
+                    backdrop = backdrop,
+                    shape = RectangleShape,
+                    blurRadius = 56f * visibleProgress,
+                    colors = BlurDefaults.blurColors(
+                        brightness = baseBrightness * visibleProgress,
+                        contrast = 1f + 0.2f * visibleProgress,
+                        saturation = 1f + 0.08f * visibleProgress,
+                    ),
+                )
+                .graphicsLayer(alpha = visibleProgress),
+        )
+    } else {
+        val isDarkTheme = MiuixTheme.colorScheme.background.luminance() < 0.5f
+        val fallbackAlpha = if (isDarkTheme) 0.28f else 0.36f
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(
+                    Color(0xFF5A5A5A).copy(alpha = fallbackAlpha * visibleProgress),
+                ),
+        )
     }
 }
 

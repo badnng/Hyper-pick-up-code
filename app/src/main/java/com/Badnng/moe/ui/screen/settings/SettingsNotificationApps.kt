@@ -159,7 +159,6 @@ private fun MiuixNotificationAppsList(
     val context = LocalContext.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(
             top = topPadding,
             bottom = 16.dp + WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
@@ -167,7 +166,7 @@ private fun MiuixNotificationAppsList(
     ) {
         item {
             SearchBar(
-                modifier = Modifier.padding(horizontal = 12.dp),
+                modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
                 inputField = {
                     InputField(
                         query = searchText,
@@ -183,7 +182,7 @@ private fun MiuixNotificationAppsList(
             ) {}
         }
         item {
-            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -329,7 +328,7 @@ private fun MiuixAppToggleItem(
     onToggle: (Boolean) -> Unit
 ) {
     val icon = rememberApplicationIcon(context, packageName)
-    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+    MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,

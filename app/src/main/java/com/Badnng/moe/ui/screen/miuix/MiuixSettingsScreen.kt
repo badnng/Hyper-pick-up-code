@@ -6,24 +6,26 @@ import android.content.Context
 import android.graphics.drawable.Icon
 import android.os.Build
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.Badnng.moe.R
 import com.Badnng.moe.service.CaptureTileService
+import com.Badnng.moe.ui.miuix.MiuixBlurredBar
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
+import com.Badnng.moe.ui.miuix.rememberMiuixBackdrop
 import com.Badnng.moe.ui.screen.settings.SettingsPage
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -34,19 +36,24 @@ fun MiuixSettingsScreen(
 ) {
     val context = LocalContext.current
     val topAppBarScrollBehavior = MiuixScrollBehavior()
+    val backdrop = rememberMiuixBackdrop()
+    val blurEnabled = backdrop != null
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = "设置",
-                color = MiuixTheme.colorScheme.surface,
-                scrollBehavior = topAppBarScrollBehavior
-            )
+            MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
+                TopAppBar(
+                    title = "设置",
+                    color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
+                    scrollBehavior = topAppBarScrollBehavior
+                )
+            }
         }
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
                 .miuixScrollModifiers(topAppBarScrollBehavior),
             contentPadding = PaddingValues(
                 top = innerPadding.calculateTopPadding(),
@@ -55,7 +62,11 @@ fun MiuixSettingsScreen(
         ) {
             item {
                 SmallTitle(text = "常规")
-                Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp)
+                ) {
                     ArrowPreference(
                         title = "偏好设置",
                         summary = "管理自行习惯的设置",
@@ -91,7 +102,11 @@ fun MiuixSettingsScreen(
 
             item {
                 SmallTitle(text = "其他")
-                Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp)
+                ) {
                     ArrowPreference(
                         title = "关于",
                         summary = "应用信息与开源许可",
@@ -104,8 +119,6 @@ fun MiuixSettingsScreen(
                     )
                 }
             }
-
-            item { Spacer(modifier = Modifier.height(12.dp)) }
         }
     }
 }

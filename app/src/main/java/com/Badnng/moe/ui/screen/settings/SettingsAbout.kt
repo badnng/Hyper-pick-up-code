@@ -20,7 +20,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.Icons
@@ -54,6 +53,7 @@ import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsListItem
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
+import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.oobe.OobeCarvedLogoView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -364,11 +364,7 @@ private fun MiuixAboutPage(
             },
         ) { innerPadding ->
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            val surfaceForBackdrop = MiuixTheme.colorScheme.surface
-            val textBackdrop = top.yukonga.miuix.kmp.blur.rememberLayerBackdrop {
-                drawRect(surfaceForBackdrop)
-                drawContent()
-            }
+            val textBackdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
             val appPrefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
             var themeMode by remember { mutableStateOf(appPrefs.getString("theme_mode", "system") ?: "system") }
             DisposableEffect(appPrefs) {
@@ -460,7 +456,7 @@ private fun MiuixAboutPage(
                         state = lazyListState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+                            .miuixScrollModifiers(topAppBarScrollBehavior),
                         contentPadding = PaddingValues(
                             top = innerPadding.calculateTopPadding(),
                             bottom = innerPadding.calculateBottomPadding() + 32.dp,
@@ -713,47 +709,10 @@ private fun MiuixAboutPage(
 
         // BottomSheet 模糊背景（实时跟随 Sheet 拖拽进度）
         val animatedBlurAlpha = com.Badnng.moe.ui.component.BlurState.progress.floatValue
-        if (animatedBlurAlpha > 0.01f) {
-            if (sheetBackdrop != null) {
-                val blurPrefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-                var blurThemeMode by remember { mutableStateOf(blurPrefs.getString("theme_mode", "system") ?: "system") }
-                DisposableEffect(blurPrefs) {
-                    val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-                        if (key == "theme_mode") blurThemeMode = p.getString(key, "system") ?: "system"
-                    }
-                    blurPrefs.registerOnSharedPreferenceChangeListener(listener)
-                    onDispose { blurPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
-                }
-                val isInDark = when (blurThemeMode) {
-                    "light" -> false
-                    "dark" -> true
-                    else -> isSystemInDarkTheme()
-                }
-                val baseBrightness = if (isInDark) -0.3f else -0.5f
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .textureBlur(
-                            backdrop = sheetBackdrop,
-                            shape = RoundedCornerShape(0.dp),
-                            blurRadius = 56f * animatedBlurAlpha,
-                            colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
-                                brightness = baseBrightness * animatedBlurAlpha,
-                                contrast = 1f + 0.2f * animatedBlurAlpha,
-                                saturation = 1f + 0.08f * animatedBlurAlpha,
-                            ),
-                        )
-                        .graphicsLayer(alpha = animatedBlurAlpha)
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.32f * animatedBlurAlpha)),
-                )
-            }
-        }
+        com.Badnng.moe.ui.miuix.MiuixModalScrim(
+            backdrop = sheetBackdrop,
+            progress = animatedBlurAlpha,
+        )
     }
 }
 

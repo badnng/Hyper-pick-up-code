@@ -1,6 +1,5 @@
 package com.Badnng.moe.ui.miuix.effect
 
-import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import android.content.Context
@@ -14,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import com.Badnng.moe.ui.miuix.rememberMiuixVisualEffectsAllowed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
@@ -33,7 +33,9 @@ fun BgEffectBackground(
     alpha: () -> Float = { 1f },
     content: @Composable (BoxScope.() -> Unit),
 ) {
-    val shaderSupported = remember { isRuntimeShaderSupported() }
+    val visualEffectsAllowed = rememberMiuixVisualEffectsAllowed()
+    val runtimeShaderSupported = remember { isRuntimeShaderSupported() }
+    val shaderSupported = visualEffectsAllowed && runtimeShaderSupported
     if (!shaderSupported) {
         Box(modifier = modifier, content = content)
         return

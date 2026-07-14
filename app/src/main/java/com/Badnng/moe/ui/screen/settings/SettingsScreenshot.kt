@@ -105,7 +105,7 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
         if (isMiuix) {
             // ─── Miuix 模式 ───
             SmallTitle(text = "截图技术方案")
-            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp)) {
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 OverlayDropdownPreference(
                     title = "截图技术方案",
                     entries = listOf(
@@ -182,7 +182,11 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).alpha(if (noPromptEnabled) 1f else 0.5f)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp)
+                    .alpha(if (noPromptEnabled) 1f else 0.5f)
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -213,8 +217,6 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
 
             val shortcutEnabled = currentShortcutBackend != null
             MiuixCard(
@@ -248,7 +250,11 @@ fun ScreenshotSettingsContent(performHaptic: () -> Unit, topPadding: androidx.co
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).alpha(if (shortcutEnabled) 1f else 0.5f)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp)
+                    .alpha(if (shortcutEnabled) 1f else 0.5f)
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),

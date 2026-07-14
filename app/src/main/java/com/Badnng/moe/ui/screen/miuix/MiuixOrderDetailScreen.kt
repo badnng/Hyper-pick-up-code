@@ -6,8 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -20,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -41,6 +38,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import com.Badnng.moe.R
 import com.Badnng.moe.data.db.OrderEntity
+import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -51,6 +49,7 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 
@@ -85,7 +84,7 @@ fun MiuixOrderDetailScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+                .miuixScrollModifiers(topAppBarScrollBehavior)
                 .verticalScroll(rememberScrollState())
                 .padding(innerPadding)
         ) {
@@ -94,7 +93,7 @@ fun MiuixOrderDetailScreen(
             // 基本信息
             SmallTitle(text = "基本信息")
             Card(
-                modifier = Modifier.padding(horizontal = 12.dp),
+                modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
                 colors = CardDefaults.defaultColors(MiuixTheme.colorScheme.surfaceContainer)
             ) {
                 BasicComponent(
@@ -116,21 +115,16 @@ fun MiuixOrderDetailScreen(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
             // 原文记录
             SmallTitle(text = "原文记录")
-            Box(modifier = Modifier.padding(horizontal = 12.dp)) {
+            Box(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 MiuixFullTextCodeBlock(text = order.fullText)
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
 
             // 截图副本
             SmallTitle(text = "截图副本")
             Card(
-                modifier = Modifier.padding(horizontal = 12.dp),
+                modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
                 colors = CardDefaults.defaultColors(MiuixTheme.colorScheme.surfaceContainer)
             ) {
                 Column(
@@ -144,7 +138,7 @@ fun MiuixOrderDetailScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(400.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .squircleClip(12.dp)
                                 .clickable { showFullScreen = true },
                             contentScale = ContentScale.Fit
                         )

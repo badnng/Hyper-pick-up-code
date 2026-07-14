@@ -1,10 +1,12 @@
 package com.Badnng.moe.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -24,16 +26,31 @@ class SmsRecognitionService : Service() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, createNotification())
-
         val smsText = intent?.getStringExtra("smsText")
         val sender = intent?.getStringExtra("sender") ?: "未知"
+        val testMode = intent?.getBooleanExtra(EXTRA_TEST_MODE, false) == true
+
+        if (testMode && !canRunSmsTest()) {
+            Log.w("SmsRecognition", "测试短信被拒绝：短信识别未开启或权限不完整")
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
+        // 真实短信由广播在后台拉起，需要前台服务保证处理完成；设置页测试由前台
+        // Activity 主动触发，不创建“正在识别短信”的临时通知。
+        if (!testMode) {
+            startForeground(NOTIFICATION_ID, createNotification())
+        }
 
         if (!smsText.isNullOrBlank()) {
-            Log.d("SmsRecognition", "Service 开始处理短信：sender=$sender, length=${smsText.length}")
+            Log.d(
+                "SmsRecognition",
+                "Service 开始处理${if (testMode) "测试" else ""}短信：" +
+                    "sender=$sender, length=${smsText.length}",
+            )
             scope.launch {
                 try {
-                    processSms(smsText, sender)
+                    processSms(smsText, sender, forceOffline = testMode)
                 } catch (e: Exception) {
                     Log.e("SmsRecognition", "处理短信失败", e)
                 }
@@ -47,8 +64,18 @@ class SmsRecognitionService : Service() {
         return START_NOT_STICKY
     }
 
-    private suspend fun processSms(smsText: String, sender: String) {
-        val results = RecognitionRouter(applicationContext).recognizeText(smsText).orders
+    private suspend fun processSms(
+        smsText: String,
+        sender: String,
+        forceOffline: Boolean = false,
+    ) {
+        val router = RecognitionRouter(applicationContext)
+        val results = if (forceOffline) {
+            // 与“测试通知识别”一致，测试入口只验证本地识别链路，不消耗在线额度。
+            router.recognizeTextOffline(smsText)
+        } else {
+            router.recognizeText(smsText).orders
+        }
 
         Log.d("SmsRecognition", "识别结果：${results.size}个, codes=${results.map { it.code }}")
 
@@ -117,9 +144,18 @@ class SmsRecognitionService : Service() {
             .build()
     }
 
+    private fun canRunSmsTest(): Boolean {
+        val enabled = getSharedPreferences("settings", MODE_PRIVATE)
+            .getBoolean("sms_recognition_enabled", false)
+        return enabled &&
+            checkSelfPermission(Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        const val EXTRA_TEST_MODE = "smsRecognitionTestMode"
         private const val NOTIFICATION_ID = 1004
     }
 }
