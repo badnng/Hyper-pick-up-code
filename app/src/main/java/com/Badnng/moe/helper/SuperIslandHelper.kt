@@ -278,7 +278,7 @@ object SuperIslandHelper {
             }
 
             if (Build.VERSION.SDK_INT >= 35) {
-                notification.extras.putBoolean("android.requestPromotedOngoing", true)
+                notification.extras.putBoolean("android.requestPromotedOngoing", !isDeviceSupported(context))
             }
 
             nm.notify(999999, notification)
@@ -329,21 +329,11 @@ object SuperIslandHelper {
             .setContentText(contentText)
             .setSmallIcon(brandIcon(context, brandName) ?: Icon.createWithResource(context, iconRes))
             .setContentIntent(viewPendingIntent)
-            .setOngoing(true)
             .addExtras(picsBundle)
             .addExtras(actionsBundle)
             .build()
 
         notification.extras.putString("miui.focus.param", paramsJson)
-
-        if (Build.VERSION.SDK_INT >= 35) {
-            notification.extras.putBoolean("android.requestPromotedOngoing", true)
-            try {
-                if (Build.VERSION.SDK_INT >= 36)
-                    notification.extras.putString("android.shortCriticalText", " ${order.takeoutCode}")
-            } catch (_: Exception) {}
-        }
-
         return notification
     }
 
@@ -497,22 +487,12 @@ object SuperIslandHelper {
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentIntent(contentIntent)
             .setOnlyAlertOnce(true)
-            .setOngoing(true)
             .setProgress(100, percent, false)
             .addExtras(picsBundle)
             .addExtras(actionsBundle)
             .build()
 
         notification.extras.putString("miui.focus.param", paramsJson)
-
-        if (Build.VERSION.SDK_INT >= 35) {
-            notification.extras.putBoolean("android.requestPromotedOngoing", true)
-            try {
-                if (Build.VERSION.SDK_INT >= 36)
-                    notification.extras.putString("android.shortCriticalText", " $percent%")
-            } catch (_: Exception) {}
-        }
-
         return notification
     }
 
@@ -554,21 +534,11 @@ object SuperIslandHelper {
             .setContentText(contentText)
             .setSmallIcon(brandIcon(context, group.brandName) ?: Icon.createWithResource(context, iconRes))
             .setContentIntent(groupDetailPendingIntent)
-            .setOngoing(true)
             .addExtras(picsBundle)
             .addExtras(actionsBundle)
             .build()
 
         notification.extras.putString("miui.focus.param", paramsJson)
-
-        if (Build.VERSION.SDK_INT >= 35) {
-            notification.extras.putBoolean("android.requestPromotedOngoing", true)
-            try {
-                if (Build.VERSION.SDK_INT >= 36)
-                    notification.extras.putString("android.shortCriticalText", " ${orders.size}件")
-            } catch (_: Exception) {}
-        }
-
         return notification
     }
 }
