@@ -1,7 +1,7 @@
 {
-  "versionCode": 2026071311,
-  "versionName": "26.7.13.C01-Dev",
-  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n\n26.7.13.C01-Dev 版本更新如下：\n\n我们在这一版更新了 《澎湃记用户协议与隐私说明》\n更新后，联网更新开关将强制关闭，如需开启，需要同意《澎湃记用户协议与隐私说明》\n\n添加 在线识别功能，首批支持小米 MiMo、智谱开放平台、OpenAI、月之暗面、MiniMax五大AI模型供应商\n支持兼容第三方自定义模型供应商，支持OpenAI Responses API 与 OpenAI Chat Completions 请求协议*\n\n添加 用户协议与隐私说明，联网功能需要用户明确同意后才可启用\n添加 多模态模型在线获取、API 密钥加密保存与供应商使用说明\n添加 OOBE 识别方式选择与在线识别配置\n\n修复 组卡片内容错误显示到已完成订单的问题\n修复 通知订单快速查看背景显示异常的问题\n\n优化 底栏与主页工具栏在滚动浏览时的显示效果\n优化 输入法、提示框与系统手势区域的避让效果\n优化 BottomSheet 的模糊与显示效果（Miuix）\n优化 离线识别部分场景的精确度\n\n*需要《澎湃记用户协议与隐私说明》同意后才可使用",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.7.13.C01-Dev/app-release.apk",
-  "md5": "ead9d1c400037c765bd21aa3e3382290"
+  "versionCode": 2026071911,
+  "versionName": "26.7.19.C01-Dev",
+  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n\n26.7.13.C01-Dev 版本更新如下：\n\n我们在v26.7.13.C01-Dev之后的版本更新了 《澎湃记用户协议与隐私说明》\n更新后，联网更新开关将强制关闭，如需开启，需要同意《澎湃记用户协议与隐私说明》\n\n修复 BottomSheet 与订单快速查看背景遮罩显示异常的问题\n修复 其他窗口使用输入法时错误隐藏应用底栏的问题\n修复 Miuix 大标题收起后页面选项无法点击的问题\n修复 自定义规则重命名和删除操作无效的问题（Miuix）\n修复 部分弹窗关闭动画缺失的问题（Miuix）\n修复 小米超级岛与Live Update冲突的问题 （Pull Request #8）\n\n优化 在线识别供应商图标、API 密钥输入框及提示信息布局\n优化 弹窗、BottomSheet 和长按菜单的背景遮罩效果\n优化 iOS-like 悬浮底栏的长度及性能降级表现\n优化 MD3E UI在下载更新时的显示效果\n优化 订单与订单组的批量选择操作体验\n优化 OOBE 引导页面的整体交互效果\n优化 部分低性能设备UI的显示效果（Miuix）\n优化 Miuix 依赖至 0.9.3\n优化 识别相关场景数据\n优化 Miuix 相关UI排版\n优化 部分性能\n\n添加 对于大屏/折叠屏的二次深度适配（Miuix）\n添加 公平运行内存适配\n添加 无极窗口的适配",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.7.19.C01-Dev/app-release.apk",
+  "md5": "36a0fd1e9402b945da15579ddff902c6"
 }
