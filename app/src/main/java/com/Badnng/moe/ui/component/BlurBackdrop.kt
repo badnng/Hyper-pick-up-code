@@ -11,11 +11,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import com.Badnng.moe.ui.miuix.rememberMiuixBackdrop
 import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * BottomSheet 模糊背景遮罩
@@ -24,19 +22,16 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  */
 @Composable
 fun BlurBackdrop(show: Boolean) {
-    val blurSupported = isRuntimeShaderSupported()
-    val surfaceColor = MiuixTheme.colorScheme.surface
-    val backdrop = rememberLayerBackdrop {
-        drawRect(surfaceColor)
-        drawContent()
-    }
+    val backdrop = rememberMiuixBackdrop()
 
     val animatedAlpha by animateFloatAsState(
         targetValue = if (show) 1f else 0f,
         animationSpec = spring(dampingRatio = 0.9f, stiffness = 300f)
     )
 
-    if (animatedAlpha > 0f && blurSupported && backdrop != null) {
+    if (animatedAlpha <= 0f) return
+
+    if (backdrop != null) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -51,7 +46,13 @@ fun BlurBackdrop(show: Boolean) {
                         saturation = 1f + 0.08f * animatedAlpha,
                     ),
                 )
-                .graphicsLayer(alpha = animatedAlpha)
+                .graphicsLayer(alpha = animatedAlpha),
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF5A5A5A).copy(alpha = 0.36f * animatedAlpha)),
         )
     }
 }

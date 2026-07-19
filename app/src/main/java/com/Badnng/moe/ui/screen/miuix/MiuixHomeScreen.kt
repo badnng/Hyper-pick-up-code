@@ -4,18 +4,26 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -45,9 +53,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialTheme
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Sidebar
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.icon.extended.Home
@@ -64,6 +75,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
@@ -74,15 +87,24 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.scene.Scene
+import androidx.navigation3.scene.SceneStrategy
+import androidx.navigation3.scene.SceneStrategyScope
 import androidx.navigation3.ui.NavDisplay
 import androidx.navigation3.ui.NavDisplayTransitionEffects
+import androidx.navigation3.ui.defaultPopTransitionSpec
+import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
+import androidx.navigation3.ui.defaultTransitionSpec
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.data.db.OrderDatabase
@@ -95,8 +117,11 @@ import com.Badnng.moe.ui.screen.rememberSaveablePagerState
 import com.Badnng.moe.ui.screen.settings.SettingsPage
 import com.Badnng.moe.viewmodel.OrderViewModel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
@@ -112,10 +137,13 @@ import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.NavigationRail
 import top.yukonga.miuix.kmp.basic.NavigationRailItem
+import top.yukonga.miuix.kmp.basic.NavigationRailState
 import top.yukonga.miuix.kmp.basic.NavigationRailValue
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
+import top.yukonga.miuix.kmp.anim.folmeSpring
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -141,8 +169,14 @@ fun MiuixHomeScreen(
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    val configuration = LocalConfiguration.current
+    val isLargeScreenWindow = configuration.screenWidthDp >= MIUIX_LARGE_SCREEN_MIN_WIDTH_DP
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
-    var useFloatingNavBar by remember { mutableStateOf(prefs.getBoolean("use_floating_nav_bar", false)) }
+    // 大屏切换会改变 NavigationRail/NavDisplay 场景，只在下次主页加载时生效；
+    // 手机端仅切换底栏样式，可以直接响应偏好变化。
+    var useFloatingNavBar by remember(prefs) {
+        mutableStateOf(prefs.getBoolean("use_floating_nav_bar", false))
+    }
     var floatingNavBarStyle by remember {
         mutableStateOf(
             MiuixFloatingNavigationBarStyle.fromPreference(
@@ -155,11 +189,21 @@ fun MiuixHomeScreen(
         mutableStateOf(prefs.getBoolean("predictive_back_enabled", true))
     }
 
-    DisposableEffect(prefs) {
+    LaunchedEffect(isLargeScreenWindow) {
+        if (!isLargeScreenWindow) {
+            useFloatingNavBar = prefs.getBoolean("use_floating_nav_bar", false)
+        }
+    }
+
+    DisposableEffect(prefs, isLargeScreenWindow) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             when (key) {
                 "haptic_enabled" -> hapticEnabled = p.getBoolean(key, true)
-                "use_floating_nav_bar" -> useFloatingNavBar = p.getBoolean(key, false)
+                "use_floating_nav_bar" -> {
+                    if (!isLargeScreenWindow) {
+                        useFloatingNavBar = p.getBoolean(key, false)
+                    }
+                }
                 MIUIX_FLOATING_NAV_BAR_STYLE_KEY -> {
                     floatingNavBarStyle = MiuixFloatingNavigationBarStyle.fromPreference(
                         p.getString(key, null)
@@ -173,20 +217,67 @@ fun MiuixHomeScreen(
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
-    val backStack = remember { mutableStateListOf<HomeRoute>(HomeRoute.Main) }
+    val supportsNavigationRail =
+        isLargeScreenWindow && !useFloatingNavBar
+    val compactNavigationRail = supportsNavigationRail &&
+        configuration.screenWidthDp < MIUIX_FIXED_NAVIGATION_RAIL_MIN_WIDTH_DP
+    // 二级页在所有大屏侧栏模式下都与主内容并排。固定侧栏占一列形成三段式；
+    // 紧凑窗口的侧栏覆盖在主内容上，不占列宽，因此底层保持主内容/二级页两段式。
+    val supportsSupportingPane = supportsNavigationRail
+    val navigationRailState = rememberNavigationRailState(
+        initialValue = if (compactNavigationRail) {
+            NavigationRailValue.Collapsed
+        } else {
+            NavigationRailValue.Expanded
+        },
+    )
+    LaunchedEffect(supportsNavigationRail, compactNavigationRail) {
+        when {
+            !supportsNavigationRail -> navigationRailState.collapse()
+            compactNavigationRail -> navigationRailState.collapse()
+            else -> navigationRailState.expand()
+        }
+    }
 
-    val homeEntryProvider = remember(backStack) {
+    val backStack = remember { mutableStateListOf<HomeRoute>(HomeRoute.Main) }
+    val closeDetailPane = {
+        while (backStack.size > 1) backStack.removeLastOrNull()
+    }
+    // EntryProvider 必须跨窗口尺寸变化保持同一实例；第三段仍在退场时重建入口，
+    // 会让 SaveableStateHolder 同时注册两个相同的二级页 key。
+    val latestUseFloatingNavBar by rememberUpdatedState(useFloatingNavBar)
+    val latestHapticEnabled by rememberUpdatedState(hapticEnabled)
+    val latestFloatingNavBarStyle by rememberUpdatedState(floatingNavBarStyle)
+    val latestNavAlignment by rememberUpdatedState(navAlignment)
+    val latestCompactNavigationRail by rememberUpdatedState(compactNavigationRail)
+    val latestSupportsSupportingPane by rememberUpdatedState(supportsSupportingPane)
+    val latestModifier by rememberUpdatedState(modifier)
+    val latestIntentToProcess by rememberUpdatedState(intentToProcess)
+    val latestPagerState by rememberUpdatedState(pagerState)
+
+    val homeEntryProvider = remember(
+        backStack,
+        navigationRailState,
+    ) {
         entryProvider<NavKey> {
-            entry<HomeRoute.Main> {
+            entry<HomeRoute.Main>(
+                metadata = mapOf(MIUIX_PANE_ROLE_METADATA to MiuixHomePaneRole.Main),
+            ) {
                 MiuixMainContent(
-                    modifier = modifier,
-                    intentToProcess = intentToProcess,
-                    hapticEnabled = hapticEnabled,
-                    useFloatingNavBar = useFloatingNavBar,
-                    floatingNavBarStyle = floatingNavBarStyle,
-                    navAlignment = navAlignment,
+                    modifier = latestModifier,
+                    intentToProcess = latestIntentToProcess,
+                    hapticEnabled = latestHapticEnabled,
+                    useFloatingNavBar = latestUseFloatingNavBar,
+                    floatingNavBarStyle = latestFloatingNavBarStyle,
+                    navAlignment = latestNavAlignment,
                     allowAppExit = backStack.size == 1,
-                    externalPagerState = pagerState,
+                    navigationRailState = navigationRailState,
+                    compactNavigationRail = latestCompactNavigationRail,
+                    externalPagerState = latestPagerState,
+                    onTopLevelPageChanged = {
+                        // 主内容/二级页并排时只更新主内容，二级页保持原位。
+                        if (!latestSupportsSupportingPane) closeDetailPane()
+                    },
                     onNavigateToSettingsSubPage = { page ->
                         backStack.add(HomeRoute.SettingsSubPage(page))
                     },
@@ -198,16 +289,21 @@ fun MiuixHomeScreen(
                     }
                 )
             }
-            entry<HomeRoute.SettingsSubPage> { route ->
+            entry<HomeRoute.SettingsSubPage>(
+                metadata = mapOf(MIUIX_PANE_ROLE_METADATA to MiuixHomePaneRole.Detail),
+            ) { route ->
                 MiuixSettingsSubPageDirect(
                     page = route.page,
+                    supportingPane = latestSupportsSupportingPane,
                     onBack = { backStack.removeLastOrNull() },
                     onNavigate = { page ->
                         backStack.add(HomeRoute.SettingsSubPage(page))
                     }
                 )
             }
-            entry<HomeRoute.OrderDetail> { route ->
+            entry<HomeRoute.OrderDetail>(
+                metadata = mapOf(MIUIX_PANE_ROLE_METADATA to MiuixHomePaneRole.Detail),
+            ) { route ->
                 val context = LocalContext.current
                 val order = remember(route.orderId) {
                     runBlocking { OrderDatabase.getDatabase(context).orderDao().getOrderById(route.orderId) }
@@ -215,11 +311,14 @@ fun MiuixHomeScreen(
                 if (order != null) {
                     com.Badnng.moe.ui.screen.miuix.MiuixOrderDetailScreen(
                         order = order,
+                        supportingPane = latestSupportsSupportingPane,
                         onBack = { backStack.removeLastOrNull() }
                     )
                 }
             }
-            entry<HomeRoute.GroupDetail> { route ->
+            entry<HomeRoute.GroupDetail>(
+                metadata = mapOf(MIUIX_PANE_ROLE_METADATA to MiuixHomePaneRole.Detail),
+            ) { route ->
                 val context = LocalContext.current
                 val db = remember { OrderDatabase.getDatabase(context) }
                 val group = remember(route.groupId) {
@@ -236,6 +335,7 @@ fun MiuixHomeScreen(
                         orders = orders,
                         completedCount = completedCount,
                         totalCount = totalCount,
+                        supportingPane = latestSupportsSupportingPane,
                         onBack = { backStack.removeLastOrNull() },
                         onMarkAllCompleted = {
                             runBlocking {
@@ -256,13 +356,61 @@ fun MiuixHomeScreen(
         entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
         entryProvider = homeEntryProvider,
     )
-    val displayedEntries = if (predictiveBackEnabled) entries else entries.takeLast(1)
+    val displayedEntries = if (predictiveBackEnabled || supportsNavigationRail) {
+        entries
+    } else {
+        entries.takeLast(1)
+    }
+    val supportingPaneSceneStrategy = remember(supportsSupportingPane) {
+        MiuixSupportingPaneSceneStrategy(
+            enabled = supportsSupportingPane,
+        )
+    }
+    val navDisplayTransitionEffects = remember {
+        NavDisplayTransitionEffects(blockInputDuringTransition = true)
+    }
+    val standardTransitionSpec = remember { defaultTransitionSpec<NavKey>() }
+    val standardPopTransitionSpec = remember { defaultPopTransitionSpec<NavKey>() }
+    val standardPredictivePopTransitionSpec = remember {
+        defaultPredictivePopTransitionSpec<NavKey>()
+    }
+    // 始终保留同一个 NavDisplay。若按窗口形态切换两个 NavDisplay，旧场景退场与
+    // 新场景首帧会同时持有 Main/二级页，从而重复注册 SaveableState key。
     NavDisplay(
         entries = displayedEntries,
         onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
-        transitionEffects = remember {
-            NavDisplayTransitionEffects(blockInputDuringTransition = true)
+        sceneStrategies = listOf(supportingPaneSceneStrategy),
+        transitionSpec = {
+            val windowLayoutChanged =
+                initialState is MiuixSupportingPaneScene ||
+                    targetState is MiuixSupportingPaneScene
+            if (supportsSupportingPane || windowLayoutChanged) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                standardTransitionSpec.invoke(this)
+            }
         },
+        popTransitionSpec = {
+            val windowLayoutChanged =
+                initialState is MiuixSupportingPaneScene ||
+                    targetState is MiuixSupportingPaneScene
+            if (supportsSupportingPane || windowLayoutChanged) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                standardPopTransitionSpec.invoke(this)
+            }
+        },
+        predictivePopTransitionSpec = { progress ->
+            val windowLayoutChanged =
+                initialState is MiuixSupportingPaneScene ||
+                    targetState is MiuixSupportingPaneScene
+            if (supportsSupportingPane || windowLayoutChanged) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                standardPredictivePopTransitionSpec.invoke(this, progress)
+            }
+        },
+        transitionEffects = navDisplayTransitionEffects,
     )
 
     BackHandler(enabled = !predictiveBackEnabled && backStack.size > 1) {
@@ -270,6 +418,7 @@ fun MiuixHomeScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun MiuixMainContent(
     modifier: Modifier,
@@ -279,7 +428,10 @@ private fun MiuixMainContent(
     floatingNavBarStyle: MiuixFloatingNavigationBarStyle,
     navAlignment: String = "center",
     allowAppExit: Boolean,
+    navigationRailState: NavigationRailState,
+    compactNavigationRail: Boolean,
     externalPagerState: androidx.compose.foundation.pager.PagerState? = null,
+    onTopLevelPageChanged: (Int) -> Unit = {},
     onNavigateToSettingsSubPage: (SettingsPage) -> Unit,
     onNavigateToOrderDetail: (String) -> Unit = {},
     onNavigateToGroupDetail: (Long) -> Unit = {}
@@ -292,6 +444,9 @@ private fun MiuixMainContent(
         androidx.compose.runtime.derivedStateOf { pagerState.targetPage }
     }
     val coroutineScope = rememberCoroutineScope()
+    val motionScheme = MaterialTheme.motionScheme
+    val topLevelContentAlpha = remember { Animatable(1f) }
+    var topLevelTransitionJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val haptic = LocalHapticFeedback.current
     val viewModel: OrderViewModel = viewModel()
 
@@ -332,7 +487,7 @@ private fun MiuixMainContent(
     var showBottomSheet by remember { mutableStateOf(false) }
 
     val configuration = LocalConfiguration.current
-    val isLargeScreen = configuration.screenWidthDp >= 700
+    val isLargeScreen = configuration.screenWidthDp >= MIUIX_LARGE_SCREEN_MIN_WIDTH_DP
     // 大屏默认使用侧边导航；用户显式开启悬浮底栏时继续保留原有底栏样式。
     val useNavigationRail = isLargeScreen && !useFloatingNavBar
     val isIosLikeFloatingBar = floatingNavBarStyle == MiuixFloatingNavigationBarStyle.IosLike
@@ -373,6 +528,13 @@ private fun MiuixMainContent(
     val performHaptic = {
         if (hapticEnabled) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+    var previousTopLevelPage by remember { mutableIntStateOf(currentPage) }
+    LaunchedEffect(currentPage) {
+        if (currentPage != previousTopLevelPage) {
+            previousTopLevelPage = currentPage
+            onTopLevelPageChanged(currentPage)
         }
     }
 
@@ -466,14 +628,16 @@ private fun MiuixMainContent(
     )
     val sheetProgress = com.Badnng.moe.ui.component.BlurState.progress.floatValue
     val homeOverlayProgress = maxOf(sheetProgress, animatedMenuAlpha)
-    // NavigationRailState 是侧栏展开/完全收起的唯一状态源。
-    val navigationRailState = rememberNavigationRailState(
-        initialValue = NavigationRailValue.Expanded,
-    )
+    // NavigationRailState 由主页外层持有，窗口尺寸变化时仍使用同一个展开状态源。
     val navigationRailAvailable = useNavigationRail &&
         !isEditMode &&
         !isManaging
-    val navigationRailVisible = navigationRailAvailable && navigationRailState.isExpanded
+    val navigationRailExpanded = navigationRailAvailable && navigationRailState.isExpanded
+    LaunchedEffect(navigationRailAvailable, compactNavigationRail) {
+        if (!navigationRailAvailable && compactNavigationRail) {
+            navigationRailState.collapse()
+        }
+    }
     val onExpandNavigationRail: (() -> Unit)? = if (
         navigationRailAvailable && !navigationRailState.isExpanded
     ) {
@@ -483,6 +647,42 @@ private fun MiuixMainContent(
         }
     } else {
         null
+    }
+    BackHandler(
+        enabled = compactNavigationRail && navigationRailExpanded,
+    ) {
+        navigationRailState.collapse()
+    }
+    val navigateToTopLevelPage: (Int) -> Unit = { page ->
+        performHaptic()
+        if (compactNavigationRail) navigationRailState.collapse()
+        if (page != currentPage) {
+            onTopLevelPageChanged(page)
+            val previousTransition = topLevelTransitionJob
+            topLevelTransitionJob = coroutineScope.launch {
+                previousTransition?.cancelAndJoin()
+                topLevelContentAlpha.snapTo(1f)
+                if (useNavigationRail) {
+                    try {
+                        topLevelContentAlpha.animateTo(
+                            targetValue = 0f,
+                            animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                        )
+                        pagerState.scrollToPage(page)
+                        topLevelContentAlpha.animateTo(
+                            targetValue = 1f,
+                            animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                        )
+                    } finally {
+                        withContext(NonCancellable) {
+                            topLevelContentAlpha.snapTo(1f)
+                        }
+                    }
+                } else {
+                    pagerState.animateScrollToPage(page)
+                }
+            }
+        }
     }
 
     Box(
@@ -505,46 +705,13 @@ private fun MiuixMainContent(
                     },
                 ),
         ) {
-        AnimatedVisibility(
-            visible = navigationRailVisible,
-            enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
-            exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start),
-        ) {
-            NavigationRail(
+        if (navigationRailAvailable && !compactNavigationRail) {
+            MiuixHomeNavigationRail(
                 state = navigationRailState,
+                currentPage = currentPage,
+                onPageSelected = navigateToTopLevelPage,
                 modifier = Modifier.fillMaxHeight(),
-                color = MiuixTheme.colorScheme.surface,
-                expandContentDescription = "展开侧边导航",
-                collapseContentDescription = "收起侧边导航",
-            ) {
-                NavigationRailItem(
-                    selected = currentPage == 0,
-                    onClick = {
-                        performHaptic()
-                        coroutineScope.launch { pagerState.animateScrollToPage(0) }
-                    },
-                    icon = MiuixIcons.Regular.Home,
-                    label = "主页",
-                )
-                NavigationRailItem(
-                    selected = currentPage == 1,
-                    onClick = {
-                        performHaptic()
-                        coroutineScope.launch { pagerState.animateScrollToPage(1) }
-                    },
-                    icon = MiuixIcons.Regular.Edit,
-                    label = "规则",
-                )
-                NavigationRailItem(
-                    selected = currentPage == 2,
-                    onClick = {
-                        performHaptic()
-                        coroutineScope.launch { pagerState.animateScrollToPage(2) }
-                    },
-                    icon = MiuixIcons.Regular.Settings,
-                    label = "设置",
-                )
-            }
+            )
         }
 
         Box(
@@ -611,7 +778,10 @@ private fun MiuixMainContent(
             ) {
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = topLevelContentAlpha.value },
+                    userScrollEnabled = !useNavigationRail,
                     beyondViewportPageCount = 1 // 预加载相邻页面，减少切换时重组
                 ) { page ->
                     androidx.compose.runtime.key(page) {
@@ -688,19 +858,19 @@ private fun MiuixMainContent(
                 ) {
                     NavigationBarItem(
                         selected = currentPage == 0,
-                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
+                        onClick = { navigateToTopLevelPage(0) },
                         icon = MiuixIcons.Regular.Home,
                         label = "主页"
                     )
                     NavigationBarItem(
                         selected = currentPage == 1,
-                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
+                        onClick = { navigateToTopLevelPage(1) },
                         icon = MiuixIcons.Regular.Edit,
                         label = "规则"
                     )
                     NavigationBarItem(
                         selected = currentPage == 2,
-                        onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
+                        onClick = { navigateToTopLevelPage(2) },
                         icon = MiuixIcons.Regular.Settings,
                         label = "设置"
                     )
@@ -743,8 +913,7 @@ private fun MiuixMainContent(
                         items = navigationItems,
                         selectedIndex = navigationTargetPage,
                         onItemClick = { page ->
-                            performHaptic()
-                            coroutineScope.launch { pagerState.animateScrollToPage(page) }
+                            navigateToTopLevelPage(page)
                         },
                         backdrop = backdrop,
                         isBlurActive = blurEnabled,
@@ -811,19 +980,19 @@ private fun MiuixMainContent(
                     ) {
                         FloatingNavigationBarItem(
                             selected = currentPage == 0,
-                            onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
+                            onClick = { navigateToTopLevelPage(0) },
                             icon = MiuixIcons.Regular.Home,
                             label = "主页"
                         )
                         FloatingNavigationBarItem(
                             selected = currentPage == 1,
-                            onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
+                            onClick = { navigateToTopLevelPage(1) },
                             icon = MiuixIcons.Regular.Edit,
                             label = "规则"
                         )
                         FloatingNavigationBarItem(
                             selected = currentPage == 2,
-                            onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
+                            onClick = { navigateToTopLevelPage(2) },
                             icon = MiuixIcons.Regular.Settings,
                             label = "设置"
                         )
@@ -841,6 +1010,33 @@ private fun MiuixMainContent(
         )
         } // 内容 Box
         } // Row
+
+        // 窄大屏窗口使用叠加式 NavigationRail，避免展开/收起时改变 Pager 的可用宽度。
+        AnimatedVisibility(
+            visible = compactNavigationRail && navigationRailExpanded,
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.28f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { navigationRailState.collapse() },
+            )
+        }
+        if (compactNavigationRail && navigationRailAvailable) {
+            MiuixHomeNavigationRail(
+                state = navigationRailState,
+                currentPage = currentPage,
+                onPageSelected = navigateToTopLevelPage,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight(),
+            )
+        }
 
         // 主页模态层统一覆盖完整 Row，确保 BottomSheet 打开时底栏/侧边栏仍存在但不会漏在模糊上方。
         com.Badnng.moe.ui.miuix.MiuixModalScrim(
@@ -954,6 +1150,201 @@ private fun MiuixMainContent(
     } // 根层 Box
 }
 
+private const val MIUIX_LARGE_SCREEN_MIN_WIDTH_DP = 700
+private const val MIUIX_FIXED_NAVIGATION_RAIL_MIN_WIDTH_DP = 900
+private const val MIUIX_PANE_ROLE_METADATA = "miuix_home_pane_role"
+
+private enum class MiuixHomePaneRole {
+    Main,
+    Detail,
+}
+
+private data class MiuixSupportingPaneSceneKey(
+    val mainContentKey: Any,
+)
+
+private data class MiuixDetailPaneTarget(
+    val entry: NavEntry<NavKey>,
+    val depth: Int,
+)
+
+/**
+ * Miuix 大屏主内容/二级页场景。左侧 NavigationRail 仍由主入口负责，这里只把
+ * 主入口和最后一个二级入口排列为中、右两栏。
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+private class MiuixSupportingPaneScene(
+    private val mainEntry: NavEntry<NavKey>,
+    private val detailEntry: NavEntry<NavKey>?,
+    private val detailDepth: Int,
+    override val previousEntries: List<NavEntry<NavKey>>,
+) : Scene<NavKey> {
+    override val key: Any = MiuixSupportingPaneSceneKey(
+        mainContentKey = mainEntry.contentKey,
+    )
+    override val entries: List<NavEntry<NavKey>> = listOfNotNull(mainEntry, detailEntry)
+    override val content: @Composable () -> Unit = {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val motionScheme = MaterialTheme.motionScheme
+            // 与 Miuix NavigationRail 内部 RailExpandSpring 完全相同的阻尼和响应参数。
+            val navigationRailPaneSpatialSpec = remember {
+                folmeSpring(
+                    damping = 1f,
+                    response = 0.35f,
+                    visibilityThreshold = IntSize(1, 1),
+                )
+            }
+            // 右侧详情略宽于中间列表，同时给设置列表保留更舒展的可用宽度。
+            val detailPaneWidth = (maxWidth * 0.42f).coerceIn(360.dp, 600.dp)
+            val currentDetailTarget = detailEntry?.let {
+                MiuixDetailPaneTarget(entry = it, depth = detailDepth)
+            }
+            var retainedDetailTarget by remember { mutableStateOf(currentDetailTarget) }
+            if (currentDetailTarget != null) {
+                SideEffect { retainedDetailTarget = currentDetailTarget }
+            }
+            val renderedDetailTarget = currentDetailTarget ?: retainedDetailTarget
+            Row(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                ) {
+                    mainEntry.Content()
+                }
+                AnimatedVisibility(
+                    visible = currentDetailTarget != null,
+                    enter = expandHorizontally(
+                        animationSpec = navigationRailPaneSpatialSpec,
+                        expandFrom = Alignment.End,
+                    ),
+                    exit = shrinkHorizontally(
+                        animationSpec = navigationRailPaneSpatialSpec,
+                        shrinkTowards = Alignment.End,
+                    ),
+                ) {
+                    Row(modifier = Modifier.fillMaxHeight()) {
+                        Spacer(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .fillMaxHeight()
+                                .background(MiuixTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .width(detailPaneWidth)
+                                .fillMaxHeight()
+                                .background(MiuixTheme.colorScheme.surface),
+                        ) {
+                            renderedDetailTarget?.let { target ->
+                                AnimatedContent(
+                                    targetState = target,
+                                    contentKey = { it.entry.contentKey },
+                                    transitionSpec = {
+                                        val spatialSpec = motionScheme.defaultSpatialSpec<IntOffset>()
+                                        val effectsSpec = motionScheme.defaultEffectsSpec<Float>()
+                                        when {
+                                            targetState.depth > initialState.depth -> {
+                                                (slideInHorizontally(
+                                                    animationSpec = spatialSpec,
+                                                    initialOffsetX = { it },
+                                                ) + fadeIn(animationSpec = effectsSpec)) togetherWith
+                                                    (slideOutHorizontally(
+                                                        animationSpec = spatialSpec,
+                                                        targetOffsetX = { -it / 4 },
+                                                    ) + fadeOut(animationSpec = effectsSpec))
+                                            }
+                                            targetState.depth < initialState.depth -> {
+                                                (slideInHorizontally(
+                                                    animationSpec = spatialSpec,
+                                                    initialOffsetX = { -it / 4 },
+                                                ) + fadeIn(animationSpec = effectsSpec)) togetherWith
+                                                    (slideOutHorizontally(
+                                                        animationSpec = spatialSpec,
+                                                        targetOffsetX = { it },
+                                                    ) + fadeOut(animationSpec = effectsSpec))
+                                            }
+                                            else -> {
+                                                fadeIn(animationSpec = effectsSpec) togetherWith
+                                                    fadeOut(animationSpec = effectsSpec)
+                                            }
+                                        }
+                                    },
+                                    label = "miuixThirdPaneNavigation",
+                                ) { detailTarget ->
+                                    detailTarget.entry.Content()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private class MiuixSupportingPaneSceneStrategy(
+    private val enabled: Boolean,
+) : SceneStrategy<NavKey> {
+    override fun SceneStrategyScope<NavKey>.calculateScene(
+        entries: List<NavEntry<NavKey>>,
+    ): Scene<NavKey>? {
+        if (!enabled || entries.isEmpty()) return null
+        val mainEntry = entries.firstOrNull {
+            it.metadata[MIUIX_PANE_ROLE_METADATA] == MiuixHomePaneRole.Main
+        } ?: return null
+        val detailEntry = entries.lastOrNull {
+            it.metadata[MIUIX_PANE_ROLE_METADATA] == MiuixHomePaneRole.Detail
+        }
+        val detailDepth = entries.indexOfLast {
+            it.metadata[MIUIX_PANE_ROLE_METADATA] == MiuixHomePaneRole.Detail
+        }.coerceAtLeast(0)
+        return MiuixSupportingPaneScene(
+            mainEntry = mainEntry,
+            detailEntry = detailEntry,
+            detailDepth = detailDepth,
+            previousEntries = if (detailEntry != null) entries.dropLast(1) else emptyList(),
+        )
+    }
+}
+
+@Composable
+private fun MiuixHomeNavigationRail(
+    state: NavigationRailState,
+    currentPage: Int,
+    onPageSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    NavigationRail(
+        state = state,
+        modifier = modifier,
+        color = MiuixTheme.colorScheme.surface,
+        showDivider = state.isExpanded,
+        minWidth = 0.dp,
+        expandContentDescription = "展开侧边导航",
+        collapseContentDescription = "收起侧边导航",
+    ) {
+        NavigationRailItem(
+            selected = currentPage == 0,
+            onClick = { onPageSelected(0) },
+            icon = MiuixIcons.Regular.Home,
+            label = "主页",
+        )
+        NavigationRailItem(
+            selected = currentPage == 1,
+            onClick = { onPageSelected(1) },
+            icon = MiuixIcons.Regular.Edit,
+            label = "规则",
+        )
+        NavigationRailItem(
+            selected = currentPage == 2,
+            onClick = { onPageSelected(2) },
+            icon = MiuixIcons.Regular.Settings,
+            label = "设置",
+        )
+    }
+}
+
 @Composable
 internal fun MiuixNavigationRailExpandButton(
     onClick: () -> Unit,
@@ -987,7 +1378,8 @@ private fun NavigationOverlayVisibility(
 private fun MiuixSettingsSubPageDirect(
     page: SettingsPage,
     onBack: () -> Unit,
-    onNavigate: (SettingsPage) -> Unit = {}
+    onNavigate: (SettingsPage) -> Unit = {},
+    supportingPane: Boolean = false,
 ) {
     val title = when (page) {
         SettingsPage.Preference -> "偏好设置"
@@ -1000,6 +1392,7 @@ private fun MiuixSettingsSubPageDirect(
         SettingsPage.Sponsor -> "赞助"
         SettingsPage.NotificationApps -> "通知识别应用管理"
         SettingsPage.Credits -> "致谢"
+        SettingsPage.Developer -> "开发者选项"
         SettingsPage.Main -> ""
     }
 
@@ -1026,7 +1419,9 @@ private fun MiuixSettingsSubPageDirect(
             topPadding = 0.dp,
             scrollState = androidx.compose.foundation.rememberScrollState(),
             onNavigateToCredits = { onNavigate(SettingsPage.Credits) },
-            onBack = onBack
+            onNavigateToDeveloperOptions = { onNavigate(SettingsPage.Developer) },
+            onBack = onBack,
+            supportingPane = supportingPane,
         )
     } else {
         // 独立采样整个页面（包含状态栏与 TopAppBar），供 BottomSheet 遮罩使用。
@@ -1053,8 +1448,12 @@ private fun MiuixSettingsSubPageDirect(
                             navigationIcon = {
                                 IconButton(onClick = onBack) {
                                     Icon(
-                                        MiuixIcons.Regular.Back,
-                                        contentDescription = "返回"
+                                        if (supportingPane) {
+                                            MiuixIcons.Regular.Close
+                                        } else {
+                                            MiuixIcons.Regular.Back
+                                        },
+                                        contentDescription = if (supportingPane) "关闭" else "返回",
                                     )
                                 }
                             },
@@ -1100,6 +1499,7 @@ private fun MiuixSettingsSubPageDirect(
                                     showSystemApps = showSystemApps
                                 )
                                 SettingsPage.Credits -> com.Badnng.moe.ui.screen.settings.CreditsSettingsContent(performHaptic, topBarHeight, scrollState)
+                                SettingsPage.Developer -> com.Badnng.moe.ui.screen.settings.DeveloperSettingsContent(performHaptic, topBarHeight, scrollState)
                                 SettingsPage.Main -> {}
                                 else -> {}
                             }

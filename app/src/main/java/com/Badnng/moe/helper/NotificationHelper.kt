@@ -270,14 +270,15 @@ class NotificationHelper(private val context: Context) {
     private var lastNotifyTime = 0L
     private var lastNotifyPercent = -1
 
-    fun showUpdateDownloadNotification(versionName: String, progress: Float, isPaused: Boolean = false) {
+    fun showUpdateDownloadNotification(versionName: String, progress: Float?, isPaused: Boolean = false) {
         val now = System.currentTimeMillis()
-        val clampedProgress = progress.coerceIn(0f, 1f)
-        val percent = (clampedProgress * 100).toInt()
+        val clampedProgress = progress?.coerceIn(0f, 1f)
+        val percent = clampedProgress?.let { (it * 100).toInt() }
+        val progressKey = percent ?: -1
         // 限流：每 500ms 或进度变化 1% 才更新通知
-        if (!isPaused && now - lastNotifyTime < 500 && percent == lastNotifyPercent) return
+        if (!isPaused && now - lastNotifyTime < 500 && progressKey == lastNotifyPercent) return
         lastNotifyTime = now
-        lastNotifyPercent = percent
+        lastNotifyPercent = progressKey
 
         val contentIntent = PendingIntent.getActivity(
             context,
@@ -289,12 +290,12 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = if (isIslandMode()) {
+        val notification = if (isIslandMode() && clampedProgress != null) {
             SuperIslandHelper.buildUpdateDownloadNotification(
                 context = context,
                 channelId = updateChannelId,
                 versionName = versionName,
-                progress = progress,
+                progress = clampedProgress,
                 isPaused = isPaused,
                 contentIntent = contentIntent,
                 pauseResumeIntent = null
@@ -302,12 +303,14 @@ class NotificationHelper(private val context: Context) {
         } else {
             val builder = Notification.Builder(context, updateChannelId)
                 .setContentTitle(if (isPaused) "更新下载已暂停" else "正在后台下载更新")
-                .setContentText("v$versionName  $percent%")
+                .setContentText(
+                    if (percent == null) "v$versionName  正在连接下载服务器" else "v$versionName  $percent%"
+                )
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setOnlyAlertOnce(true)
                 .setOngoing(true)
                 .setContentIntent(contentIntent)
-                .setProgress(100, percent, false)
+                .setProgress(100, percent ?: 0, percent == null)
 
             if (Build.VERSION.SDK_INT >= 35) {
                 val extras = Bundle()

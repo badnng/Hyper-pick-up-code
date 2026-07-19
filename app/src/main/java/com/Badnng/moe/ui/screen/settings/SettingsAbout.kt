@@ -58,7 +58,6 @@ import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.oobe.OobeCarvedLogoView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicBoolean
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
 import top.yukonga.miuix.kmp.basic.ButtonDefaults as MiuixButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -70,13 +69,17 @@ import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Update
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+private const val DEVELOPER_OPTIONS_TAP_THRESHOLD = 7
+
 @Composable
-fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose.ui.unit.Dp = 0.dp, scrollState: androidx.compose.foundation.ScrollState = androidx.compose.foundation.rememberScrollState(), onNavigateToCredits: () -> Unit = {}, scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior? = null, onBack: () -> Unit = {}) {
+fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose.ui.unit.Dp = 0.dp, scrollState: androidx.compose.foundation.ScrollState = androidx.compose.foundation.rememberScrollState(), onNavigateToCredits: () -> Unit = {}, onNavigateToDeveloperOptions: () -> Unit = {}, scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior? = null, onBack: () -> Unit = {}, supportingPane: Boolean = false) {
     val context = LocalContext.current
+    val appContext = context.applicationContext
     val uriHandler = LocalUriHandler.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     val versionName = remember { getVersionName(context) }
@@ -86,16 +89,27 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
     var showProgressDialog by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var downloadProgress by remember { mutableStateOf<Float?>(null) }
-    var isPaused by remember { mutableStateOf(false) }
-    val pausedFlag = remember { AtomicBoolean(false) }
+    var isPaused by remember { mutableStateOf(UpdateHelper.isPaused) }
     var isChecking by remember { mutableStateOf(false) }
-    var iconTapCount by remember { mutableIntStateOf(0) }
+    var isStartingDownload by remember { mutableStateOf(false) }
+    var versionTapCount by remember { mutableIntStateOf(0) }
     var showPrivacyPolicy by remember { mutableStateOf(false) }
     var privacyAccepted by remember { mutableStateOf(PrivacyConsent.isAccepted(prefs)) }
 
     val coroutineScope = rememberCoroutineScope()
-    val notificationHelper = remember { NotificationHelper(context) }
+    val notificationHelper = remember(appContext) { NotificationHelper(appContext) }
     val isMiuix = rememberMiuixStyle()
+    val onVersionTap = {
+        performHaptic()
+        val nextCount = versionTapCount + 1
+        if (nextCount >= DEVELOPER_OPTIONS_TAP_THRESHOLD) {
+            versionTapCount = 0
+            Toast.makeText(context, "已进入开发者选项", Toast.LENGTH_SHORT).show()
+            onNavigateToDeveloperOptions()
+        } else {
+            versionTapCount = nextCount
+        }
+    }
 
     // 从更新下载通知进入时，自动弹出更新进度弹窗
     LaunchedEffect(Unit) {
@@ -104,6 +118,7 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
             if (UpdateHelper.isDownloading && UpdateHelper.currentDownloadingVersion != null) {
                 updateInfo = UpdateHelper.currentDownloadingVersion
                 downloadProgress = UpdateHelper.currentProgress
+                isPaused = UpdateHelper.isPaused
                 showProgressDialog = true
             }
         }
@@ -114,23 +129,32 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
 
     val checkUpdateAction: () -> Unit = {
         performHaptic()
-        isChecking = true
-        coroutineScope.launch {
-            val info = UpdateHelper.checkUpdate(updateChannel == "dev")
-            isChecking = false
-            if (info != null) {
-                val localVersion = UpdateHelper.getCurrentVersionCode(context)
-                if (info.versionCode > localVersion) {
-                    updateInfo = info
-                    if (UpdateHelper.isDownloading && UpdateHelper.currentDownloadingVersion?.versionCode == info.versionCode) {
-                        showProgressDialog = true
-                    } else if (UpdateHelper.downloadedFile != null && UpdateHelper.downloadedFile!!.exists()) {
-                        UpdateHelper.installUpdate(context, UpdateHelper.downloadedFile!!)
+        if (!isChecking) {
+            isChecking = true
+            coroutineScope.launch {
+                val info = UpdateHelper.checkUpdate(updateChannel == "dev")
+                isChecking = false
+                if (info != null) {
+                    val localVersion = UpdateHelper.getCurrentVersionCode(context)
+                    if (info.versionCode > localVersion) {
+                        updateInfo = info
+                        if (UpdateHelper.isDownloading) {
+                            if (UpdateHelper.currentDownloadingVersion?.versionCode == info.versionCode) {
+                                downloadProgress = UpdateHelper.currentProgress
+                                isPaused = UpdateHelper.isPaused
+                                showProgressDialog = true
+                            } else {
+                                Toast.makeText(context, "已有其他版本正在下载", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            // 缓存 APK 也必须先由用户确认，不能在检查更新后直接唤起安装器。
+                            showUpdateDialog = true
+                        }
                     } else {
-                        showUpdateDialog = true
+                        UpdateHelper.showNoUpdateToast(context)
                     }
                 } else {
-                    UpdateHelper.showNoUpdateToast(context)
+                    Toast.makeText(context, "检查更新失败，请稍后重试", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -146,12 +170,12 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
             performHaptic = performHaptic,
             topPadding = topPadding,
             scrollState = scrollState,
-            iconTapCount = iconTapCount,
-            onIconTap = { iconTapCount = it },
+            onVersionTap = onVersionTap,
             onNavigateToCredits = onNavigateToCredits,
             privacyAccepted = privacyAccepted,
             onShowPrivacyPolicy = { showPrivacyPolicy = true },
-            onBack = onBack
+            onBack = onBack,
+            supportingPane = supportingPane,
         )
     } else {
         Md3eAboutPage(
@@ -163,8 +187,7 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
             performHaptic = performHaptic,
             topPadding = topPadding,
             scrollState = scrollState,
-            iconTapCount = iconTapCount,
-            onIconTap = { iconTapCount = it },
+            onVersionTap = onVersionTap,
             privacyAccepted = privacyAccepted,
             onShowPrivacyPolicy = { showPrivacyPolicy = true },
         )
@@ -213,26 +236,60 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
             updateInfo = info,
             onDismiss = { showUpdateDialog = false },
             onInstall = {
-                showUpdateDialog = false
-                showProgressDialog = true
-                downloadProgress = null
-                isPaused = false
-                pausedFlag.set(false)
-                prefs.edit().putBoolean("show_update_download", true).apply()
-                coroutineScope.launch {
-                    val file = UpdateHelper.downloadUpdate(
-                        context = context,
-                        updateInfo = info,
-                        onProgress = {
-                            downloadProgress = it
-                            notificationHelper.showUpdateDownloadNotification(info.versionName, it, pausedFlag.get())
-                        },
-                        isPaused = { pausedFlag.get() }
-                    )
-                    showProgressDialog = false
-                    notificationHelper.cancelUpdateDownloadNotification()
-                    if (file != null) {
-                        UpdateHelper.installUpdate(context, file)
+                if (!isStartingDownload) {
+                    showUpdateDialog = false
+                    val cachedFile = UpdateHelper.getDownloadedFile(info)
+                    if (cachedFile != null) {
+                        UpdateHelper.installUpdate(appContext, cachedFile)
+                    } else if (UpdateHelper.isDownloading) {
+                        if (UpdateHelper.currentDownloadingVersion?.versionCode == info.versionCode) {
+                            downloadProgress = UpdateHelper.currentProgress
+                            isPaused = UpdateHelper.isPaused
+                            showProgressDialog = true
+                        } else {
+                            Toast.makeText(context, "已有其他版本正在下载", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        isStartingDownload = true
+                        showProgressDialog = true
+                        downloadProgress = null
+                        isPaused = false
+                        prefs.edit().putBoolean("show_update_download", true).apply()
+                        notificationHelper.showUpdateDownloadNotification(info.versionName, null, false)
+                        val started = UpdateHelper.startDownload(
+                            context = appContext,
+                            updateInfo = info,
+                            onProgress = {
+                                notificationHelper.showUpdateDownloadNotification(
+                                    info.versionName,
+                                    it,
+                                    UpdateHelper.isPaused,
+                                )
+                            },
+                            onComplete = { file ->
+                                isStartingDownload = false
+                                showProgressDialog = false
+                                isPaused = false
+                                prefs.edit().putBoolean("show_update_download", false).apply()
+                                notificationHelper.cancelUpdateDownloadNotification()
+                                if (file != null) {
+                                    UpdateHelper.installUpdate(appContext, file)
+                                } else {
+                                    Toast.makeText(
+                                        appContext,
+                                        "下载失败：${UpdateHelper.lastDownloadError ?: "请稍后重试"}",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            },
+                        )
+                        if (!started) {
+                            isStartingDownload = false
+                            showProgressDialog = false
+                            prefs.edit().putBoolean("show_update_download", false).apply()
+                            notificationHelper.cancelUpdateDownloadNotification()
+                            Toast.makeText(context, "已有更新正在下载", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -241,9 +298,11 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
 
     // 下载进度弹窗
     if (showProgressDialog) {
-        LaunchedEffect(Unit) {
-            while (showProgressDialog && UpdateHelper.isDownloading) {
+        LaunchedEffect(showProgressDialog, isStartingDownload) {
+            while (showProgressDialog) {
                 downloadProgress = UpdateHelper.currentProgress
+                isPaused = UpdateHelper.isPaused
+                if (!isStartingDownload && !UpdateHelper.isDownloading) break
                 kotlinx.coroutines.delay(200)
             }
         }
@@ -256,17 +315,17 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
             isPaused = isPaused,
             onPause = {
                 isPaused = true
-                pausedFlag.set(true)
-                notificationHelper.showUpdateDownloadNotification(info.versionName, downloadProgress ?: 0f, true)
+                UpdateHelper.pauseDownload()
+                notificationHelper.showUpdateDownloadNotification(info.versionName, downloadProgress, true)
             },
             onResume = {
                 isPaused = false
-                pausedFlag.set(false)
-                notificationHelper.showUpdateDownloadNotification(info.versionName, downloadProgress ?: 0f, false)
+                UpdateHelper.resumeDownload()
+                notificationHelper.showUpdateDownloadNotification(info.versionName, downloadProgress, false)
             },
             onDismiss = {
                 showProgressDialog = false
-                notificationHelper.showUpdateDownloadNotification(info.versionName, downloadProgress ?: 0f, isPaused)
+                notificationHelper.showUpdateDownloadNotification(info.versionName, downloadProgress, isPaused)
             }
         )
     }
@@ -290,18 +349,24 @@ private fun MiuixAboutPage(
     performHaptic: () -> Unit,
     topPadding: androidx.compose.ui.unit.Dp,
     scrollState: androidx.compose.foundation.ScrollState,
-    iconTapCount: Int,
-    onIconTap: (Int) -> Unit,
+    onVersionTap: () -> Unit,
     onNavigateToCredits: () -> Unit,
     privacyAccepted: Boolean,
     onShowPrivacyPolicy: () -> Unit,
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    supportingPane: Boolean = false,
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val topAppBarScrollBehavior = top.yukonga.miuix.kmp.basic.MiuixScrollBehavior()
     val lazyListState = rememberLazyListState()
     val density = LocalDensity.current
+    val logoTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 120.dp
+    val versionFadeEndPx = with(density) { 56.dp.toPx() }
+    val nameFadeStartPx = with(density) { 48.dp.toPx() }
+    val nameFadeEndPx = with(density) { 112.dp.toPx() }
+    val iconFadeStartPx = with(density) { 96.dp.toPx() }
+    val iconFadeEndPx = with(density) { 176.dp.toPx() }
 
     var logoHeightDp by remember { mutableStateOf(300.dp) }
 
@@ -325,6 +390,77 @@ private fun MiuixAboutPage(
     val sheetBackdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
     val collapsed by remember { derivedStateOf { scrollProgress == 1f } }
     val blurActive by remember(backdrop) { derivedStateOf { backdrop != null && scrollProgress == 1f } }
+    val aboutTopBar: @Composable () -> Unit = {
+        val barColor = if (blurActive) {
+            Color.Transparent
+        } else {
+            if (collapsed) MiuixTheme.colorScheme.surface else Color.Transparent
+        }
+        val titleColor = MiuixTheme.colorScheme.onSurface.copy(
+            alpha = ((scrollProgress - 0.35f) / 0.65f).coerceIn(0f, 1f),
+        )
+        val topBarContent: @Composable () -> Unit = {
+            top.yukonga.miuix.kmp.basic.SmallTopAppBar(
+                title = "关于",
+                scrollBehavior = topAppBarScrollBehavior,
+                color = barColor,
+                titleColor = titleColor,
+                defaultWindowInsetsPadding = false,
+                navigationIcon = {
+                    top.yukonga.miuix.kmp.basic.IconButton(onClick = {
+                        performHaptic()
+                        onBack()
+                    }) {
+                        top.yukonga.miuix.kmp.basic.Icon(
+                            if (supportingPane) {
+                                MiuixIcons.Regular.Close
+                            } else {
+                                MiuixIcons.Regular.Back
+                            },
+                            contentDescription = if (supportingPane) "关闭" else "返回",
+                        )
+                    }
+                },
+            )
+        }
+
+        if (!collapsed) {
+            // 首屏只覆盖透明导航按钮，让动态背景延伸到页面顶部。
+            topBarContent()
+        } else {
+            com.Badnng.moe.ui.miuix.MiuixBlurredBar(
+                backdrop = backdrop,
+                blurEnabled = blurActive,
+                content = topBarContent,
+            )
+        }
+    }
+    val headerScrollOffsetPx by remember {
+        derivedStateOf {
+            if (lazyListState.firstVisibleItemIndex > 0) {
+                Float.POSITIVE_INFINITY
+            } else {
+                lazyListState.firstVisibleItemScrollOffset.toFloat()
+            }
+        }
+    }
+    val versionFadeProgress by remember(versionFadeEndPx) {
+        derivedStateOf {
+            (headerScrollOffsetPx / versionFadeEndPx).coerceIn(0f, 1f)
+        }
+    }
+    val nameFadeProgress by remember(nameFadeStartPx, nameFadeEndPx) {
+        derivedStateOf {
+            ((headerScrollOffsetPx - nameFadeStartPx) / (nameFadeEndPx - nameFadeStartPx))
+                .coerceIn(0f, 1f)
+        }
+    }
+    val iconFadeProgress by remember(iconFadeStartPx, iconFadeEndPx) {
+        derivedStateOf {
+            ((headerScrollOffsetPx - iconFadeStartPx) / (iconFadeEndPx - iconFadeStartPx))
+                .coerceIn(0f, 1f)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         top.yukonga.miuix.kmp.basic.Scaffold(
@@ -333,36 +469,7 @@ private fun MiuixAboutPage(
                 .then(
                     if (sheetBackdrop != null) Modifier.layerBackdrop(sheetBackdrop) else Modifier,
                 ),
-            topBar = {
-            val barColor = if (blurActive) {
-                Color.Transparent
-            } else {
-                if (collapsed) MiuixTheme.colorScheme.surface else Color.Transparent
-            }
-            val titleColor = MiuixTheme.colorScheme.onSurface.copy(
-                alpha = ((scrollProgress - 0.35f) / 0.65f).coerceIn(0f, 1f),
-            )
-            com.Badnng.moe.ui.miuix.MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
-                top.yukonga.miuix.kmp.basic.SmallTopAppBar(
-                    title = "关于",
-                    scrollBehavior = topAppBarScrollBehavior,
-                    color = barColor,
-                    titleColor = titleColor,
-                    defaultWindowInsetsPadding = false,
-                    navigationIcon = {
-                        top.yukonga.miuix.kmp.basic.IconButton(onClick = {
-                            performHaptic()
-                            onBack()
-                        }) {
-                            top.yukonga.miuix.kmp.basic.Icon(
-                                MiuixIcons.Regular.Back,
-                                contentDescription = "返回",
-                            )
-                        }
-                    },
-                )
-            }
-            },
+            topBar = { aboutTopBar() },
         ) { innerPadding ->
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
             val textBackdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
@@ -565,7 +672,7 @@ private fun MiuixAboutPage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(
-                                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 120.dp,
+                                top = logoTopPadding,
                                 start = 16.dp,
                                 end = 16.dp,
                             )
@@ -580,22 +687,11 @@ private fun MiuixAboutPage(
                             modifier = Modifier
                                 .size(88.dp)
                                 .graphicsLayer {
-                                    val iconProgress = ((scrollProgress - 0.35f) / 0.15f).coerceIn(0f, 1f)
                                     clip = true
                                     shape = RoundedCornerShape(24.dp)
-                                    alpha = 1f - iconProgress
-                                    scaleX = 1f - (iconProgress * 0.05f)
-                                    scaleY = 1f - (iconProgress * 0.05f)
-                                }
-                                .clickable(
-                                    indication = null,
-                                    interactionSource = remember { MutableInteractionSource() }
-                                ) {
-                                    onIconTap(iconTapCount + 1)
-                                    if (iconTapCount + 1 >= 10) {
-                                        onIconTap(0)
-                                        throw RuntimeException("Test crash triggered from About icon")
-                                    }
+                                    alpha = 1f - iconFadeProgress
+                                    scaleX = 1f - (iconFadeProgress * 0.05f)
+                                    scaleY = 1f - (iconFadeProgress * 0.05f)
                                 }
                         ) {
                             val fallbackLogoColor = MiuixTheme.colorScheme.onBackground.toArgb()
@@ -636,10 +732,9 @@ private fun MiuixAboutPage(
                             modifier = Modifier
                                 .padding(top = 12.dp, bottom = 5.dp)
                                 .graphicsLayer {
-                                    val nameProgress = ((scrollProgress - 0.20f) / 0.15f).coerceIn(0f, 1f)
-                                    alpha = 1f - nameProgress
-                                    scaleX = 1f - (nameProgress * 0.05f)
-                                    scaleY = 1f - (nameProgress * 0.05f)
+                                    alpha = 1f - nameFadeProgress
+                                    scaleX = 1f - (nameFadeProgress * 0.05f)
+                                    scaleY = 1f - (nameFadeProgress * 0.05f)
                                 }
                                 .then(
                                     if (textBackdrop != null) {
@@ -665,11 +760,16 @@ private fun MiuixAboutPage(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .graphicsLayer {
-                                    val versionProgress = ((scrollProgress - 0.05f) / 0.15f).coerceIn(0f, 1f)
-                                    alpha = 1f - versionProgress
-                                    scaleX = 1f - (versionProgress * 0.05f)
-                                    scaleY = 1f - (versionProgress * 0.05f)
-                                },
+                                    alpha = 1f - versionFadeProgress
+                                    scaleX = 1f - (versionFadeProgress * 0.05f)
+                                    scaleY = 1f - (versionFadeProgress * 0.05f)
+                                }
+                                .clickable(
+                                    enabled = versionFadeProgress < 0.95f,
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    onClick = onVersionTap,
+                                ),
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             text = "v$versionName ($versionCode)",
                             fontSize = 14.sp,
@@ -683,10 +783,9 @@ private fun MiuixAboutPage(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .graphicsLayer {
-                                        val btnProgress = ((scrollProgress - 0.0f) / 0.15f).coerceIn(0f, 1f)
-                                        alpha = 1f - btnProgress
-                                        scaleX = 1f - (btnProgress * 0.05f)
-                                        scaleY = 1f - (btnProgress * 0.05f)
+                                        alpha = 1f - versionFadeProgress
+                                        scaleX = 1f - (versionFadeProgress * 0.05f)
+                                        scaleY = 1f - (versionFadeProgress * 0.05f)
                                     },
                                 enabled = !isChecking,
                                 colors = MiuixButtonDefaults.buttonColorsPrimary()
@@ -731,8 +830,7 @@ private fun Md3eAboutPage(
     performHaptic: () -> Unit,
     topPadding: androidx.compose.ui.unit.Dp,
     scrollState: androidx.compose.foundation.ScrollState,
-    iconTapCount: Int,
-    onIconTap: (Int) -> Unit,
+    onVersionTap: () -> Unit,
     privacyAccepted: Boolean,
     onShowPrivacyPolicy: () -> Unit,
 ) {
@@ -754,17 +852,7 @@ private fun Md3eAboutPage(
         // 图标
         Surface(
             modifier = Modifier
-                .size(86.dp)
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) {
-                    onIconTap(iconTapCount + 1)
-                    if (iconTapCount + 1 >= 10) {
-                        onIconTap(0)
-                        throw RuntimeException("Test crash triggered from About icon")
-                    }
-                },
+                .size(86.dp),
             shape = RoundedCornerShape(22.dp),
             color = MaterialTheme.colorScheme.primaryContainer,
             shadowElevation = 4.dp
@@ -782,7 +870,16 @@ private fun Md3eAboutPage(
 
         Spacer(Modifier.height(16.dp))
         Text(text = "澎湃记", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
-        Text(text = "版本 $versionName ($versionCode)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+        Text(
+            text = "版本 $versionName ($versionCode)",
+            modifier = Modifier.clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onVersionTap,
+            ),
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        )
 
         Spacer(Modifier.height(24.dp))
 

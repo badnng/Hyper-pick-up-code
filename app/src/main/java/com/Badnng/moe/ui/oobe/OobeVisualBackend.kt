@@ -18,6 +18,8 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import com.Badnng.moe.helper.AppMemoryPressureState
+import com.Badnng.moe.ui.miuix.MiuixVisualEffectsPolicy
 import java.lang.reflect.Method
 import java.util.Locale
 
@@ -30,8 +32,15 @@ internal enum class OobeVisualBackend {
 @Composable
 internal fun rememberOobeVisualBackend(): MutableState<OobeVisualBackend> {
     val context = LocalContext.current
-    return remember(context.applicationContext) {
-        mutableStateOf(OobeVisualBackendResolver.resolve(context.applicationContext))
+    val memoryPressureActive = AppMemoryPressureState.active
+    return remember(context.applicationContext, memoryPressureActive) {
+        mutableStateOf(
+            if (memoryPressureActive) {
+                OobeVisualBackend.StaticFallback
+            } else {
+                OobeVisualBackendResolver.resolve(context.applicationContext)
+            },
+        )
     }
 }
 
@@ -63,8 +72,15 @@ internal object OobeVisualBackendResolver {
         if (!ValueAnimator.areAnimatorsEnabled() || !supportsRuntimeShader()) {
             return OobeVisualBackend.StaticFallback
         }
+        // 与应用内 Miuix 使用同一性能策略。Lite/低内存设备直接使用 HyperCeiler
+        // 同款静态降级资源，避免背景已降级、图标却仍按白色混色蒙版绘制。
+        if (context != null && !MiuixVisualEffectsPolicy.allowsCostlyVisualEffects(context)) {
+            return OobeVisualBackend.StaticFallback
+        }
+        val blurAllowed = context == null || MiuixVisualEffectsPolicy.allowsBlur(context)
         return if (
             isHyperOsRuntime() &&
+            blurAllowed &&
             HyperOsBlurBridge.isSupported() &&
             (context == null || HyperOsBlurBridge.isEffectEnabled(context))
         ) {

@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.Badnng.moe.helper.BrandIconResolver
+import com.Badnng.moe.helper.AppMemoryPressureState
 import com.Badnng.moe.rules.*
 
 import kotlinx.coroutines.Dispatchers
@@ -260,14 +261,22 @@ fun RulesScreen(
         label = "brightness"
     )
 
-    val backdrop = rememberLayerBackdrop {
-        drawRect(surfaceColor)
-        drawContent()
+    val canBlur = !AppMemoryPressureState.active && isRenderEffectSupported()
+    val backdrop = if (canBlur) {
+        rememberLayerBackdrop {
+            drawRect(surfaceColor)
+            drawContent()
+        }
+    } else {
+        null
     }
-    val canBlur = isRenderEffectSupported()
     Box(modifier = modifier.fillMaxSize()) {
         // 内容层：延伸到顶栏下方
-        Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
+        ) {
             val bottomInsets =
                 WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -773,7 +782,7 @@ fun RulesScreen(
         }
 
         // 毛玻璃 TopAppBar 覆盖层（仅 MD3E 模式）
-        if (canBlur) {
+        if (backdrop != null) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 // 背景模糊层（带渐隐 mask）
                 Box(

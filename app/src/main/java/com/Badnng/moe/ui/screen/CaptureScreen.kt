@@ -95,7 +95,6 @@ import androidx.compose.runtime.snapshotFlow
 fun CaptureScreen(
     modifier: Modifier = Modifier,
     bottomPadding: Dp = 0.dp,
-    backdrop: com.kyant.backdrop.Backdrop,
     onEditModeChange: (Boolean) -> Unit = {},
     onNavigateToDetail: (Any) -> Unit = {},
     onScrollStateChange: (Boolean) -> Unit = {}
@@ -150,7 +149,6 @@ fun CaptureScreen(
         onScrollStateChange = onScrollStateChange,
         modifier = modifier,
         bottomPadding = bottomPadding,
-        backdrop = backdrop
     )
 }
 
@@ -173,7 +171,6 @@ fun CaptureScreenContent(
     onScrollStateChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     bottomPadding: Dp = 0.dp,
-    backdrop: com.kyant.backdrop.Backdrop
 ) {
     val viewModel: OrderViewModel = viewModel()
     var showCompletedOnly by remember { mutableStateOf(false) }

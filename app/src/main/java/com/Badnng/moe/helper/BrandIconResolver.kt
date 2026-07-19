@@ -31,6 +31,12 @@ object BrandIconResolver {
 
     private const val MIN_ICON_SIZE = 224
 
+    fun clearMemoryCache(): Int {
+        val clearedCount = bitmapCache.size()
+        bitmapCache.evictAll()
+        return clearedCount
+    }
+
     data class IconMapping(val iconPath: String, val keywords: String)
 
     fun resolveCustomIconBitmap(context: Context, brandName: String?): Bitmap? {

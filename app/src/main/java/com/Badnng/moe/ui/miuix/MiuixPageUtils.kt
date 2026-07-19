@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -83,18 +84,24 @@ fun MiuixBlurredBar(
 ) {
     Box(
         modifier = if (blurEnabled && backdrop != null) {
-            Modifier.textureBlur(
-                backdrop = backdrop,
-                shape = RectangleShape,
-                blurRadius = 25f,
-                colors = BlurDefaults.blurColors(
-                    blendColors = listOf(
-                        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
-                    ),
-                ),
-            )
-        } else {
             Modifier
+                .fillMaxWidth()
+                .textureBlur(
+                    backdrop = backdrop,
+                    shape = RectangleShape,
+                    blurRadius = 25f,
+                    colors = BlurDefaults.blurColors(
+                        blendColors = listOf(
+                            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
+                        ),
+                    ),
+                )
+        } else {
+            // 无模糊时顶栏仍应是一块完整的不透明表面，不能只给 TopAppBar 本体上色，
+            // 否则其下方的 TabRow 区域会直接露出内容背景形成留白。
+            Modifier
+                .fillMaxWidth()
+                .background(MiuixTheme.colorScheme.surface)
         },
     ) {
         content()

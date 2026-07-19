@@ -19,16 +19,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import dalvik.system.PathClassLoader
+import com.Badnng.moe.helper.AppMemoryPressureState
 import java.lang.reflect.Method
 import java.util.Locale
+
+const val MIUIX_FORCE_LOW_END_DEVICE_STANDARD_KEY = "miuix_force_low_end_device_standard"
 
 /**
  * Miuix 视觉效果的统一设备策略。
  *
- * HyperOS 侧沿用 HyperCeiler 的判断思路：MIUI Lite / Middle 策略、系统模糊能力和
- * 用户的系统模糊开关任一不满足时都停用模糊。其他系统按物理内存判断，标称 8 GB
- * 设备不会因为系统保留内存而被误判为低性能设备。
+ * HyperOS 侧沿用 HyperCeiler 的 MIUI Lite 判断思路；Middle 设备不视为低性能设备，
+ * 避免高性能平板仅因系统设备等级被关闭视觉效果。其他系统按物理内存判断，标称
+ * 8 GB 设备不会因为系统保留内存而被误判为低性能设备。
  */
 object MiuixVisualEffectsPolicy {
     private const val MIN_NON_HYPER_OS_MEMORY_GIB = 8L
@@ -39,6 +41,8 @@ object MiuixVisualEffectsPolicy {
 
     fun allowsCostlyVisualEffects(context: Context): Boolean {
         val appContext = context.applicationContext
+        if (AppMemoryPressureState.active) return false
+        if (usesForcedLowEndDeviceStandard(appContext)) return false
         val profile = deviceProfile(appContext)
         if (profile.lowRamDevice) return false
 
@@ -57,6 +61,11 @@ object MiuixVisualEffectsPolicy {
     }
 
     fun isHyperOsDevice(): Boolean = isHyperOsRuntime()
+
+    fun usesForcedLowEndDeviceStandard(context: Context): Boolean =
+        context.applicationContext
+            .getSharedPreferences("settings", Context.MODE_PRIVATE)
+            .getBoolean(MIUIX_FORCE_LOW_END_DEVICE_STANDARD_KEY, false)
 
     private fun deviceProfile(context: Context): DeviceProfile =
         cachedDeviceProfile ?: synchronized(this) {
@@ -83,7 +92,7 @@ object MiuixVisualEffectsPolicy {
 
         return DeviceProfile(
             isHyperOs = isHyperOs,
-            usesMiuiLiteStrategy = isHyperOs && usesMiuiLiteStrategy(appContext),
+            usesMiuiLiteStrategy = isHyperOs && usesMiuiLiteStrategy(),
             lowRamDevice = activityManager?.isLowRamDevice == true,
             advertisedMemoryGiB = advertisedMemoryGiB,
         )
@@ -100,15 +109,14 @@ object MiuixVisualEffectsPolicy {
         return hasMiuiProperty || hasMiuiRuntime || xiaomiBrand
     }
 
-    /** Mirrors fan.miuix LiteUtils.isCommonLiteStrategy(). */
-    private fun usesMiuiLiteStrategy(context: Context): Boolean {
+    /** 仅识别明确的 MIUI Lite / Lite Plus 标记，不使用 Middle 设备等级。 */
+    private fun usesMiuiLiteStrategy(): Boolean {
         val liteRom = readStaticBoolean("miui.os.Build", "IS_MIUI_LITE_VERSION") ||
             readStaticBoolean("miui.util.DeviceLevel", "IS_MIUI_LITE_VERSION")
         val liteStockPlus = SystemPropertyReader
             .get("ro.config.low_ram.support_miuilite_plus")
             .equals("true", ignoreCase = true)
-        val middleVersion = readMiuiMiddleVersion(context)
-        return liteRom || liteStockPlus || middleVersion >= 1
+        return liteRom || liteStockPlus
     }
 
     private fun readStaticBoolean(className: String, fieldName: String): Boolean = runCatching {
@@ -116,31 +124,6 @@ object MiuixVisualEffectsPolicy {
             isAccessible = true
         }.getBoolean(null)
     }.getOrDefault(false)
-
-    private fun readMiuiMiddleVersion(context: Context): Int {
-        val deviceLevelClass = runCatching {
-            Class.forName("com.miui.performance.DeviceLevelUtils")
-        }.getOrNull() ?: runCatching {
-            val jarPath = if (Build.VERSION.SDK_INT > 33) {
-                "/system_ext/framework/MiuiBooster.jar"
-            } else {
-                "/system/framework/MiuiBooster.jar"
-            }
-            PathClassLoader(jarPath, ClassLoader.getSystemClassLoader())
-                .loadClass("com.miui.performance.DeviceLevelUtils")
-        }.getOrNull() ?: return -1
-
-        return runCatching {
-            val instance = deviceLevelClass
-                .getConstructor(Context::class.java)
-                .newInstance(context)
-            val result = deviceLevelClass
-                .getDeclaredMethod("getMiuiMiddleVersion")
-                .apply { isAccessible = true }
-                .invoke(instance)
-            (result as? Number)?.toInt() ?: -1
-        }.getOrDefault(-1)
-    }
 
     private fun systemBlurSupported(): Boolean = SystemPropertyReader
         .get("persist.sys.background_blur_supported")
@@ -174,13 +157,24 @@ object MiuixVisualEffectsPolicy {
 fun rememberMiuixBlurAllowed(): Boolean {
     val context = LocalContext.current
     val appContext = context.applicationContext
-    var blurAllowed by remember(appContext) {
+    val memoryPressureActive = AppMemoryPressureState.active
+    val prefs = remember(appContext) {
+        appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    }
+    var blurAllowed by remember(appContext, memoryPressureActive) {
         mutableStateOf(
             MiuixVisualEffectsPolicy.allowsBlur(appContext),
         )
     }
 
-    DisposableEffect(appContext) {
+    DisposableEffect(appContext, prefs, memoryPressureActive) {
+        val preferenceListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == MIUIX_FORCE_LOW_END_DEVICE_STANDARD_KEY) {
+                blurAllowed = MiuixVisualEffectsPolicy.allowsBlur(appContext)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(preferenceListener)
+
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 blurAllowed = MiuixVisualEffectsPolicy.allowsBlur(appContext)
@@ -195,6 +189,7 @@ fun rememberMiuixBlurAllowed(): Boolean {
         }.isSuccess
 
         onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(preferenceListener)
             if (registered) {
                 runCatching { appContext.contentResolver.unregisterContentObserver(observer) }
             }
@@ -207,9 +202,26 @@ fun rememberMiuixBlurAllowed(): Boolean {
 @Composable
 fun rememberMiuixVisualEffectsAllowed(): Boolean {
     val context = LocalContext.current
-    return remember(context.applicationContext) {
-        MiuixVisualEffectsPolicy.allowsCostlyVisualEffects(context.applicationContext)
+    val appContext = context.applicationContext
+    val memoryPressureActive = AppMemoryPressureState.active
+    val prefs = remember(appContext) {
+        appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
     }
+    var visualEffectsAllowed by remember(appContext, memoryPressureActive) {
+        mutableStateOf(MiuixVisualEffectsPolicy.allowsCostlyVisualEffects(appContext))
+    }
+
+    DisposableEffect(appContext, prefs, memoryPressureActive) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == MIUIX_FORCE_LOW_END_DEVICE_STANDARD_KEY) {
+                visualEffectsAllowed = MiuixVisualEffectsPolicy.allowsCostlyVisualEffects(appContext)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    return visualEffectsAllowed
 }
 
 private object SystemPropertyReader {

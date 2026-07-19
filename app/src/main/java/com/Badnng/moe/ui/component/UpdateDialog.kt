@@ -1,8 +1,5 @@
 package com.Badnng.moe.ui.component
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -14,16 +11,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onGloballyPositioned
-import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.Badnng.moe.helper.UpdateInfo
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
+import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
 import top.yukonga.miuix.kmp.basic.ButtonDefaults as MiuixButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -34,7 +32,6 @@ import top.yukonga.miuix.kmp.theme.LocalDismissState
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.MiuixIndication
 import top.yukonga.miuix.kmp.window.WindowBottomSheet
-import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
 
 // ═══════════════════════════════════════════
 //  兼容层：自动切换 Miuix / MD3E
@@ -54,7 +51,7 @@ fun UpdateSheet(
     if (isMiuix) {
         MiuixUpdateSheet(show = show, updateInfo = updateInfo, onDismiss = onDismiss, onInstall = onInstall)
     } else if (show) {
-        Md3eUpdateDialog(updateInfo = updateInfo, onDismiss = onDismiss, onInstall = onInstall)
+        Md3eUpdateSheet(updateInfo = updateInfo, onDismiss = onDismiss, onInstall = onInstall)
     }
 }
 
@@ -76,7 +73,14 @@ fun UpdateProgressSheet(
     if (isMiuix) {
         MiuixUpdateProgressSheet(show = show, updateInfo = updateInfo, progress = progress, isPaused = isPaused, onPause = onPause, onResume = onResume, onDismiss = onDismiss)
     } else if (show) {
-        Md3eUpdateProgressDialog(progress = progress ?: 0f, isPaused = isPaused, onPause = onPause, onResume = onResume, onDismiss = onDismiss)
+        Md3eUpdateProgressSheet(
+            updateInfo = updateInfo,
+            progress = progress,
+            isPaused = isPaused,
+            onPause = onPause,
+            onResume = onResume,
+            onDismiss = onDismiss,
+        )
     }
 }
 
@@ -91,6 +95,8 @@ private fun MiuixUpdateSheet(
     onDismiss: () -> Unit,
     onInstall: () -> Unit
 ) {
+    val releaseNotesHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.30f)
+        .coerceIn(160.dp, 360.dp)
     // 模糊进度：Animatable 驱动开/关动画，拖拽时 snapTo 覆盖
     val density = androidx.compose.ui.platform.LocalDensity.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -173,20 +179,28 @@ private fun MiuixUpdateSheet(
                 }
                 item {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(releaseNotesHeight)
+                            .padding(bottom = 12.dp),
                         colors = MiuixCardDefaults.defaultColors(
                             color = MiuixTheme.colorScheme.secondaryContainer
                         )
                     ) {
-                        MiuixText(
-                            text = updateInfo.releaseNotes,
-                            style = MiuixTheme.textStyles.body2,
-                            color = MiuixTheme.colorScheme.onSurface,
-                            lineHeight = 20.sp,
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .fillMaxSize()
                                 .padding(16.dp)
-                        )
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            MiuixText(
+                                text = updateInfo.releaseNotes,
+                                style = MiuixTheme.textStyles.body2,
+                                color = MiuixTheme.colorScheme.onSurface,
+                                lineHeight = 20.sp,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
                 item {
@@ -225,6 +239,8 @@ private fun MiuixUpdateProgressSheet(
     onResume: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val releaseNotesHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.30f)
+        .coerceIn(160.dp, 360.dp)
     val density2 = androidx.compose.ui.platform.LocalDensity.current
     val configuration2 = androidx.compose.ui.platform.LocalConfiguration.current
     val sheetHeightPx2 = remember { with(density2) { configuration2.screenHeightDp.dp.toPx() } }
@@ -265,7 +281,7 @@ private fun MiuixUpdateProgressSheet(
         title = "正在更新",
         enableWindowDim = false,
         allowDismiss = false,
-        enableNestedScroll = false,
+        enableNestedScroll = true,
         onDismissRequest = onDismiss,
         onDismissFinished = { BlurState.hide() }
     ) {
@@ -305,20 +321,28 @@ private fun MiuixUpdateProgressSheet(
                 }
                 item {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(releaseNotesHeight)
+                            .padding(bottom = 12.dp),
                         colors = MiuixCardDefaults.defaultColors(
                             color = MiuixTheme.colorScheme.secondaryContainer
                         )
                     ) {
-                        MiuixText(
-                            text = updateInfo.releaseNotes,
-                            style = MiuixTheme.textStyles.body2,
-                            color = MiuixTheme.colorScheme.onSurface,
-                            lineHeight = 20.sp,
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .fillMaxSize()
                                 .padding(16.dp)
-                        )
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            MiuixText(
+                                text = updateInfo.releaseNotes,
+                                style = MiuixTheme.textStyles.body2,
+                                color = MiuixTheme.colorScheme.onSurface,
+                                lineHeight = 20.sp,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
                 item {
@@ -378,58 +402,141 @@ private fun MiuixUpdateProgressSheet(
 }
 
 // ═══════════════════════════════════════════
-//  MD3E 实现（保留原有样式）
+//  MD3E 实现
 // ═══════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Md3eUpdateDialog(
+private fun Md3eUpdateSheet(
     updateInfo: UpdateInfo,
     onDismiss: () -> Unit,
     onInstall: () -> Unit
 ) {
     val largeFont = LocalDensity.current.fontScale >= 1.2f
-    val screenHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
-    val maxDialogHeight = screenHeight * 0.8f
-    val maxReleaseNotesHeight = screenHeight * 0.6f
+    val releaseNotesHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.30f)
+        .coerceIn(160.dp, 360.dp)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val coroutineScope = rememberCoroutineScope()
+    var installEnabled by remember(updateInfo.versionCode) { mutableStateOf(false) }
 
-    Dialog(
+    // 避免“检查更新”按钮的同一次触摸抬起事件落到刚出现的更新按钮上。
+    LaunchedEffect(updateInfo.versionCode) {
+        delay(400)
+        installEnabled = true
+    }
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = false)
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 15.dp, topEnd = 15.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().heightIn(max = maxDialogHeight),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+        NonPredictiveBackInterceptor()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 640.dp)
+                .align(Alignment.CenterHorizontally)
+                .navigationBarsPadding()
+                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Text(
+                text = "发现新版本",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = updateInfo.versionName,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(releaseNotesHeight),
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
-                Text("检测到新版本 ${updateInfo.versionName}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(16.dp))
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = maxReleaseNotesHeight)
-                        .clip(RoundedCornerShape(12.dp))
-                        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)), RoundedCornerShape(12.dp))
-                        .padding(12.dp)
-                        .verticalScroll(rememberScrollState())
+                        .fillMaxSize()
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
                 ) {
-                    Text(updateInfo.releaseNotes, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 20.sp, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        text = updateInfo.releaseNotes,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
-                Spacer(modifier = Modifier.height(24.dp))
-                if (largeFont) {
-                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp)) { Text("暂不更新", maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        Button(onClick = onInstall, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp)) { Text("立即更新", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+            if (largeFont) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                sheetState.hide()
+                                onDismiss()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                    ) {
+                        Text("暂不更新", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                } else {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp)) { Text("暂不更新") }
-                        Button(onClick = onInstall, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp)) { Text("立即更新") }
+                    Button(
+                        onClick = {
+                            installEnabled = false
+                            coroutineScope.launch {
+                                sheetState.hide()
+                                onInstall()
+                            }
+                        },
+                        enabled = installEnabled,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                    ) {
+                        Text("立即更新", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                sheetState.hide()
+                                onDismiss()
+                            }
+                        },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                    ) {
+                        Text("暂不更新", maxLines = 1)
+                    }
+                    Button(
+                        onClick = {
+                            installEnabled = false
+                            coroutineScope.launch {
+                                sheetState.hide()
+                                onInstall()
+                            }
+                        },
+                        enabled = installEnabled,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                    ) {
+                        Text("立即更新", maxLines = 1)
                     }
                 }
             }
@@ -437,50 +544,154 @@ private fun Md3eUpdateDialog(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Md3eUpdateProgressDialog(
-    progress: Float,
+private fun Md3eUpdateProgressSheet(
+    updateInfo: UpdateInfo,
+    progress: Float?,
     isPaused: Boolean,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val largeFont = LocalDensity.current.fontScale >= 1.2f
+    val releaseNotesHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.30f)
+        .coerceIn(160.dp, 360.dp)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val coroutineScope = rememberCoroutineScope()
 
-    Dialog(
-        onDismissRequest = {},
-        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 15.dp, topEnd = 15.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
     ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+        NonPredictiveBackInterceptor()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 640.dp)
+                .align(Alignment.CenterHorizontally)
+                .navigationBarsPadding()
+                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Text(
+                text = "正在更新",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = updateInfo.versionName,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(releaseNotesHeight),
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
-                Text("正在下载更新", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(24.dp))
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        text = updateInfo.releaseNotes,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = when {
+                        isPaused -> "下载已暂停"
+                        progress == null -> "正在连接下载服务器..."
+                        else -> "${(progress * 100).toInt()}%"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("${(progress * 100).toInt()}%", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(24.dp))
-                if (largeFont) {
-                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp)) { Text("后台更新", maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        Button(onClick = if (isPaused) onResume else onPause, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp)) { Text(if (isPaused) "继续" else "暂停", maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    }
+                if (progress == null) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
                 } else {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp)) { Text("后台更新") }
-                        Button(onClick = if (isPaused) onResume else onPause, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp)) { Text(if (isPaused) "继续" else "暂停") }
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                }
+            }
+            if (largeFont) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                sheetState.hide()
+                                onDismiss()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                    ) {
+                        Text("后台更新", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Button(
+                        onClick = if (isPaused) onResume else onPause,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                    ) {
+                        Text(if (isPaused) "继续" else "暂停", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                sheetState.hide()
+                                onDismiss()
+                            }
+                        },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                    ) {
+                        Text("后台更新")
+                    }
+                    Button(
+                        onClick = if (isPaused) onResume else onPause,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                    ) {
+                        Text(if (isPaused) "继续" else "暂停")
                     }
                 }
             }

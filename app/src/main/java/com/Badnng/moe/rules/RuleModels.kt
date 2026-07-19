@@ -974,7 +974,7 @@ data class PickupLocationScoringConfig(
 }
 
 data class PickupLocationConfig(
-    val startKeywords: List<String> = listOf("已到", "已至", "到达", "到了", "在", "于", "己到", "前往", "送到", "前住", "至"),
+    val startKeywords: List<String> = listOf("已到", "已至", "到达", "到了", "在", "于", "己到", "前往", "送到", "前住", "到", "至"),
     val targetKeywords: List<String> = listOf("服务站", "驿站", "菜鸟驿", "菜鸟驿站", "自提点", "快递站", "菜鸟站", "代收点", "代点", "丰巢柜", "快递柜", "智能柜", "门面", "邮政大厅", "大厅"),
     val stopKeywords: List<String> = listOf("领取", "取件", "查看", "请凭", "靖凭", "如有", "如有疑问", "取您的", "复制"),
     val garbagePatterns: List<String> = listOf("代收点(", "代收点（", "\\d{10,}"),
@@ -1000,7 +1000,7 @@ data class PickupLocationConfig(
 
     companion object {
         fun fromJson(json: JSONObject): PickupLocationConfig = PickupLocationConfig(
-            startKeywords = json.optJSONArray("start_keywords")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: listOf("已到", "已至", "到达", "到了", "在", "于", "己到", "前往", "送到", "前住", "至"),
+            startKeywords = json.optJSONArray("start_keywords")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: listOf("已到", "已至", "到达", "到了", "在", "于", "己到", "前往", "送到", "前住", "到", "至"),
             targetKeywords = json.optJSONArray("target_keywords")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: listOf("服务站", "驿站", "菜鸟驿", "菜鸟驿站", "自提点", "快递站", "菜鸟站", "代收点", "代点", "丰巢柜", "快递柜", "智能柜", "门面", "邮政大厅", "大厅"),
             stopKeywords = json.optJSONArray("stop_keywords")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: listOf("领取", "取件", "查看", "请凭", "靖凭", "如有", "如有疑问", "取您的", "复制"),
             garbagePatterns = json.optJSONArray("garbage_patterns")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: listOf("代收点(", "代收点（", "\\d{10,}"),

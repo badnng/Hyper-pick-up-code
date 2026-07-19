@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.Badnng.moe.activity.MainActivity
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
+import com.Badnng.moe.helper.AppMemoryPressureState
 import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.viewmodel.OrderViewModel
@@ -67,13 +68,9 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.effects.lens
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
-import top.yukonga.miuix.kmp.blur.BlurColors
-import top.yukonga.miuix.kmp.shader.isRenderEffectSupported
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop as rememberMiuixBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop as miuixLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
-import top.yukonga.miuix.kmp.blur.drawBackdrop
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import kotlinx.coroutines.launch
@@ -362,15 +359,20 @@ fun HomeScreen(
     }
 
     val backgroundColor = MaterialTheme.colorScheme.background
-    val backdrop = rememberLayerBackdrop {
-        drawRect(backgroundColor)
-        drawContent()
+    val memoryPressureActive = AppMemoryPressureState.active
+    val backdrop = if (!memoryPressureActive) {
+        rememberLayerBackdrop {
+            drawRect(backgroundColor)
+            drawContent()
+        }
+    } else {
+        null
     }
     val isDarkPalette = backgroundColor.luminance() < 0.5f
     val usePureBlackHomeBackground = amoledPureBlack && isDarkPalette
     val homeBackgroundColor = if (usePureBlackHomeBackground) Color.Black else backgroundColor
 
-    val miuixBackdrop = rememberMiuixBackdrop()
+    val miuixBackdrop = if (!memoryPressureActive) rememberMiuixBackdrop() else null
 
     var isSettingsSubPageOpen by remember { mutableStateOf(false) }
     var isScrollingDown by remember { mutableStateOf(false) }
@@ -390,7 +392,18 @@ fun HomeScreen(
 
     Box(modifier = modifier.fillMaxSize().background(homeBackgroundColor)) {
         // 内层：miuixLayerBackdrop 只捕获 Scaffold 内容（不含菜单叠加层）
-        Box(modifier = Modifier.fillMaxSize().background(homeBackgroundColor).miuixLayerBackdrop(miuixBackdrop)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(homeBackgroundColor)
+                .then(
+                    if (miuixBackdrop != null) {
+                        Modifier.miuixLayerBackdrop(miuixBackdrop)
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = homeBackgroundColor,
@@ -415,11 +428,26 @@ fun HomeScreen(
                                 .width(bottomBarWidth)
                                 .height(bottomBarHeight)
                                 .border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
-                                .drawBackdrop(
-                                    backdrop = backdrop,
-                                    shape = { RoundedCornerShape(20.dp) },
-                                    effects = { vibrancy(); blur(16.dp.toPx()); lens(20.dp.toPx(), 40.dp.toPx()) },
-                                    onDrawSurface = { drawRect(Color.White.copy(alpha = 0.1f)) }
+                                .then(
+                                    if (backdrop != null) {
+                                        Modifier.drawBackdrop(
+                                            backdrop = backdrop,
+                                            shape = { RoundedCornerShape(20.dp) },
+                                            effects = {
+                                                vibrancy()
+                                                blur(16.dp.toPx())
+                                                lens(20.dp.toPx(), 40.dp.toPx())
+                                            },
+                                            onDrawSurface = {
+                                                drawRect(Color.White.copy(alpha = 0.1f))
+                                            },
+                                        )
+                                    } else {
+                                        Modifier.background(
+                                            color = MaterialTheme.colorScheme.surfaceContainer,
+                                            shape = RoundedCornerShape(20.dp),
+                                        )
+                                    },
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
@@ -457,7 +485,13 @@ fun HomeScreen(
                 {}
             }
         ) { _ ->
-            Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier,
+                    ),
+            ) {
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier
@@ -551,7 +585,7 @@ fun HomeScreen(
                         allowPagerHorizontalSwipe
                 ) { page ->
                     when (page) {
-                        0 -> CaptureScreen(modifier = Modifier.fillMaxSize(), bottomPadding = 100.dp, backdrop = backdrop, onEditModeChange = { isManaging = it }, onScrollStateChange = { isScrollingDown = it }, onNavigateToDetail = { detailItem ->
+                        0 -> CaptureScreen(modifier = Modifier.fillMaxSize(), bottomPadding = 100.dp, onEditModeChange = { isManaging = it }, onScrollStateChange = { isScrollingDown = it }, onNavigateToDetail = { detailItem ->
                             when (detailItem) {
                                 is OrderEntity -> detailOrder = detailItem
                                 is OrderGroup -> detailGroup = detailItem
@@ -594,11 +628,24 @@ fun HomeScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .textureBlur(
-                            backdrop = miuixBackdrop,
-                            shape = RoundedCornerShape(0.dp),
-                            blurRadius = animatedBlurRadius,
-                            colors = top.yukonga.miuix.kmp.blur.BlurColors(brightness = -0.15f)
+                        .then(
+                            if (miuixBackdrop != null) {
+                                Modifier.textureBlur(
+                                    backdrop = miuixBackdrop,
+                                    shape = RoundedCornerShape(0.dp),
+                                    blurRadius = animatedBlurRadius,
+                                    colors = top.yukonga.miuix.kmp.blur.BlurColors(
+                                        brightness = -0.15f,
+                                    ),
+                                )
+                            } else {
+                                Modifier.background(
+                                    MaterialTheme.colorScheme.scrim.copy(
+                                        alpha = 0.32f *
+                                            (animatedBlurRadius / 60f).coerceIn(0f, 1f),
+                                    ),
+                                )
+                            },
                         )
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },

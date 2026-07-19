@@ -57,6 +57,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -90,6 +91,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
+import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -237,6 +239,23 @@ fun MiuixCaptureScreen(
     // 顶栏采样层统一受 Miuix 视觉性能策略控制。
     val backdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
     val blurEnabled = backdrop != null
+    val isDarkTheme = MiuixTheme.colorScheme.background.luminance() < 0.5f
+    // 所有设备统一使用系统任务中心同款中性层级，不再随模糊能力或主题取色变化。
+    val tabRowColors = if (isDarkTheme) {
+        TabRowDefaults.tabRowColors(
+            backgroundColor = Color.Black,
+            contentColor = Color(0xFF8C8C8C),
+            selectedBackgroundColor = Color(0xFF2A2A2A),
+            selectedContentColor = Color.White,
+        )
+    } else {
+        TabRowDefaults.tabRowColors(
+            backgroundColor = Color(0xFFE9E9E9),
+            contentColor = Color(0xFF666666),
+            selectedBackgroundColor = Color.White,
+            selectedContentColor = Color.Black,
+        )
+    }
     val lazyListState = rememberLazyListState()
     val isListScrolling by remember {
         derivedStateOf { lazyListState.isScrollInProgress }
@@ -286,6 +305,7 @@ fun MiuixCaptureScreen(
                 TabRowWithContour(
                     tabs = listOf("待取", "已取"),
                     selectedTabIndex = selectedTab,
+                    colors = tabRowColors,
                     onTabSelected = { tabIndex ->
                         performHaptic()
                         if (tabIndex == 0 && selectedTab == 0) {
@@ -306,6 +326,7 @@ fun MiuixCaptureScreen(
                     TabRowWithContour(
                         tabs = categoryTabs,
                         selectedTabIndex = selectedCategoryIndex,
+                        colors = tabRowColors,
                         onTabSelected = {
                             performHaptic()
                             selectedCategoryIndex = it

@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.Badnng.moe.R
+import com.Badnng.moe.helper.AppMemoryPressureState
 import com.Badnng.moe.service.CaptureTileService
 import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.component.GroupPosition
@@ -64,7 +65,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 
 enum class SettingsPage {
-    Main, Preference, Permission, Screenshot, Recognition, KeepAlive, Storage, About, Sponsor, NotificationApps, Credits
+    Main, Preference, Permission, Screenshot, Recognition, KeepAlive, Storage, About, Sponsor, NotificationApps, Credits, Developer
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -203,6 +204,7 @@ fun SettingsScreen(
                         SettingsPage.Sponsor -> "赞助"
                         SettingsPage.NotificationApps -> "通知识别应用管理"
                         SettingsPage.Credits -> "致谢"
+                        SettingsPage.Developer -> "开发者选项"
                         else -> ""
                     }
                     SubPage(
@@ -365,7 +367,13 @@ fun SubPage(
                     SettingsPage.Preference -> PreferenceSettingsContent(performHaptic, onNavigate, 0.dp, scrollState)
                     SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic, 0.dp, scrollState)
                     SettingsPage.Storage -> StorageSettingsContent(performHaptic, prefs, 0.dp, scrollState)
-                    SettingsPage.About -> AboutSettingsContent(performHaptic, 0.dp, scrollState, onNavigateToCredits = { onNavigate(SettingsPage.Credits) })
+                    SettingsPage.About -> AboutSettingsContent(
+                        performHaptic = performHaptic,
+                        topPadding = 0.dp,
+                        scrollState = scrollState,
+                        onNavigateToCredits = { onNavigate(SettingsPage.Credits) },
+                        onNavigateToDeveloperOptions = { onNavigate(SettingsPage.Developer) },
+                    )
                     SettingsPage.Sponsor -> SponsorSettingsContent(0.dp, scrollState)
                     SettingsPage.NotificationApps -> NotificationAppsSettingsContent(
                         performHaptic = performHaptic,
@@ -373,6 +381,7 @@ fun SubPage(
                         showSystemApps = showSystemApps
                     )
                     SettingsPage.Credits -> CreditsSettingsContent(performHaptic, 0.dp, scrollState)
+                    SettingsPage.Developer -> DeveloperSettingsContent(performHaptic, 0.dp, scrollState)
                     SettingsPage.Main -> {}
                 }
             }
@@ -395,11 +404,15 @@ fun SubPage(
         label = "brightness"
     )
 
-    val backdrop = rememberLayerBackdrop {
-        drawRect(surfaceColor)
-        drawContent()
+    val canBlur = !AppMemoryPressureState.active && isRenderEffectSupported()
+    val backdrop = if (canBlur) {
+        rememberLayerBackdrop {
+            drawRect(surfaceColor)
+            drawContent()
+        }
+    } else {
+        null
     }
-    val canBlur = isRenderEffectSupported()
 
     Box(
         modifier = Modifier
@@ -409,7 +422,11 @@ fun SubPage(
         // 内容层：延伸到顶栏下方
         val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val topContentPadding = statusBarHeight + 64.dp
-        Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
+        ) {
             when (page) {
                 SettingsPage.Screenshot -> ScreenshotSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Recognition -> RecognitionSettingsContent(performHaptic, topContentPadding, scrollState)
@@ -417,7 +434,12 @@ fun SubPage(
                 SettingsPage.Preference -> PreferenceSettingsContent(performHaptic, onNavigate, topContentPadding, scrollState)
                 SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Storage -> StorageSettingsContent(performHaptic, prefs, topContentPadding, scrollState)
-                SettingsPage.About -> AboutSettingsContent(performHaptic, topContentPadding, scrollState)
+                SettingsPage.About -> AboutSettingsContent(
+                    performHaptic = performHaptic,
+                    topPadding = topContentPadding,
+                    scrollState = scrollState,
+                    onNavigateToDeveloperOptions = { onNavigate(SettingsPage.Developer) },
+                )
                 SettingsPage.Sponsor -> SponsorSettingsContent(topContentPadding, scrollState)
                 SettingsPage.NotificationApps -> NotificationAppsSettingsContent(
                     performHaptic = performHaptic,
@@ -425,12 +447,13 @@ fun SubPage(
                     showSystemApps = showSystemApps
                 )
                 SettingsPage.Credits -> CreditsSettingsContent(performHaptic, topContentPadding, scrollState)
+                SettingsPage.Developer -> DeveloperSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Main -> {}
             }
         }
 
         // 毛玻璃 TopAppBar 覆盖层
-        if (canBlur) {
+        if (backdrop != null) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 // 模糊背景层（底层）
                 Box(

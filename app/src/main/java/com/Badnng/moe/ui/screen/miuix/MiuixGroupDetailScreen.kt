@@ -27,6 +27,7 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -38,7 +39,8 @@ fun MiuixGroupDetailScreen(
     completedCount: Int,
     totalCount: Int,
     onBack: () -> Unit,
-    onMarkAllCompleted: () -> Unit
+    onMarkAllCompleted: () -> Unit,
+    supportingPane: Boolean = false,
 ) {
     val topAppBarScrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberMiuixBackdrop()
@@ -53,7 +55,14 @@ fun MiuixGroupDetailScreen(
                     scrollBehavior = topAppBarScrollBehavior,
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(MiuixIcons.Regular.Back, contentDescription = "返回")
+                            Icon(
+                                if (supportingPane) {
+                                    MiuixIcons.Regular.Close
+                                } else {
+                                    MiuixIcons.Regular.Back
+                                },
+                                contentDescription = if (supportingPane) "关闭" else "返回",
+                            )
                         }
                     },
                     actions = {

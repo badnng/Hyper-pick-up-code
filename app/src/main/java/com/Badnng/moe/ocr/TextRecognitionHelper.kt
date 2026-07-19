@@ -585,29 +585,104 @@ class TextRecognitionHelper(private val context: Context) {
         val locToVerbPattern = Regex(
             "(?:${startKeywords.joinToString("|")})([^,，。！!?;？\\s]{2,60}?)(?=[,，。！!?;？\\s]*(?:${stopKeywords.joinToString("|")}))"
         )
-        val locMatch2 = locToVerbPattern.find(mergedText)
-        if (locMatch2 != null) {
-            val loc = truncateLocation(locMatch2.groupValues[1])
+        for (match in locToVerbPattern.findAll(mergedText)) {
+            val loc = truncateLocation(match.groupValues[1])
             if (!isGarbageMatch(loc)) candidates.add(loc to locationScore(loc))
         }
 
-        for (block in blocks) {
-            val text = block.text.replace("\n", "").replace(" ", "")
-            if (targetKeywords.any { text.contains(it) }) {
-                val loc = truncateLocation(text)
-                if (!isGarbageMatch(loc)) candidates.add(loc to locationScore(loc))
+        // OCR 全文按屏幕从下到上拼接。这里仅为地点识别恢复自然阅读顺序，
+        // 让“取件码 + 到达地点 + 下一行取件”这类换行消息保持完整。
+        if (blocks.size >= 2) {
+            val readingOrderBlocks = blocks.asReversed().map { block ->
+                block.text.replace("\n", "").replace(" ", "")
+            }
+            val codePatterns = engine.getExpressPatterns().filter {
+                it.priority <= engine.rules.recognitionParams.patternPrioritySkip
+            }
+            val maxCodeLocationGap = engine.rules.validation.expressCode.maxCodeKeywordGap
+
+            for (index in readingOrderBlocks.indices) {
+                val currentText = readingOrderBlocks[index]
+                if (currentText.isBlank()) continue
+
+                val codeMatches = codePatterns.flatMap { pattern ->
+                    val compiled = engine.getCompiledPattern(pattern.id) ?: return@flatMap emptyList()
+                    compiled.findAll(currentText).mapNotNull { match ->
+                        val group = if (match.groups.size > 1) match.groups[1] else null
+                        val code = group?.value ?: match.value
+                        val range = group?.range ?: match.range
+                        if (isInvalidExpressCode(code) || isLikelyPhoneTail(code, currentText)) {
+                            null
+                        } else {
+                            Triple(pattern.priority, code, range)
+                        }
+                    }.toList()
+                }.sortedWith(compareBy({ it.third.first }, { it.first }))
+
+                for ((_, _, codeRange) in codeMatches) {
+                    val reconstructedText = buildString {
+                        append(currentText.substring(codeRange.last + 1))
+                        for (offset in 1..2) {
+                            readingOrderBlocks.getOrNull(index + offset)?.let(::append)
+                        }
+                    }
+                    val locationMatch = locToVerbPattern.find(reconstructedText) ?: continue
+                    if (locationMatch.range.first > maxCodeLocationGap) continue
+
+                    val loc = truncateLocation(
+                        locationMatch.groupValues[1],
+                        trimLeadingNoise = false,
+                    )
+                    if (!isGarbageMatch(loc)) {
+                        candidates.add(
+                            loc to locationScore(loc) + locScoring.addressBonus
+                        )
+                    }
+                    break
+                }
             }
         }
 
-        // 优先提取短店名（超市/便利店等），避免返回长地址
         val storeKeywords = plConfig.storeNameKeywords
         val storeBonus = plConfig.storeNameBonus
         val storeMaxLen = plConfig.storeNameMaxLen
-        val storePattern = Regex("[\\u4e00-\\u9fa5]{1,8}(?:${storeKeywords.joinToString("|")})")
-        for (match in storePattern.findAll(mergedText)) {
-            val storeName = match.value
-            if (storeName.length <= storeMaxLen && !isGarbageMatch(storeName)) {
-                candidates.add(storeName to locationScore(storeName) + storeBonus - storeName.length)
+        for (block in blocks) {
+            val text = block.text.replace("\n", "").replace(" ", "")
+            if (targetKeywords.any { text.contains(it) }) {
+                // Standalone OCR blocks preserve venue qualifiers that merged-text prefix
+                // trimming can otherwise discard.
+                val loc = truncateLocation(text, trimLeadingNoise = false)
+                if (!isGarbageMatch(loc)) {
+                    val standaloneStoreBonus = if (
+                        loc.length in 3..storeMaxLen && storeKeywords.any { loc.endsWith(it) }
+                    ) {
+                        storeBonus + locScoring.locWithTargetBonus
+                    } else {
+                        0
+                    }
+                    candidates.add(loc to locationScore(loc) + standaloneStoreBonus)
+                }
+            }
+        }
+
+        // 优先提取长度受限的店名（超市/便利店等），避免返回整段长地址。
+        val escapedStoreKeywords = storeKeywords
+            .filter { it.isNotBlank() }
+            .sortedByDescending { it.length }
+            .map { Regex.escape(it) }
+        if (escapedStoreKeywords.isNotEmpty()) {
+            val shortestKeywordLength = storeKeywords
+                .filter { it.isNotBlank() }
+                .minOf { it.length }
+            val maxPrefixLength = (storeMaxLen - shortestKeywordLength).coerceAtLeast(1)
+            val storePattern = Regex(
+                "[\\u4e00-\\u9fa5]{1,$maxPrefixLength}(?:${escapedStoreKeywords.joinToString("|")})"
+            )
+            for (match in storePattern.findAll(mergedText)) {
+                val storeName = match.value
+                if (storeName.length <= storeMaxLen && !isGarbageMatch(storeName)) {
+                    candidates.add(storeName to locationScore(storeName) + storeBonus)
+                }
             }
         }
 
@@ -637,7 +712,10 @@ class TextRecognitionHelper(private val context: Context) {
         return result
     }
 
-    private fun truncateLocation(location: String): String {
+    private fun truncateLocation(
+        location: String,
+        trimLeadingNoise: Boolean = true,
+    ): String {
         val stopKeywords = engine.rules.pickupLocation.stopKeywords
         val trailingPunctuation = Regex(engine.rules.textCleaning.trailingPunctuation)
         var result = location
@@ -650,7 +728,7 @@ class TextRecognitionHelper(private val context: Context) {
         }
         // 从第一个地名前缀标记开始截取（去掉前面的杂字）
         val prefixMarkers = engine.rules.pickupLocation.locationPrefixMarkers
-        if (prefixMarkers.isNotEmpty()) {
+        if (trimLeadingNoise && prefixMarkers.isNotEmpty()) {
             val firstMarkerIdx = result.indexOfAny(prefixMarkers)
             if (firstMarkerIdx > 0) {
                 result = result.substring(firstMarkerIdx)
@@ -745,9 +823,13 @@ class TextRecognitionHelper(private val context: Context) {
         val hasExpressKeyword = expressKeywords.any { mergedText.contains(it) }
         val hasExpressBrand = expressBrandKeywords.any { mergedText.contains(it) }
         val contextualMatches = findExpressCodesNearKeywords(mergedText)
-        if (contextualMatches.isNotEmpty()) {
-            val codes = contextualMatches.map { it.first }
-            Log.d("ExpressExtract", "[text] 关键词上下文命中: $codes")
+        val configuredThreeSegmentMatches = findConfiguredThreeSegmentCodes(mergedText)
+        val highConfidenceMatches = (contextualMatches + configuredThreeSegmentMatches)
+            .distinctBy { it.first }
+            .sortedBy { it.second.first }
+        if (highConfidenceMatches.isNotEmpty()) {
+            val codes = highConfidenceMatches.map { it.first }
+            Log.d("ExpressExtract", "[text] 关键词/三段码命中: $codes")
             return codes
         }
 
@@ -867,6 +949,35 @@ class TextRecognitionHelper(private val context: Context) {
         }
 
         return found.sortedBy { it.second.first }
+    }
+
+    /**
+     * 使用规则文件中的三段码校验配置收集全文匹配项。
+     * 三段码本身结构明确，不依赖每个卡片都能被 OCR 识别出“取件码”提示词。
+     */
+    private fun findConfiguredThreeSegmentCodes(
+        mergedText: String,
+    ): List<Pair<String, IntRange>> {
+        val config = engine.rules.validation.expressCode.threeSegment ?: return emptyList()
+        val pattern = runCatching { Regex(config.pattern) }.getOrNull() ?: return emptyList()
+        val found = mutableListOf<Pair<String, IntRange>>()
+
+        for (match in pattern.findAll(mergedText)) {
+            val group = if (match.groups.size > 1) match.groups[1] else null
+            val code = group?.value ?: match.value
+            val range = group?.range ?: match.range
+            val contextStart = maxOf(0, range.first - 20)
+            val contextEnd = minOf(mergedText.length, range.last + 21)
+            val nearbyContext = mergedText.substring(contextStart, contextEnd)
+            if (isInvalidExpressCode(code, nearbyContext)) continue
+            if (isLikelyPhoneTail(code, mergedText)) continue
+            if (found.any { (existing, _) -> existing == code }) continue
+
+            found += code to range
+            Log.d("ExpressExtract", "[three-segment] 命中: code=$code, range=$range")
+        }
+
+        return found
     }
 
     private fun extractFoodCodeFromText(mergedText: String, detectedBrand: String?): Pair<String?, String?> {
@@ -1021,8 +1132,9 @@ class TextRecognitionHelper(private val context: Context) {
         val orders = mutableListOf<RecognitionResult>()
 
         fun addOrderIfValid(code: String, range: IntRange) {
+            if (orders.any { it.code == code }) return
             val contextStart = maxOf(0, range.first - 20)
-            val contextEnd = minOf(mergedText.length, range.last + 20)
+            val contextEnd = minOf(mergedText.length, range.last + 21)
             val nearbyContext = mergedText.substring(contextStart, contextEnd)
             val invalid = isInvalidExpressCode(code, nearbyContext)
             val phoneTail = isLikelyPhoneTail(code, mergedText)
@@ -1045,7 +1157,10 @@ class TextRecognitionHelper(private val context: Context) {
         for ((code, range) in findExpressCodesNearKeywords(mergedText)) {
             addOrderIfValid(code, range)
         }
-        Log.d("RecognitionMonitor", "方法1完成，找到 ${orders.size} 个取件码")
+        for ((code, range) in findConfiguredThreeSegmentCodes(mergedText)) {
+            addOrderIfValid(code, range)
+        }
+        Log.d("RecognitionMonitor", "关键词及三段码扫描完成，找到 ${orders.size} 个取件码")
 
         // 方法2：如果方法1找到的取件码不足，尝试基于快递品牌名称查找
         val hasExpressTrigger = engine.getExpressTriggerKeywords().any { mergedText.contains(it) }

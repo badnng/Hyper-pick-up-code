@@ -97,6 +97,7 @@ internal class OobeWelcomeView(
         nextButton.apply {
             setPadding(0, 0, 0, 0)
             scaleType = ImageView.ScaleType.FIT_XY
+            backgroundTintList = null
             tag = nextLayout
             isClickable = false
             isFocusable = false
@@ -207,6 +208,9 @@ internal class OobeWelcomeView(
     }
 
     private fun updateBackendVisuals() {
+        // 防止系统 ImageButton 样式给静态矢量背景整体着色，导致圆形和箭头一起发白。
+        nextButton.backgroundTintList = null
+        nextArrow.imageTintList = null
         if (backend == OobeVisualBackend.HyperOsEnhanced) {
             logoView.setBaseColor(Color.WHITE)
             wordmarkView.imageTintList = ColorStateList.valueOf(Color.WHITE)

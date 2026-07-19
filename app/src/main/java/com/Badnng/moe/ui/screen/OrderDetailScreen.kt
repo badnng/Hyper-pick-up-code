@@ -48,6 +48,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import com.Badnng.moe.R
 import com.Badnng.moe.data.db.OrderEntity
+import com.Badnng.moe.helper.AppMemoryPressureState
 import top.yukonga.miuix.kmp.blur.BlurColors
 import top.yukonga.miuix.kmp.shader.isRenderEffectSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -63,15 +64,23 @@ fun OrderDetailScreen(
 ) {
     var showFullScreen by remember { mutableStateOf(false) }
     val surfaceColor = MaterialTheme.colorScheme.surface
-    val backdrop = rememberLayerBackdrop {
-        drawRect(surfaceColor)
-        drawContent()
+    val canBlur = !AppMemoryPressureState.active && isRenderEffectSupported()
+    val backdrop = if (canBlur) {
+        rememberLayerBackdrop {
+            drawRect(surfaceColor)
+            drawContent()
+        }
+    } else {
+        null
     }
-    val canBlur = isRenderEffectSupported()
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // 内容层
-        Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -163,7 +172,7 @@ fun OrderDetailScreen(
     }
 
     // 毛玻璃 TopAppBar 覆盖层
-    if (canBlur) {
+    if (backdrop != null) {
         Box(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier

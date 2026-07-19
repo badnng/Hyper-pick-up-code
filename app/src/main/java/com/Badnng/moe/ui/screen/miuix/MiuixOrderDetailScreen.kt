@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Copy
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
@@ -56,7 +57,8 @@ import java.io.File
 @Composable
 fun MiuixOrderDetailScreen(
     order: OrderEntity,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    supportingPane: Boolean = false,
 ) {
     val topAppBarScrollBehavior = MiuixScrollBehavior()
     var showFullScreen by remember { mutableStateOf(false) }
@@ -73,7 +75,14 @@ fun MiuixOrderDetailScreen(
                     scrollBehavior = topAppBarScrollBehavior,
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(MiuixIcons.Regular.Back, contentDescription = "返回")
+                            Icon(
+                                if (supportingPane) {
+                                    MiuixIcons.Regular.Close
+                                } else {
+                                    MiuixIcons.Regular.Back
+                                },
+                                contentDescription = if (supportingPane) "关闭" else "返回",
+                            )
                         }
                     }
                 )

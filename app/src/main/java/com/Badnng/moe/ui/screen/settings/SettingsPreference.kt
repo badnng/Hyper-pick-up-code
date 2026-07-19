@@ -234,7 +234,11 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
             MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                 SwitchPreference(
                     title = "悬浮底栏",
-                    summary = "大屏设备关闭时使用可展开的侧边导航",
+                    summary = if (isLargeScreen) {
+                        "切换后将在下次加载界面时生效；关闭时使用侧边导航"
+                    } else {
+                        "使用悬浮样式底栏"
+                    },
                     checked = useFloatingNavBar,
                     onCheckedChange = {
                         performHaptic()
