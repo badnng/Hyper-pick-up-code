@@ -772,6 +772,11 @@ private val AVAILABLE_GROUP_ICONS = listOf(
     "ic_coco" to "CoCo",
     "ic_wallace" to "华莱士",
     "ic_lao_xiang_ji" to "老乡鸡",
+    "ic_yidiandian" to "一点点",
+    "ic_sto" to "申通",
+    "ic_zto" to "中通",
+    "ic_yto" to "圆通",
+    "ic_yunda" to "韵达",
     "ic_drink" to "饮品",
     "ic_package" to "快递",
     "ic_restaurant" to "餐食"
