@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -425,41 +426,59 @@ private fun Md3eOriginalTextSection(
 
 @Composable
 private fun Md3eScreenshotSection(state: OrderDetailUiState, actions: OrderDetailActions) {
-    BoxWithConstraints(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val previewWidth = minOf(
-            maxWidth,
-            state.screenshotPreviewMaxHeight * state.screenshotAspectRatio,
-        )
-        val previewHeight = previewWidth / state.screenshotAspectRatio
-        val shape = state.screenshotCornerPercents.toRoundedCornerShape()
-        val imageModifier = Modifier
-            .width(previewWidth)
-            .height(previewHeight)
-            .clip(shape)
-            .clickable {
-                actions.performHaptic()
-                actions.onShowImage()
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            val previewWidth = minOf(
+                maxWidth,
+                state.screenshotPreviewMaxHeight * state.screenshotAspectRatio,
+            )
+            val previewHeight = previewWidth / state.screenshotAspectRatio
+            val shape = state.screenshotCornerPercents.toRoundedCornerShape()
+            val imageModifier = Modifier
+                .width(previewWidth)
+                .height(previewHeight)
+                .clip(shape)
+                .clickable {
+                    actions.performHaptic()
+                    actions.onShowImage()
+                }
+            val debugResult = state.ocrDebugState?.result
+            if (debugResult != null) {
+                OcrAnnotatedImage(
+                    imageModel = ScreenshotStorage.imageModel(state.order.screenshotPath),
+                    imageWidth = debugResult.imageWidth,
+                    imageHeight = debugResult.imageHeight,
+                    blocks = visibleOcrDebugBlocks(debugResult, state.hideLowConfidenceOcr),
+                    shape = shape,
+                    modifier = imageModifier,
+                )
+            } else {
+                AsyncImage(
+                    model = ScreenshotStorage.imageModel(state.order.screenshotPath),
+                    contentDescription = "识别截图，点击查看大图",
+                    modifier = imageModifier,
+                    contentScale = ContentScale.Fit,
+                )
             }
-        val debugResult = state.ocrDebugState?.result
-        if (debugResult != null) {
-            OcrAnnotatedImage(
-                imageModel = ScreenshotStorage.imageModel(state.order.screenshotPath),
-                imageWidth = debugResult.imageWidth,
-                imageHeight = debugResult.imageHeight,
-                blocks = visibleOcrDebugBlocks(debugResult, state.hideLowConfidenceOcr),
-                shape = shape,
-                modifier = imageModifier,
-            )
-        } else {
-            AsyncImage(
-                model = ScreenshotStorage.imageModel(state.order.screenshotPath),
-                contentDescription = "识别截图，点击查看大图",
-                modifier = imageModifier,
-                contentScale = ContentScale.Fit,
-            )
+        }
+        OutlinedButton(
+            onClick = {
+                actions.performHaptic()
+                actions.onShareScreenshot()
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = RoundedCornerShape(15.dp),
+        ) {
+            Icon(Icons.Default.Share, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("分享原图")
         }
     }
 }

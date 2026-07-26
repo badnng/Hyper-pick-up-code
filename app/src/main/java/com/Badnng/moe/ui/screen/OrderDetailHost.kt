@@ -2,8 +2,11 @@ package com.Badnng.moe.ui.screen
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.view.RoundedCorner
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -141,6 +144,11 @@ fun OrderDetailHost(
             onToggleFullText = { fullTextExpanded = !fullTextExpanded },
             onToggleTechnical = { technicalExpanded = !technicalExpanded },
             onShowImage = { if (screenshotExists) showFullScreen = true },
+            onShareScreenshot = {
+                if (screenshotExists) {
+                    shareOriginalScreenshot(context, order.screenshotPath)
+                }
+            },
             performHaptic = performHaptic,
         ),
         modifier,
@@ -150,6 +158,25 @@ fun OrderDetailHost(
         FullScreenImageDialog(order.screenshotPath) {
             showFullScreen = false
         }
+    }
+}
+
+private fun shareOriginalScreenshot(context: Context, location: String) {
+    val uri = ScreenshotStorage.shareUri(context, location)
+    if (uri == null) {
+        Toast.makeText(context, "原图不可用", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = ScreenshotStorage.mimeType(context, location)
+        putExtra(Intent.EXTRA_STREAM, uri)
+        clipData = ClipData.newUri(context.contentResolver, "识别截图原图", uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    runCatching {
+        context.startActivity(Intent.createChooser(shareIntent, "分享原图"))
+    }.onFailure {
+        Toast.makeText(context, "没有可用的分享应用", Toast.LENGTH_SHORT).show()
     }
 }
 

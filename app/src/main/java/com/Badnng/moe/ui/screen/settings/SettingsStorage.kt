@@ -785,10 +785,10 @@ private fun readStorageSnapshot(context: Context): StorageSnapshot {
 
     val cache = bucketOf(internalCache, externalCache)
     val legacyScreenshots = bucketOf(screenshotDir)
-    val publicScreenshots = ScreenshotStorage.readStats(context)
+    val managedScreenshots = ScreenshotStorage.readStats(context)
     val screenshots = StorageBucket(
-        size = legacyScreenshots.size + publicScreenshots.size,
-        fileCount = legacyScreenshots.fileCount + publicScreenshots.fileCount,
+        size = managedScreenshots.size,
+        fileCount = managedScreenshots.fileCount,
     )
     val logs = bucketOf(logsDir)
     val downloads = bucketOf(downloadsDir)
@@ -836,8 +836,7 @@ private suspend fun clearStorageCategory(
         StorageClearResult(success, if (success) "临时缓存已清理" else "部分缓存无法清理")
     }
     CleanupCategory.Screenshots -> {
-        val success = ScreenshotStorage.deleteAll(context) &&
-            clearDirectories(File(context.filesDir, "screenshots"))
+        val success = ScreenshotStorage.deleteAll(context)
         StorageClearResult(success, if (success) "识别截图已清理" else "部分截图无法清理")
     }
     CleanupCategory.Logs -> {

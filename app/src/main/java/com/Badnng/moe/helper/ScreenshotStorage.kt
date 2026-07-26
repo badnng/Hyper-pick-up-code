@@ -1,13 +1,16 @@
 package com.Badnng.moe.helper
 
-import android.content.ContentValues
+import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Environment
+import android.provider.BaseColumns
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
 import androidx.room.withTransaction
 import com.Badnng.moe.data.db.OrderDatabase
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +26,11 @@ import java.util.UUID
 
 object ScreenshotStorage {
     const val DIRECTORY_NAME = "澎湃记识别截图"
-    val relativePath: String = "${Environment.DIRECTORY_DOWNLOADS}/$DIRECTORY_NAME/"
+    private const val LEGACY_INTERNAL_DIRECTORY_NAME = "screenshots"
+    private const val NO_MEDIA_FILE_NAME = ".nomedia"
+    private const val PENDING_SUFFIX = ".pending"
+    private val publicPicturesRelativePath = "${Environment.DIRECTORY_PICTURES}/$DIRECTORY_NAME/"
+    private val legacyDownloadsRelativePath = "${Environment.DIRECTORY_DOWNLOADS}/$DIRECTORY_NAME/"
 
     data class Stats(
         val size: Long = 0L,
@@ -37,6 +44,12 @@ object ScreenshotStorage {
         val failedFiles: Int = 0,
     )
 
+    private data class MediaEntry(
+        val uri: Uri,
+        val displayName: String,
+        val size: Long,
+    )
+
     fun saveBitmap(
         context: Context,
         bitmap: Bitmap,
@@ -44,7 +57,6 @@ object ScreenshotStorage {
     ): String = createEntry(
         context = context,
         displayName = uniqueDisplayName(namePrefix, "png"),
-        mimeType = "image/png",
     ) { output ->
         check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "截图编码失败" }
     }
@@ -54,11 +66,9 @@ object ScreenshotStorage {
         input: InputStream,
         namePrefix: String,
         extension: String,
-        mimeType: String = mimeTypeForExtension(extension),
     ): String = createEntry(
         context = context,
         displayName = uniqueDisplayName(namePrefix, normalizeExtension(extension)),
-        mimeType = mimeType,
     ) { output ->
         input.copyTo(output)
     }
@@ -108,83 +118,175 @@ object ScreenshotStorage {
         return normalizeExtension(source.substringAfterLast('.', "img"))
     }
 
+    fun mimeType(context: Context, location: String): String = mimeTypeForExtension(
+        extension(context, location),
+    )
+
+    fun shareUri(context: Context, location: String): Uri? {
+        if (location.isBlank()) return null
+        val parsed = locationUri(location)
+        if (parsed?.scheme == "content") return parsed
+        val file = when (parsed?.scheme) {
+            "file" -> parsed.path?.let(::File)
+            else -> File(location)
+        }?.takeIf(File::isFile) ?: return null
+        return runCatching {
+            FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                file,
+            )
+        }.getOrNull()
+    }
+
     fun delete(context: Context, location: String): Boolean {
         if (location.isBlank()) return true
         return runCatching {
             val uri = locationUri(location)
-            if (uri != null) {
-                context.contentResolver.delete(uri, null, null) > 0 || !exists(context, location)
-            } else {
-                val file = File(location)
-                !file.exists() || file.delete()
+            when (uri?.scheme) {
+                "content" ->
+                    context.contentResolver.delete(uri, null, null) > 0 || !exists(context, location)
+                "file" -> uri.path?.let(::File)?.let { !it.exists() || it.delete() } ?: true
+                else -> File(location).let { !it.exists() || it.delete() }
             }
         }.getOrDefault(false)
     }
 
     fun readStats(context: Context): Stats {
-        val resolver = context.contentResolver
-        val projection = arrayOf(MediaStore.MediaColumns.SIZE)
-        return runCatching {
-            resolver.query(
-                downloadsCollection(),
-                projection,
-                "${MediaStore.MediaColumns.RELATIVE_PATH} = ?",
-                arrayOf(relativePath),
-                null,
-            )?.use { cursor ->
-                val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-                var size = 0L
-                var count = 0
-                while (cursor.moveToNext()) {
-                    size += cursor.getLong(sizeIndex).coerceAtLeast(0L)
-                    count++
-                }
-                Stats(size, count)
-            } ?: Stats()
-        }.getOrDefault(Stats())
+        val appContext = context.applicationContext
+        val directories = listOf(
+            storageDirectory(appContext),
+            legacyInternalDirectory(appContext),
+        ).distinctBy { canonicalPathOrAbsolute(it) }
+        val directoryStats = directories.map { readDirectoryStats(it) }
+        val resolver = appContext.contentResolver
+        val publicPictures = readCollectionStats(
+            resolver,
+            imagesCollection(),
+            publicPicturesRelativePath,
+        )
+        val legacyDownloads = readCollectionStats(
+            resolver,
+            downloadsCollection(),
+            legacyDownloadsRelativePath,
+        )
+        return Stats(
+            size = directoryStats.sumOf { it.size } + publicPictures.size + legacyDownloads.size,
+            fileCount = directoryStats.sumOf { it.fileCount } +
+                publicPictures.fileCount + legacyDownloads.fileCount,
+        )
     }
 
     fun deleteAll(context: Context): Boolean {
-        val resolver = context.contentResolver
-        return runCatching {
-            resolver.delete(
-                downloadsCollection(),
-                "${MediaStore.MediaColumns.RELATIVE_PATH} = ?",
-                arrayOf(relativePath),
-            )
-            true
-        }.getOrDefault(false)
+        val appContext = context.applicationContext
+        val directoryResults = listOf(
+            storageDirectory(appContext),
+            legacyInternalDirectory(appContext),
+        ).distinctBy { canonicalPathOrAbsolute(it) }.map { clearDirectory(it) }
+        val resolver = appContext.contentResolver
+        val publicPicturesDeleted = deleteCollection(
+            resolver,
+            imagesCollection(),
+            publicPicturesRelativePath,
+        )
+        val legacyDownloadsDeleted = deleteCollection(
+            resolver,
+            downloadsCollection(),
+            legacyDownloadsRelativePath,
+        )
+        return directoryResults.all { it } && publicPicturesDeleted && legacyDownloadsDeleted
     }
 
     suspend fun migrateLegacyScreenshots(context: Context): MigrationResult = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
-        val legacyRoot = File(appContext.filesDir, "screenshots")
-        if (!legacyRoot.isDirectory) return@withContext MigrationResult()
-
-        val legacyFiles = legacyRoot.walkTopDown().filter(File::isFile).toList()
-        if (legacyFiles.isEmpty()) return@withContext MigrationResult()
+        val targetDirectory = prepareStorageDirectory(appContext)
+        cleanupPendingFiles(targetDirectory)
 
         val migratedLocations = linkedMapOf<String, String>()
         val createdLocations = mutableListOf<String>()
+        val legacyFilesToDelete = mutableListOf<File>()
+        val publicLocationsToDelete = mutableListOf<String>()
+        val existingByDisplayName = targetDirectory.listFiles()
+            ?.filter {
+                it.isFile &&
+                    it.name != NO_MEDIA_FILE_NAME &&
+                    !it.name.endsWith(PENDING_SUFFIX)
+            }
+            ?.associateBy { it.name }
+            ?.toMutableMap()
+            ?: mutableMapOf()
         var failedFiles = 0
-        legacyFiles.forEach { file ->
-            runCatching {
-                val extension = normalizeExtension(file.extension)
-                val location = file.inputStream().use { input ->
-                    saveStream(
-                        context = appContext,
-                        input = input,
-                        namePrefix = "历史_${file.nameWithoutExtension}",
-                        extension = extension,
-                    )
+
+        fun migrateSource(
+            sourceLocation: String,
+            sourceKey: String,
+            displayName: String,
+            sourceSize: Long,
+        ): Boolean = runCatching {
+            val safeDisplayName = sanitizeDisplayName(displayName)
+            val existing = existingByDisplayName[safeDisplayName]
+                ?.takeIf { it.length() > 0L && it.length() == sourceSize }
+            val destination = existing?.absolutePath ?: checkNotNull(
+                openInputStream(appContext, sourceLocation),
+            ) { "无法读取历史截图" }.use { input ->
+                createEntry(
+                    context = appContext,
+                    displayName = safeDisplayName,
+                ) { output ->
+                    input.copyTo(output)
+                }.also { createdLocation ->
+                    createdLocations += createdLocation
+                    existingByDisplayName[safeDisplayName] = File(createdLocation)
                 }
-                migratedLocations[file.canonicalPath] = location
-                createdLocations += location
-            }.onFailure {
-                failedFiles++
-                AppLogger.update("Screenshot migration copy failed: ${file.absolutePath}, ${it.message}")
+            }
+            migratedLocations[sourceKey] = destination
+        }.onFailure {
+            failedFiles++
+            AppLogger.update("Screenshot migration failed: $sourceLocation, ${it.message}")
+        }.isSuccess
+
+        val legacyInternal = legacyInternalDirectory(appContext)
+        if (canonicalPathOrAbsolute(legacyInternal) != canonicalPathOrAbsolute(targetDirectory)) {
+            legacyInternal.walkTopDown().filter(File::isFile).forEach { source ->
+                val sourceKey = canonicalPathOrAbsolute(source)
+                if (
+                    migrateSource(
+                        sourceLocation = source.absolutePath,
+                        sourceKey = sourceKey,
+                        displayName = source.name,
+                        sourceSize = source.length(),
+                    )
+                ) {
+                    legacyFilesToDelete += source
+                }
             }
         }
+
+        fun migrateMediaCollection(collection: Uri, path: String) {
+            runCatching { queryMediaEntries(appContext.contentResolver, collection, path) }
+                .onSuccess { entries ->
+                    entries.forEach { source ->
+                        val sourceLocation = source.uri.toString()
+                        if (
+                            migrateSource(
+                                sourceLocation = sourceLocation,
+                                sourceKey = sourceLocation,
+                                displayName = source.displayName,
+                                sourceSize = source.size,
+                            )
+                        ) {
+                            publicLocationsToDelete += sourceLocation
+                        }
+                    }
+                }
+                .onFailure {
+                    failedFiles++
+                    AppLogger.update("Screenshot MediaStore query failed: $path, ${it.message}")
+                }
+        }
+
+        migrateMediaCollection(imagesCollection(), publicPicturesRelativePath)
+        migrateMediaCollection(downloadsCollection(), legacyDownloadsRelativePath)
 
         if (migratedLocations.isEmpty()) {
             return@withContext MigrationResult(failedFiles = failedFiles)
@@ -215,10 +317,23 @@ object ScreenshotStorage {
             throw error
         }
 
-        migratedLocations.keys.forEach { path -> runCatching { File(path).delete() } }
-        legacyRoot.walkBottomUp()
-            .filter(File::isDirectory)
-            .forEach { directory -> if (directory.listFiles().isNullOrEmpty()) directory.delete() }
+        legacyFilesToDelete.forEach { file ->
+            if (file.exists() && !file.delete()) {
+                failedFiles++
+                AppLogger.update("Screenshot legacy file delete failed: ${file.absolutePath}")
+            }
+        }
+        publicLocationsToDelete.forEach { location ->
+            if (!delete(appContext, location)) {
+                failedFiles++
+                AppLogger.update("Screenshot MediaStore delete failed: $location")
+            }
+        }
+        if (canonicalPathOrAbsolute(legacyInternal) != canonicalPathOrAbsolute(targetDirectory)) {
+            legacyInternal.walkBottomUp()
+                .filter(File::isDirectory)
+                .forEach { directory -> if (directory.listFiles().isNullOrEmpty()) directory.delete() }
+        }
 
         MigrationResult(
             migratedFiles = migratedLocations.size,
@@ -231,36 +346,43 @@ object ScreenshotStorage {
     private fun createEntry(
         context: Context,
         displayName: String,
-        mimeType: String,
         write: (OutputStream) -> Unit,
     ): String {
-        val resolver = context.applicationContext.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val uri = checkNotNull(resolver.insert(downloadsCollection(), values)) {
-            "无法在下载目录创建截图"
-        }
+        val directory = prepareStorageDirectory(context.applicationContext)
+        val target = availableTargetFile(directory, sanitizeDisplayName(displayName))
+        val pending = File(
+            directory,
+            ".${target.name}.${UUID.randomUUID().toString().take(6)}$PENDING_SUFFIX",
+        )
         try {
-            resolver.openOutputStream(uri, "w")?.use(write)
-                ?: error("无法写入截图")
-            check(
-                resolver.update(
-                    uri,
-                    ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
-                    null,
-                    null,
-                ) > 0,
-            ) { "无法完成截图写入" }
-            return uri.toString()
+            pending.outputStream().buffered().use(write)
+            check(pending.renameTo(target)) { "无法完成截图写入" }
+            return target.absolutePath
         } catch (error: Exception) {
-            runCatching { resolver.delete(uri, null, null) }
+            runCatching { pending.delete() }
             throw error
         }
     }
+
+    private fun storageDirectory(context: Context): File {
+        val externalPictures = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        return externalPictures?.let { File(it, DIRECTORY_NAME) }
+            ?: legacyInternalDirectory(context)
+    }
+
+    private fun prepareStorageDirectory(context: Context): File {
+        val directory = storageDirectory(context)
+        check(directory.isDirectory || directory.mkdirs()) { "无法创建截图存储目录" }
+        val noMedia = File(directory, NO_MEDIA_FILE_NAME)
+        if (!noMedia.exists()) {
+            runCatching { noMedia.createNewFile() }
+                .onFailure { AppLogger.update("Screenshot .nomedia create failed: ${it.message}") }
+        }
+        return directory
+    }
+
+    private fun legacyInternalDirectory(context: Context): File =
+        File(context.filesDir, LEGACY_INTERNAL_DIRECTORY_NAME)
 
     private fun queryDisplayName(context: Context, location: String): String? {
         val uri = locationUri(location) ?: return File(location).name
@@ -282,13 +404,36 @@ object ScreenshotStorage {
         location: String,
         migratedLocations: Map<String, String>,
     ): String? {
-        if (location.isBlank() || locationUri(location) != null) return null
-        return runCatching { migratedLocations[File(location).canonicalPath] }.getOrNull()
+        if (location.isBlank()) return null
+        migratedLocations[location]?.let { return it }
+        if (locationUri(location) != null) return null
+        return migratedLocations[canonicalPathOrAbsolute(File(location))]
     }
 
     private fun locationUri(location: String): Uri? {
         val parsed = Uri.parse(location)
         return parsed.takeIf { it.scheme == "content" || it.scheme == "file" }
+    }
+
+    private fun sanitizeDisplayName(displayName: String): String {
+        val leafName = displayName.substringAfterLast('/').substringAfterLast('\\')
+        val extension = normalizeExtension(leafName.substringAfterLast('.', "png"))
+        val baseName = leafName.substringBeforeLast('.', leafName)
+            .replace(Regex("[\\\\/:*?\"<>|\\r\\n]+"), "_")
+            .trim('.', ' ', '_')
+            .take(100)
+            .ifBlank { "识别截图" }
+        return "$baseName.$extension"
+    }
+
+    private fun availableTargetFile(directory: File, displayName: String): File {
+        val preferred = File(directory, displayName)
+        if (!preferred.exists()) return preferred
+        val extension = normalizeExtension(displayName.substringAfterLast('.', "png"))
+        val baseName = displayName.substringBeforeLast('.', displayName).take(90)
+        return generateSequence {
+            File(directory, "${baseName}_${UUID.randomUUID().toString().take(6)}.$extension")
+        }.first { !it.exists() }
     }
 
     private fun uniqueDisplayName(prefix: String, extension: String): String {
@@ -310,6 +455,119 @@ object ScreenshotStorage {
         "webp" -> "image/webp"
         else -> "image/png"
     }
+
+    private fun readDirectoryStats(directory: File): Stats {
+        if (!directory.isDirectory) return Stats()
+        var size = 0L
+        var count = 0
+        directory.walkTopDown()
+            .filter {
+                it.isFile &&
+                    it.name != NO_MEDIA_FILE_NAME &&
+                    !it.name.endsWith(PENDING_SUFFIX)
+            }
+            .forEach { file ->
+                size += file.length().coerceAtLeast(0L)
+                count++
+            }
+        return Stats(size, count)
+    }
+
+    private fun clearDirectory(directory: File): Boolean {
+        if (!directory.exists()) return true
+        var success = true
+        directory.listFiles()?.forEach { child ->
+            if (!child.deleteRecursively()) success = false
+        }
+        return success
+    }
+
+    private fun cleanupPendingFiles(directory: File) {
+        val staleBefore = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
+        directory.listFiles()
+            ?.filter {
+                it.isFile &&
+                    it.name.endsWith(PENDING_SUFFIX) &&
+                    it.lastModified() in 1L..staleBefore
+            }
+            ?.forEach { it.delete() }
+    }
+
+    private fun canonicalPathOrAbsolute(file: File): String =
+        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
+
+    private fun readCollectionStats(
+        resolver: ContentResolver,
+        collection: Uri,
+        path: String,
+    ): Stats = runCatching {
+        resolver.query(
+            collection,
+            arrayOf(MediaStore.MediaColumns.SIZE),
+            "${MediaStore.MediaColumns.RELATIVE_PATH} = ?",
+            arrayOf(path),
+            null,
+        )?.use { cursor ->
+            val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+            var size = 0L
+            var count = 0
+            while (cursor.moveToNext()) {
+                size += cursor.getLong(sizeIndex).coerceAtLeast(0L)
+                count++
+            }
+            Stats(size, count)
+        } ?: Stats()
+    }.getOrDefault(Stats())
+
+    private fun deleteCollection(
+        resolver: ContentResolver,
+        collection: Uri,
+        path: String,
+    ): Boolean = runCatching {
+        resolver.delete(
+            collection,
+            "${MediaStore.MediaColumns.RELATIVE_PATH} = ?",
+            arrayOf(path),
+        )
+        true
+    }.getOrDefault(false)
+
+    private fun queryMediaEntries(
+        resolver: ContentResolver,
+        collection: Uri,
+        path: String,
+    ): List<MediaEntry> {
+        val projection = arrayOf(
+            BaseColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.SIZE,
+        )
+        return resolver.query(
+            collection,
+            projection,
+            "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND ${MediaStore.MediaColumns.IS_PENDING} = 0",
+            arrayOf(path),
+            null,
+        )?.use { cursor ->
+            val idIndex = cursor.getColumnIndexOrThrow(BaseColumns._ID)
+            val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+            val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        MediaEntry(
+                            uri = ContentUris.withAppendedId(collection, cursor.getLong(idIndex)),
+                            displayName = cursor.getString(nameIndex),
+                            size = cursor.getLong(sizeIndex).coerceAtLeast(0L),
+                        ),
+                    )
+                }
+            }
+        } ?: emptyList()
+    }
+
+    private fun imagesCollection(): Uri =
+        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
     private fun downloadsCollection(): Uri =
         MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)

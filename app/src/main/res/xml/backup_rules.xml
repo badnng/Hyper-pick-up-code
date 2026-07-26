@@ -5,4 +5,6 @@
     <exclude domain="sharedpref" path="storage_cleanup.xml" />
     <exclude domain="file" path="logs/" />
     <exclude domain="file" path="downloads/" />
+    <exclude domain="file" path="screenshots/" />
+    <exclude domain="external" path="Pictures/澎湃记识别截图/" />
 </full-backup-content>

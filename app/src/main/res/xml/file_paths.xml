@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <files-path name="downloads" path="downloads/" />
+    <files-path name="legacy_screenshots" path="screenshots/" />
+    <external-files-path
+        name="screenshots"
+        path="Pictures/澎湃记识别截图/" />
 </paths>

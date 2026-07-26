@@ -408,41 +408,57 @@ private fun MiuixOriginalTextSection(
 
 @Composable
 private fun MiuixScreenshotSection(state: OrderDetailUiState, actions: OrderDetailActions) {
-    BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val previewWidth = minOf(
-            maxWidth,
-            state.screenshotPreviewMaxHeight * state.screenshotAspectRatio,
-        )
-        val previewHeight = previewWidth / state.screenshotAspectRatio
-        val shape = state.screenshotCornerPercents.toRoundedCornerShape()
-        val imageModifier = Modifier
-            .width(previewWidth)
-            .height(previewHeight)
-            .clip(shape)
-            .clickable {
-                actions.performHaptic()
-                actions.onShowImage()
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val previewWidth = minOf(
+                maxWidth,
+                state.screenshotPreviewMaxHeight * state.screenshotAspectRatio,
+            )
+            val previewHeight = previewWidth / state.screenshotAspectRatio
+            val shape = state.screenshotCornerPercents.toRoundedCornerShape()
+            val imageModifier = Modifier
+                .width(previewWidth)
+                .height(previewHeight)
+                .clip(shape)
+                .clickable {
+                    actions.performHaptic()
+                    actions.onShowImage()
+                }
+            val debugResult = state.ocrDebugState?.result
+            if (debugResult != null) {
+                OcrAnnotatedImage(
+                    imageModel = ScreenshotStorage.imageModel(state.order.screenshotPath),
+                    imageWidth = debugResult.imageWidth,
+                    imageHeight = debugResult.imageHeight,
+                    blocks = visibleOcrDebugBlocks(debugResult, state.hideLowConfidenceOcr),
+                    shape = shape,
+                    modifier = imageModifier,
+                )
+            } else {
+                AsyncImage(
+                    model = ScreenshotStorage.imageModel(state.order.screenshotPath),
+                    contentDescription = "识别截图，点击查看大图",
+                    modifier = imageModifier,
+                    contentScale = ContentScale.Fit,
+                )
             }
-        val debugResult = state.ocrDebugState?.result
-        if (debugResult != null) {
-            OcrAnnotatedImage(
-                imageModel = ScreenshotStorage.imageModel(state.order.screenshotPath),
-                imageWidth = debugResult.imageWidth,
-                imageHeight = debugResult.imageHeight,
-                blocks = visibleOcrDebugBlocks(debugResult, state.hideLowConfidenceOcr),
-                shape = shape,
-                modifier = imageModifier,
-            )
-        } else {
-            AsyncImage(
-                model = ScreenshotStorage.imageModel(state.order.screenshotPath),
-                contentDescription = "识别截图，点击查看大图",
-                modifier = imageModifier,
-                contentScale = ContentScale.Fit,
-            )
         }
+        TextButton(
+            text = "分享原图",
+            onClick = {
+                actions.performHaptic()
+                actions.onShareScreenshot()
+            },
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
+            colors = ButtonDefaults.textButtonColorsPrimary(),
+        )
     }
 }

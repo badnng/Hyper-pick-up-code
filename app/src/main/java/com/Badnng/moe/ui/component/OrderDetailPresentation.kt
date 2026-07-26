@@ -53,6 +53,7 @@ data class OrderDetailActions(
     val onToggleFullText: () -> Unit,
     val onToggleTechnical: () -> Unit,
     val onShowImage: () -> Unit,
+    val onShareScreenshot: () -> Unit,
     val performHaptic: () -> Unit,
 )
 
