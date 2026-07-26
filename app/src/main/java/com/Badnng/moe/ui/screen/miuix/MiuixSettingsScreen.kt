@@ -95,33 +95,13 @@ fun MiuixSettingsScreen(
                     )
                     ArrowPreference(
                         title = "清理空间",
-                        summary = "管理App占用的缓存与截图空间",
+                        summary = "管理缓存、截图、日志与更新文件",
                         onClick = { onNavigateToSubPage(SettingsPage.Storage) }
                     )
                     ArrowPreference(
                         title = "添加到控制中心",
                         summary = "将「截图识别」磁贴添加到控制中心快捷栏",
                         onClick = { requestAddTile(context) }
-                    )
-                }
-            }
-
-            item {
-                SmallTitle(text = "其他")
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp)
-                ) {
-                    ArrowPreference(
-                        title = "关于",
-                        summary = "应用信息与开源许可",
-                        onClick = { onNavigateToSubPage(SettingsPage.About) }
-                    )
-                    ArrowPreference(
-                        title = "赞助",
-                        summary = "支持项目持续更新",
-                        onClick = { onNavigateToSubPage(SettingsPage.Sponsor) }
                     )
                 }
             }

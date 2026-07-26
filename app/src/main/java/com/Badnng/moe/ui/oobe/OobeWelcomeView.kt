@@ -211,26 +211,48 @@ internal class OobeWelcomeView(
         // 防止系统 ImageButton 样式给静态矢量背景整体着色，导致圆形和箭头一起发白。
         nextButton.backgroundTintList = null
         nextArrow.imageTintList = null
-        if (backend == OobeVisualBackend.HyperOsEnhanced) {
-            logoView.setBaseColor(Color.WHITE)
-            wordmarkView.imageTintList = ColorStateList.valueOf(Color.WHITE)
-            nextButton.setBackgroundResource(R.drawable.oobe_start_button_hyperos)
-            nextArrow.visibility = VISIBLE
-        } else if (darkTheme) {
-            logoView.setBaseColor(Color.WHITE)
-            wordmarkView.imageTintList = ColorStateList.valueOf(Color.WHITE)
-            nextButton.setBackgroundResource(R.drawable.oobe_start_button_fallback_dark)
-            nextArrow.visibility = GONE
-        } else {
-            logoView.setBaseColor(Color.BLACK)
-            wordmarkView.imageTintList = ColorStateList.valueOf(Color.BLACK)
-            nextButton.setBackgroundResource(R.drawable.oobe_start_button_fallback)
-            nextArrow.visibility = GONE
+        when (backend) {
+            OobeVisualBackend.HyperOsEnhanced -> {
+                logoView.setBaseColor(Color.WHITE)
+                wordmarkView.imageTintList = ColorStateList.valueOf(Color.WHITE)
+                nextButton.setBackgroundResource(R.drawable.oobe_start_button_hyperos)
+                nextArrow.visibility = VISIBLE
+            }
+            OobeVisualBackend.HyperOsIconMixing -> {
+                logoView.setBaseColor(Color.WHITE)
+                wordmarkView.imageTintList = ColorStateList.valueOf(Color.WHITE)
+                nextButton.setBackgroundResource(
+                    if (darkTheme) {
+                        R.drawable.oobe_start_button_fallback_dark
+                    } else {
+                        R.drawable.oobe_start_button_fallback
+                    },
+                )
+                nextArrow.visibility = GONE
+            }
+            OobeVisualBackend.AndroidFallback,
+            OobeVisualBackend.StaticFallback -> {
+                val foregroundColor = if (darkTheme) Color.WHITE else Color.BLACK
+                logoView.setBaseColor(foregroundColor)
+                wordmarkView.imageTintList = ColorStateList.valueOf(foregroundColor)
+                nextButton.setBackgroundResource(
+                    if (darkTheme) {
+                        R.drawable.oobe_start_button_fallback_dark
+                    } else {
+                        R.drawable.oobe_start_button_fallback
+                    },
+                )
+                nextArrow.visibility = GONE
+            }
         }
     }
 
     private fun applyBlurIfNeeded() {
-        if (backend != OobeVisualBackend.HyperOsEnhanced || blurApplied) return
+        if (
+            backend != OobeVisualBackend.HyperOsEnhanced &&
+            backend != OobeVisualBackend.HyperOsIconMixing
+        ) return
+        if (blurApplied) return
         val logoPalette = if (darkTheme) {
             OobeBlurPalettes.MiuixDarkLogo
         } else {
@@ -241,22 +263,35 @@ internal class OobeWelcomeView(
         } else {
             OobeBlurPalettes.HyperCeilerLightWelcomeButton
         }
-        val success = HyperOsBlurBridge.apply(this) &&
-            HyperOsBlurBridge.applyViewBlur(
-                logoView,
-                logoPalette.colors,
-                logoPalette.modes,
-            ) &&
-            HyperOsBlurBridge.applyViewBlur(
-                wordmarkView,
-                logoPalette.colors,
-                logoPalette.modes,
-            ) &&
-            HyperOsBlurBridge.applyViewBlur(
-                nextButton,
-                buttonPalette.colors,
-                buttonPalette.modes,
-            )
+        val success = when (backend) {
+            OobeVisualBackend.HyperOsEnhanced -> HyperOsBlurBridge.apply(this) &&
+                HyperOsBlurBridge.applyViewBlur(
+                    logoView,
+                    logoPalette.colors,
+                    logoPalette.modes,
+                ) &&
+                HyperOsBlurBridge.applyViewBlur(
+                    wordmarkView,
+                    logoPalette.colors,
+                    logoPalette.modes,
+                ) &&
+                HyperOsBlurBridge.applyViewBlur(
+                    nextButton,
+                    buttonPalette.colors,
+                    buttonPalette.modes,
+                )
+            OobeVisualBackend.HyperOsIconMixing ->
+                HyperOsBlurBridge.applyViewBlur(
+                    logoView,
+                    logoPalette.colors,
+                    logoPalette.modes,
+                ) && HyperOsBlurBridge.applyViewBlur(
+                    wordmarkView,
+                    logoPalette.colors,
+                    logoPalette.modes,
+                )
+            else -> false
+        }
         if (success) {
             blurApplied = true
         } else {

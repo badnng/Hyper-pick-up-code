@@ -4,7 +4,11 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import com.Badnng.moe.ui.component.BlockedWordsEditorState
 import com.Badnng.moe.ui.component.GroupPosition
+import com.Badnng.moe.ui.component.PromptEditorVisuals
+import com.Badnng.moe.ui.component.OrderDetailActions
+import com.Badnng.moe.ui.component.OrderDetailUiState
 
 /**
  * UI 兼容层接口。所有新功能必须通过 LocalAppUi.current 调用组件，
@@ -29,6 +33,23 @@ data class AppUi(
     val preferenceSwitchItem: @Composable (title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) -> Unit,
     // 通知识别应用页顶栏菜单
     val notificationAppsTopBarAction: @Composable (showSystemApps: Boolean, onShowSystemAppsChange: (Boolean) -> Unit, performHaptic: () -> Unit) -> Unit,
+    // 自定义 Prompt 编辑器
+    val promptEditor: @Composable (lineCount: Int, onRestoreDefault: () -> Unit, modifier: Modifier, editor: @Composable (PromptEditorVisuals) -> Unit) -> Unit,
+    // 自定义屏蔽词编辑器
+    val blockedWordsEditor: @Composable (state: BlockedWordsEditorState, performHaptic: () -> Unit) -> Unit,
+    // 识别详情主体
+    val orderDetailContent: @Composable (state: OrderDetailUiState, actions: OrderDetailActions, modifier: Modifier) -> Unit,
+    // 全屏图片关闭按钮
+    val fullScreenImageCloseButton: @Composable (onClick: () -> Unit) -> Unit,
+    // 设置子页面通用操作与安全输入
+    val primaryActionButton: @Composable (text: String, enabled: Boolean, onClick: () -> Unit) -> Unit,
+    val messageBlock: @Composable (text: String, isError: Boolean) -> Unit,
+    val securePasswordDialog: @Composable (
+        requireConfirmation: Boolean,
+        performHaptic: () -> Unit,
+        onDismiss: () -> Unit,
+        onConfirm: (String) -> Unit,
+    ) -> Unit,
 )
 
 val LocalAppUi = staticCompositionLocalOf<AppUi> { error("No AppUi provided") }

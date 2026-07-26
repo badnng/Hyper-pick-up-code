@@ -7,6 +7,8 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="ic_launcher_background">@android:color/system_accent1_200</color>
+    <!-- Android 12+ overrides these aliases from values-v31 and values-night-v31. -->
+    <color name="ic_launcher_foreground">#FF5CB67B</color>
+    <color name="ic_launcher_background">#FFFFFFFF</color>
     <color name="oobe_window_background">#FFF7F7FA</color>
 </resources>

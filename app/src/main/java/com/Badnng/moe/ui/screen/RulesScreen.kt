@@ -6,12 +6,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -25,15 +23,13 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
@@ -41,16 +37,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.Badnng.moe.helper.BrandIconResolver
-import com.Badnng.moe.helper.AppMemoryPressureState
 import com.Badnng.moe.rules.*
+import com.Badnng.moe.ui.component.Md3eNavigationRailExpandButton
+import com.Badnng.moe.ui.component.rememberBlockedWordsEditorState
+import com.Badnng.moe.ui.LocalAppUi
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.shader.isRenderEffectSupported
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
-import top.yukonga.miuix.kmp.blur.textureBlur
 import java.io.BufferedReader
 import java.util.*
 
@@ -58,10 +52,12 @@ import java.util.*
 @Composable
 fun RulesScreen(
     modifier: Modifier = Modifier,
+    onExpandNavigationRail: (() -> Unit)? = null,
     onShowMenu: ((position: androidx.compose.ui.geometry.Offset, rename: (() -> Unit)?, delete: (() -> Unit)?, export: (() -> Unit)?) -> Unit)? = null,
     onDismissMenu: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val appUi = LocalAppUi.current
     val scope = rememberCoroutineScope()
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
@@ -83,6 +79,8 @@ fun RulesScreen(
 
     var localExpanded by remember { mutableStateOf(true) }
     var onlineExpanded by remember { mutableStateOf(false) }
+    var blockedWordsExpanded by remember { mutableStateOf(false) }
+    val blockedWordsState = rememberBlockedWordsEditorState()
 
     var showAddSourceDialog by remember { mutableStateOf(false) }
     var editingSource by remember { mutableStateOf<OnlineRuleSource?>(null) }
@@ -244,39 +242,31 @@ fun RulesScreen(
         }
     }
 
-    val surfaceColor = MaterialTheme.colorScheme.surface
     val listState = rememberLazyListState()
-    var isScrolled by remember { mutableStateOf(false) }
-
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
-            .collect { (index, offset) ->
-                isScrolled = index > 0 || offset > 30
-            }
-    }
-
-    val animatedBrightness by animateFloatAsState(
-        targetValue = if (isScrolled) -0.1f else 0f,
-        animationSpec = tween(300),
-        label = "brightness"
-    )
-
-    val canBlur = !AppMemoryPressureState.active && isRenderEffectSupported()
-    val backdrop = if (canBlur) {
-        rememberLayerBackdrop {
-            drawRect(surfaceColor)
-            drawContent()
-        }
-    } else {
-        null
-    }
-    Box(modifier = modifier.fillMaxSize()) {
-        // 内容层：延伸到顶栏下方
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
-        ) {
+    val isLargeScreen = LocalConfiguration.current.screenWidthDp >= 700
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    Scaffold(
+        modifier = modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            LargeTopAppBar(
+                title = { Text("识别规则", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    onExpandNavigationRail?.let { onExpand ->
+                        Md3eNavigationRailExpandButton(onClick = onExpand)
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
+            )
+        },
+    ) { innerPadding ->
             val bottomInsets =
                 WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -287,8 +277,8 @@ fun RulesScreen(
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
-                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp,
-                    bottom = bottomInsets + 100.dp
+                    top = innerPadding.calculateTopPadding() + 8.dp,
+                    bottom = bottomInsets + if (isLargeScreen) 24.dp else 100.dp
                 )
             ) {
                     item {
@@ -579,6 +569,24 @@ fun RulesScreen(
                         }
                     }
 
+                    item {
+                        SectionCard(
+                            title = "自定义屏蔽词",
+                            subtitle = if (blockedWordsState.words.isEmpty()) {
+                                "未设置"
+                            } else {
+                                "${blockedWordsState.words.size} 个词条"
+                            },
+                            expanded = blockedWordsExpanded,
+                            onToggle = {
+                                performHaptic()
+                                blockedWordsExpanded = !blockedWordsExpanded
+                            },
+                        ) {
+                            appUi.blockedWordsEditor(blockedWordsState, performHaptic)
+                        }
+                    }
+
                     // 自定义取件地点
                     item {
                         var customLocationsExpanded by remember { mutableStateOf(false) }
@@ -780,50 +788,6 @@ fun RulesScreen(
                     }
                 }
         }
-
-        // 毛玻璃 TopAppBar 覆盖层（仅 MD3E 模式）
-        if (backdrop != null) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                // 背景模糊层（带渐隐 mask）
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .textureBlur(
-                            backdrop = backdrop,
-                            shape = RectangleShape,
-                            blurRadius = 80f,
-                            colors = top.yukonga.miuix.kmp.blur.BlurColors(brightness = animatedBrightness)
-                        )
-                        .frostedGlassMask()
-                )
-                // 内容层（不受 mask 影响）
-                TopAppBar(
-                    title = {
-                        AnimatedVisibility(
-                            visible = !isScrolled,
-                            enter = fadeIn() + slideInVertically(),
-                            exit = fadeOut() + slideOutVertically()
-                        ) {
-                            Text("识别规则", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                    windowInsets = WindowInsets.statusBars
-                )
-            }
-        } else {
-            Surface(
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                tonalElevation = 3.dp
-            ) {
-                LargeTopAppBar(
-                    title = { Text("识别规则", style = MaterialTheme.typography.headlineLarge) },
-                    colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Color.Transparent),
-                    windowInsets = WindowInsets.statusBars
-                )
-            }
-        }
-    }
 
     // 添加/编辑在线源对话框
             if (showAddSourceDialog || editingSource != null) {
@@ -1387,19 +1351,5 @@ private fun OnlineSourceDialog(
                 Text("取消")
             }
         }
-    )
-}
-
-private fun Modifier.frostedGlassMask(): Modifier = this.drawWithContent {
-    drawContent()
-    drawRect(
-        brush = Brush.verticalGradient(
-            colorStops = arrayOf(
-                0f to Color.Black,
-                0.55f to Color.Black,
-                1f to Color.Transparent
-            )
-        ),
-        blendMode = BlendMode.DstIn
     )
 }

@@ -17,7 +17,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-object BackupHelper {
+@Deprecated("旧备份实现已停用，请使用流式 BackupManager", level = DeprecationLevel.ERROR)
+internal object BackupHelper {
     private const val TAG = "BackupHelper"
 
     data class BackupData(
@@ -52,6 +53,7 @@ object BackupHelper {
                         put("sourcePackage", order.sourcePackage ?: JSONObject.NULL)
                         put("fullText", order.fullText ?: JSONObject.NULL)
                         put("pickupLocation", order.pickupLocation ?: JSONObject.NULL)
+                        put("ocrDiagnosticData", order.ocrDiagnosticData ?: JSONObject.NULL)
                     }
                     ordersJson.put(orderJson)
                 }
@@ -167,7 +169,12 @@ object BackupHelper {
                 sourceApp = if (obj.isNull("sourceApp")) null else obj.getString("sourceApp"),
                 sourcePackage = if (obj.isNull("sourcePackage")) null else obj.getString("sourcePackage"),
                 fullText = if (obj.isNull("fullText")) null else obj.getString("fullText"),
-                pickupLocation = if (obj.isNull("pickupLocation")) null else obj.getString("pickupLocation")
+                pickupLocation = if (obj.isNull("pickupLocation")) null else obj.getString("pickupLocation"),
+                ocrDiagnosticData = if (!obj.has("ocrDiagnosticData") || obj.isNull("ocrDiagnosticData")) {
+                    null
+                } else {
+                    obj.getString("ocrDiagnosticData")
+                },
             )
             orders.add(order)
         }

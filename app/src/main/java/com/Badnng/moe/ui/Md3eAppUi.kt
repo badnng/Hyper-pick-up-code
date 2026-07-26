@@ -3,6 +3,7 @@ package com.Badnng.moe.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -24,6 +25,12 @@ import com.Badnng.moe.ui.component.Md3eSettingsGroup
 import com.Badnng.moe.ui.component.Md3eSettingsGroupItem
 import com.Badnng.moe.ui.component.Md3eSettingsGroupSwitchItem
 import com.Badnng.moe.ui.component.Md3eSettingsListItem
+import com.Badnng.moe.ui.component.Md3eBlockedWordsEditor
+import com.Badnng.moe.ui.component.Md3ePromptEditor
+import com.Badnng.moe.ui.component.Md3eOrderDetailContent
+import com.Badnng.moe.ui.screen.settings.Md3eMessageBlock
+import com.Badnng.moe.ui.screen.settings.Md3ePrimaryActionButton
+import com.Badnng.moe.ui.screen.settings.Md3eSecurePasswordDialog
 
 val md3eAppUi = AppUi(
     settingsGroup = { modifier, content -> Md3eSettingsGroup(modifier, content) },
@@ -53,6 +60,34 @@ val md3eAppUi = AppUi(
     },
     notificationAppsTopBarAction = { showSystemApps, onShowSystemAppsChange, performHaptic ->
         Md3eNotificationAppsTopBarAction(showSystemApps, onShowSystemAppsChange, performHaptic)
+    },
+    promptEditor = { lineCount, onRestoreDefault, modifier, editor ->
+        Md3ePromptEditor(lineCount, onRestoreDefault, modifier, editor)
+    },
+    blockedWordsEditor = { state, performHaptic ->
+        Md3eBlockedWordsEditor(state, performHaptic)
+    },
+    orderDetailContent = { state, actions, modifier ->
+        Md3eOrderDetailContent(state, actions, modifier)
+    },
+    fullScreenImageCloseButton = { onClick ->
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.CircleShape,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+        ) {
+            IconButton(onClick = onClick) {
+                Icon(Icons.Default.Close, contentDescription = "关闭大图")
+            }
+        }
+    },
+    primaryActionButton = { text, enabled, onClick ->
+        Md3ePrimaryActionButton(text, enabled, onClick)
+    },
+    messageBlock = { text, isError ->
+        Md3eMessageBlock(text, isError)
+    },
+    securePasswordDialog = { requireConfirmation, performHaptic, onDismiss, onConfirm ->
+        Md3eSecurePasswordDialog(requireConfirmation, performHaptic, onDismiss, onConfirm)
     },
 )
 

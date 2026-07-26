@@ -9,13 +9,10 @@ import com.Badnng.moe.receiver.ScheduledNotificationReceiver
 import android.graphics.Bitmap
 import android.os.Build
 import android.widget.Toast
-import java.io.File
 import androidx.compose.animation.*
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -39,6 +36,8 @@ import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Inventory2 as OutlinedInventory2
+import androidx.compose.material.icons.outlined.TaskAlt as OutlinedTaskAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -48,7 +47,6 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -59,14 +57,19 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.Badnng.moe.ui.component.Md3eNavigationRailExpandButton
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -77,6 +80,7 @@ import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.BrandIconResolver
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.NotificationScheduler
+import com.Badnng.moe.helper.ScreenshotStorage
 
 import com.Badnng.moe.viewmodel.OrderViewModel
 import com.google.zxing.BarcodeFormat
@@ -95,6 +99,7 @@ import androidx.compose.runtime.snapshotFlow
 fun CaptureScreen(
     modifier: Modifier = Modifier,
     bottomPadding: Dp = 0.dp,
+    onExpandNavigationRail: (() -> Unit)? = null,
     onEditModeChange: (Boolean) -> Unit = {},
     onNavigateToDetail: (Any) -> Unit = {},
     onScrollStateChange: (Boolean) -> Unit = {}
@@ -147,12 +152,18 @@ fun CaptureScreen(
         onEditModeChange = onEditModeChange,
         onNavigateToDetail = onNavigateToDetail,
         onScrollStateChange = onScrollStateChange,
+        onExpandNavigationRail = onExpandNavigationRail,
         modifier = modifier,
         bottomPadding = bottomPadding,
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(
+    ExperimentalFoundationApi::class,
+    ExperimentalLayoutApi::class,
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+)
 @Composable
 fun CaptureScreenContent(
     incompleteOrders: List<OrderEntity>,
@@ -169,6 +180,7 @@ fun CaptureScreenContent(
     onEditModeChange: (Boolean) -> Unit,
     onNavigateToDetail: (Any) -> Unit,
     onScrollStateChange: (Boolean) -> Unit = {},
+    onExpandNavigationRail: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     bottomPadding: Dp = 0.dp,
 ) {
@@ -219,6 +231,7 @@ fun CaptureScreenContent(
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
+    val motionScheme = MaterialTheme.motionScheme
 
     val completedListState = rememberLazyListState()
     val incompleteListState = rememberLazyListState()
@@ -312,50 +325,37 @@ fun CaptureScreenContent(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Top))
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
+                )
         ) {
             Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
+                color = MaterialTheme.colorScheme.background,
                 shadowElevation = 0.dp
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "澎湃记", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 16.dp))
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StatusButton(
-                                selected = !showCompletedOnly,
-                                label = "待取",
-                                count = incompleteOrders.size,
-                                onClick = {
-                                    if (!isEditMode) {
-                                        performHaptic()
-                                        if (!showCompletedOnly) {
-                                            showCategoryFilters = !showCategoryFilters
-                                        } else {
-                                            showCompletedOnly = false
-                                        }
-                                    }
-                                }
-                            )
-                            StatusButton(
-                                selected = showCompletedOnly,
-                                label = "已取",
-                                count = completedOrders.size,
-                                onClick = {
-                                    if (!isEditMode) {
-                                        performHaptic()
-                                        showCompletedOnly = true
-                                        showCategoryFilters = false
-                                    }
-                                }
-                            )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .padding(
+                                start = if (onExpandNavigationRail != null) 8.dp else 24.dp,
+                                end = 12.dp,
+                            ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        onExpandNavigationRail?.let { onExpand ->
+                            Md3eNavigationRailExpandButton(onClick = onExpand)
+                            Spacer(modifier = Modifier.width(4.dp))
                         }
-
+                        Text(
+                            text = "澎湃记",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
                         IconButton(onClick = {
                             performHaptic()
                             isEditMode = !isEditMode
@@ -364,13 +364,91 @@ fun CaptureScreenContent(
                             Icon(if (isEditMode) Icons.Default.Close else Icons.Default.SettingsSuggest, contentDescription = "管理", tint = if (isEditMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                         }
                     }
+
+                    FlowRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            ButtonGroupDefaults.ConnectedSpaceBetween,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        ToggleButton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { role = Role.RadioButton },
+                            checked = !showCompletedOnly,
+                            shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+                            onCheckedChange = {
+                                if (!isEditMode) {
+                                    performHaptic()
+                                    if (!showCompletedOnly) {
+                                        showCategoryFilters = !showCategoryFilters
+                                    } else {
+                                        showCompletedOnly = false
+                                    }
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = if (!showCompletedOnly) {
+                                    Icons.Filled.Inventory2
+                                } else {
+                                    Icons.Outlined.OutlinedInventory2
+                                },
+                                contentDescription = null,
+                            )
+                            Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+                            Text(
+                                text = "待取 ${incompleteOrders.size}",
+                                maxLines = 1,
+                            )
+                        }
+                        ToggleButton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { role = Role.RadioButton },
+                            checked = showCompletedOnly,
+                            shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                            onCheckedChange = {
+                                if (!isEditMode) {
+                                    performHaptic()
+                                    showCompletedOnly = true
+                                    showCategoryFilters = false
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = if (showCompletedOnly) {
+                                    Icons.Filled.TaskAlt
+                                } else {
+                                    Icons.Outlined.OutlinedTaskAlt
+                                },
+                                contentDescription = null,
+                            )
+                            Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+                            Text(
+                                text = "已取 ${completedOrders.size}",
+                                maxLines = 1,
+                            )
+                        }
+                    }
                 }
             }
 
             AnimatedVisibility(
                 visible = showCategoryFilters && !showCompletedOnly,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+                enter = expandVertically(
+                    animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                ) + fadeIn(
+                    animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                ),
+                exit = shrinkVertically(
+                    animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                ) + fadeOut(
+                    animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                ),
             ) {
                 Row(
                     modifier = Modifier
@@ -397,8 +475,16 @@ fun CaptureScreenContent(
 
             AnimatedVisibility(
                 visible = isEditMode,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+                enter = expandVertically(
+                    animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                ) + fadeIn(
+                    animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                ),
+                exit = shrinkVertically(
+                    animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                ) + fadeOut(
+                    animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                ),
             ) {
                 Column(
                     modifier = Modifier
@@ -435,8 +521,16 @@ fun CaptureScreenContent(
                         // 订单操作按钮（也适用于组）
                         AnimatedVisibility(
                             visible = selectedIds.isNotEmpty() || selectedGroupIds.isNotEmpty(),
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
+                            enter = fadeIn(
+                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                            ) + expandVertically(
+                                animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                            ),
+                            exit = fadeOut(
+                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                            ) + shrinkVertically(
+                                animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                            ),
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -478,8 +572,16 @@ fun CaptureScreenContent(
                         // 合并为组按钮（仅选中 standalone 订单 > 1 时显示）
                         AnimatedVisibility(
                             visible = selectedIds.size > 1 && !showCompletedOnly,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
+                            enter = fadeIn(
+                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                            ) + expandVertically(
+                                animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                            ),
+                            exit = fadeOut(
+                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                            ) + shrinkVertically(
+                                animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                            ),
                         ) {
                             OutlinedButton(
                                 onClick = { performHaptic(); showMergeGroupDialog = true },
@@ -493,8 +595,16 @@ fun CaptureScreenContent(
                         // 清空全部按钮
                         AnimatedVisibility(
                             visible = selectedIds.isEmpty() && selectedGroupIds.isEmpty() && showCompletedOnly && completedOrders.isNotEmpty(),
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
+                            enter = fadeIn(
+                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                            ) + expandVertically(
+                                animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                            ),
+                            exit = fadeOut(
+                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                            ) + shrinkVertically(
+                                animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                            ),
                         ) {
                             OutlinedButton(
                                 onClick = { performHaptic(); showClearAllConfirm = true },
@@ -515,7 +625,11 @@ fun CaptureScreenContent(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 label = "listTransition",
                 transitionSpec = {
-                    fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                    fadeIn(
+                        animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                    ) togetherWith fadeOut(
+                        animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                    )
                 }
             ) { currentShowCompletedOnly ->
                 val currentStandaloneOrders = standaloneOrders
@@ -564,7 +678,7 @@ fun CaptureScreenContent(
                                             }
                                         },
                                         modifier = Modifier.animateItem(
-                                            placementSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)
+                                            placementSpec = motionScheme.defaultSpatialSpec<IntOffset>(),
                                         )
                                     )
                                 }
@@ -574,15 +688,23 @@ fun CaptureScreenContent(
                             items(items = currentStandaloneOrders, key = { it.id }) { order ->
                                 Row(
                                     modifier = Modifier.animateItem(
-                                        placementSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)
+                                        placementSpec = motionScheme.defaultSpatialSpec<IntOffset>(),
                                     ),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box(modifier = Modifier.width(if (isEditMode) 40.dp else 0.dp)) {
                                         androidx.compose.animation.AnimatedVisibility(
                                             visible = isEditMode,
-                                            enter = expandHorizontally() + fadeIn(),
-                                            exit = shrinkHorizontally() + fadeOut()
+                                            enter = expandHorizontally(
+                                                animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                                            ) + fadeIn(
+                                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                                            ),
+                                            exit = shrinkHorizontally(
+                                                animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                                            ) + fadeOut(
+                                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                                            ),
                                         ) {
                                             Checkbox(
                                                 checked = selectedIds.contains(order.id),
@@ -1054,9 +1176,9 @@ fun OrderQuickViewDialog(order: OrderEntity, onDismiss: () -> Unit) {
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
-                if (!order.screenshotPath.isNullOrEmpty() && java.io.File(order.screenshotPath).exists()) {
+                if (ScreenshotStorage.exists(context, order.screenshotPath)) {
                     AsyncImage(
-                        model = java.io.File(order.screenshotPath),
+                        model = ScreenshotStorage.imageModel(order.screenshotPath),
                         contentDescription = "原图",
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1190,8 +1312,16 @@ fun OrderGroupCard(
         Box(modifier = Modifier.width(if (isEditMode) 40.dp else 0.dp)) {
             androidx.compose.animation.AnimatedVisibility(
                 visible = isEditMode,
-                enter = expandHorizontally() + fadeIn(),
-                exit = shrinkHorizontally() + fadeOut()
+                enter = expandHorizontally(
+                    animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                ) + fadeIn(
+                    animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                ),
+                exit = shrinkHorizontally(
+                    animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                ) + fadeOut(
+                    animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                ),
             ) {
                 Checkbox(
                     checked = isSelected,
@@ -1684,13 +1814,6 @@ fun OrderCard(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun StatusButton(selected: Boolean, label: String, count: Int, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, contentColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.height(36.dp).widthIn(min = 80.dp)) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) { Text(text = "$label $count", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
     }
 }
 

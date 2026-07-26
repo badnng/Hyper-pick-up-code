@@ -18,7 +18,9 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
+import com.Badnng.moe.recognition.RecognizedOrderFactory
 import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.RecognitionTrigger
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -52,7 +54,11 @@ class ProcessTextRecognitionService : Service() {
     }
     
     private suspend fun processText(selectedText: String) {
-        val results = RecognitionRouter(applicationContext).recognizeText(selectedText).orders
+        val routedResult = RecognitionRouter(applicationContext).recognizeText(
+            selectedText,
+            trigger = RecognitionTrigger.PROCESS_TEXT,
+        )
+        val results = routedResult.orders
 
         Log.d("ProcessTextRecognition", "识别结果：${results.size}个, codes=${results.map { it.code }}")
         results.forEach { r ->
@@ -73,17 +79,13 @@ class ProcessTextRecognitionService : Service() {
 
         for (result in results) {
             if (result.code == null) continue
-            val order = OrderEntity(
-                takeoutCode = result.code,
-                qrCodeData = result.qr,
+            val order = RecognizedOrderFactory.fromRecognition(
+                result = result,
+                metadata = routedResult.metadata,
                 screenshotPath = "",
                 recognizedText = selectedText,
-                orderType = result.type,
-                brandName = result.brand,
-                fullText = result.fullText,
-                pickupLocation = result.pickupLocation,
-                sourceApp = "文字选择"
-            )
+                sourceApp = "文字选择",
+            ) ?: continue
             orderDao.insert(order)
             insertedOrders.add(order)
         }

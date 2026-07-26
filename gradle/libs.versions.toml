@@ -20,6 +20,8 @@ appcompat = "1.6.1"
 ksp = "2.3.9"
 zxing = "3.5.3"
 material = "1.12.0"
+onnxruntime = "1.21.1"
+opencv = "4.12.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -55,8 +57,11 @@ androidx-window = { group = "androidx.window", name = "window", version.ref = "w
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+opencv-android = { group = "org.opencv", name = "opencv", version.ref = "opencv" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

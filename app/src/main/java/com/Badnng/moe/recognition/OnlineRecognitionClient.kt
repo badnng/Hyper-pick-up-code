@@ -23,18 +23,14 @@ class OnlineRecognitionClient(context: Context) {
     private val apiKeyStore = SecureApiKeyStore(appContext)
     private val isDebuggable =
         appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-    private val systemPrompt by lazy {
-        appContext.assets.open(PROMPT_ASSET_NAME)
-            .bufferedReader(Charsets.UTF_8)
-            .use { it.readText() }
-            .trim()
-    }
+    private val systemPrompt by lazy { OnlineRecognitionPreferences.effectivePrompt(appContext) }
 
     suspend fun recognizeImage(
         bitmap: Bitmap,
         provider: OnlineRecognitionProvider,
         model: OnlineRecognitionModel,
         mimoBillingMode: MimoBillingMode,
+        barcodeBrandHint: String? = null,
     ): List<RecognitionResult> {
         val imageDataUrl = bitmap.toImageDataUrl()
         return request(
@@ -43,6 +39,7 @@ class OnlineRecognitionClient(context: Context) {
             mimoBillingMode = mimoBillingMode,
             imageDataUrl = imageDataUrl,
             sourceText = null,
+            imageHint = barcodeBrandHint?.let(::buildBarcodeBrandHint),
         )
     }
 
@@ -57,6 +54,7 @@ class OnlineRecognitionClient(context: Context) {
         mimoBillingMode = mimoBillingMode,
         imageDataUrl = null,
         sourceText = text,
+        imageHint = null,
     )
 
     suspend fun fetchCustomModels(baseUrl: String): List<OnlineRecognitionModel> =
@@ -103,6 +101,7 @@ class OnlineRecognitionClient(context: Context) {
         mimoBillingMode: MimoBillingMode,
         imageDataUrl: String?,
         sourceText: String?,
+        imageHint: String?,
     ): List<RecognitionResult> = withContext(Dispatchers.IO) {
         val startedAt = SystemClock.elapsedRealtime()
         val inputType = if (imageDataUrl != null) "image" else "text"
@@ -127,9 +126,9 @@ class OnlineRecognitionClient(context: Context) {
                     CustomRequestMode.RESPONSES)
             val requestUrl = endpoint(provider, mimoBillingMode, isResponsesApi)
             val body = if (isResponsesApi) {
-                createResponsesBody(model, imageDataUrl, sourceText, provider)
+                createResponsesBody(model, imageDataUrl, sourceText, imageHint, provider)
             } else {
-                createChatCompletionsBody(model, imageDataUrl, sourceText)
+                createChatCompletionsBody(model, imageDataUrl, sourceText, imageHint)
             }
             logFullPayload("request url", requestUrl)
             logFullPayload("request body", body.toString())
@@ -157,15 +156,28 @@ class OnlineRecognitionClient(context: Context) {
                 )
                 if (!response.isSuccessful) {
                     Log.w(TAG, "error response: ${responseText.logSnippet()}")
-                    throw OnlineRecognitionException(httpErrorMessage(response.code, provider))
+                    throw OnlineRecognitionException(
+                        message = httpErrorMessage(response.code, provider),
+                        diagnosticDetail = responseText,
+                        httpStatus = response.code,
+                    )
                 }
-                val content = if (isResponsesApi) {
-                    extractResponsesContent(responseText)
-                } else {
-                    extractChatContent(responseText)
+                try {
+                    val content = if (isResponsesApi) {
+                        extractResponsesContent(responseText)
+                    } else {
+                        extractChatContent(responseText)
+                    }
+                    Log.d(TAG, "model content: ${content.logSnippet()}")
+                    parseRecognitionContent(content, sourceText).also(::logRecognitionResults)
+                } catch (error: OnlineRecognitionException) {
+                    if (error.diagnosticDetail != null) throw error
+                    throw OnlineRecognitionException(
+                        message = error.message ?: "在线识别响应处理失败",
+                        diagnosticDetail = responseText,
+                        httpStatus = response.code,
+                    )
                 }
-                Log.d(TAG, "model content: ${content.logSnippet()}")
-                parseRecognitionContent(content, sourceText).also(::logRecognitionResults)
             }
         } catch (error: Exception) {
             val elapsedMs = SystemClock.elapsedRealtime() - startedAt
@@ -205,6 +217,7 @@ class OnlineRecognitionClient(context: Context) {
         model: OnlineRecognitionModel,
         imageDataUrl: String?,
         sourceText: String?,
+        imageHint: String?,
     ): JSONObject {
         val userContent = if (imageDataUrl != null) {
             JSONArray()
@@ -213,7 +226,7 @@ class OnlineRecognitionClient(context: Context) {
                         .put("type", "image_url")
                         .put("image_url", JSONObject().put("url", imageDataUrl))
                 )
-                .put(JSONObject().put("type", "text").put("text", IMAGE_REQUEST_PROMPT))
+                .put(JSONObject().put("type", "text").put("text", imageRequestPrompt(imageHint)))
         } else {
             TEXT_REQUEST_PROMPT + sourceText.orEmpty()
         }
@@ -241,6 +254,7 @@ class OnlineRecognitionClient(context: Context) {
         model: OnlineRecognitionModel,
         imageDataUrl: String?,
         sourceText: String?,
+        imageHint: String?,
         provider: OnlineRecognitionProvider,
     ): JSONObject {
         val content = JSONArray()
@@ -253,7 +267,11 @@ class OnlineRecognitionClient(context: Context) {
                         if (provider == OnlineRecognitionProvider.OPENAI) put("detail", "high")
                     }
             )
-            content.put(JSONObject().put("type", "input_text").put("text", IMAGE_REQUEST_PROMPT))
+            content.put(
+                JSONObject()
+                    .put("type", "input_text")
+                    .put("text", imageRequestPrompt(imageHint))
+            )
         } else {
             content.put(
                 JSONObject()
@@ -462,6 +480,23 @@ class OnlineRecognitionClient(context: Context) {
         return code.any { it.isLetterOrDigit() } && code.none { it == '\n' || it == '\r' }
     }
 
+    private fun imageRequestPrompt(imageHint: String?): String = buildString {
+        append(IMAGE_REQUEST_PROMPT)
+        imageHint?.takeIf { it.isNotBlank() }?.let {
+            append('\n')
+            append(it)
+        }
+    }
+
+    private fun buildBarcodeBrandHint(brand: String): String {
+        val safeBrand = brand
+            .filterNot { it == '\n' || it == '\r' || it == '\u0000' }
+            .take(MAX_BARCODE_BRAND_HINT_LENGTH)
+        return "设备端二维码规则已确认该图片包含「$safeBrand」二维码。" +
+            "请仍以图片中明确可见的信息提取取餐码，并将品牌填写为「$safeBrand」；" +
+            "不要把二维码原始数据直接当作取餐码。"
+    }
+
     private fun Bitmap.toImageDataUrl(): String {
         val scale = (MAX_LONG_EDGE.toFloat() / maxOf(width, height)).coerceAtMost(1f)
         val scaled = if (scale < 1f) {
@@ -499,7 +534,7 @@ class OnlineRecognitionClient(context: Context) {
         private const val MAX_LOG_CHUNK_LENGTH = 3_000
         private const val MAX_LONG_EDGE = 2048
         private const val JPEG_QUALITY = 85
-        private const val PROMPT_ASSET_NAME = "online_recognition_prompt.txt"
+        private const val MAX_BARCODE_BRAND_HINT_LENGTH = 40
         private val HTTP_CLIENT = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -515,4 +550,8 @@ class OnlineRecognitionClient(context: Context) {
     }
 }
 
-class OnlineRecognitionException(message: String) : Exception(message)
+class OnlineRecognitionException(
+    message: String,
+    val diagnosticDetail: String? = null,
+    val httpStatus: Int? = null,
+) : Exception(message)

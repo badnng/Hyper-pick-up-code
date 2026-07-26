@@ -43,10 +43,10 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.EdgeToEdgeHelper
 import com.Badnng.moe.helper.NotificationHelper
+import com.Badnng.moe.helper.ScreenshotStorage
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.theme.澎湃记Theme
 import kotlinx.coroutines.launch
-import java.io.File
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
 import top.yukonga.miuix.kmp.basic.ButtonDefaults as MiuixButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -60,7 +60,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 class OrderQuickViewActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
+        EdgeToEdgeHelper.applyQuickViewEdgeToEdge(this)
 
         val orderId = intent.getStringExtra("order_id") ?: ""
         val fromNotification = intent.getBooleanExtra("from_notification", false)
@@ -537,9 +537,9 @@ private fun QrContent(order: OrderEntity, qrBackgroundColor: Color, isMiuix: Boo
                 else Text("二维码生成失败", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
         }
-    } else if (!order.screenshotPath.isNullOrEmpty() && File(order.screenshotPath).exists()) {
+    } else if (ScreenshotStorage.exists(context, order.screenshotPath)) {
         AsyncImage(
-            model = File(order.screenshotPath),
+            model = ScreenshotStorage.imageModel(order.screenshotPath),
             contentDescription = "原图",
             modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).clip(RoundedCornerShape(12.dp)),
             contentScale = ContentScale.Fit

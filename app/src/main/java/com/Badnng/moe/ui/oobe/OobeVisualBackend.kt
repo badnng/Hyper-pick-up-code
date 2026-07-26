@@ -7,10 +7,8 @@
 package com.Badnng.moe.ui.oobe
 
 import android.animation.ValueAnimator
-import android.app.ActivityManager
 import android.content.Context
 import android.graphics.RuntimeShader
-import android.os.Build
 import android.provider.Settings
 import android.view.View
 import androidx.compose.runtime.Composable
@@ -19,12 +17,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.Badnng.moe.helper.AppMemoryPressureState
+import com.Badnng.moe.ui.miuix.MiuixDevicePerformanceTier
 import com.Badnng.moe.ui.miuix.MiuixVisualEffectsPolicy
 import java.lang.reflect.Method
 import java.util.Locale
 
 internal enum class OobeVisualBackend {
     HyperOsEnhanced,
+    HyperOsIconMixing,
     AndroidFallback,
     StaticFallback,
 }
@@ -45,48 +45,36 @@ internal fun rememberOobeVisualBackend(): MutableState<OobeVisualBackend> {
 }
 
 internal object OobeVisualBackendResolver {
-    @Volatile
-    private var cachedBackend: OobeVisualBackend? = null
+    fun resolve(context: Context? = null): OobeVisualBackend = detectBackend(context)
 
-    fun resolve(context: Context? = null): OobeVisualBackend = cachedBackend ?: synchronized(this) {
-        cachedBackend ?: detectBackend(context).also { cachedBackend = it }
-    }
-
-    fun downgradeFromHyperOs(): OobeVisualBackend = synchronized(this) {
-        val fallback = if (supportsRuntimeShader()) {
+    fun downgradeFromHyperOs(): OobeVisualBackend =
+        if (supportsRuntimeShader()) {
             OobeVisualBackend.AndroidFallback
         } else {
             OobeVisualBackend.StaticFallback
         }
-        cachedBackend = fallback
-        fallback
-    }
 
-    fun useStaticFallback(): OobeVisualBackend = synchronized(this) {
-        OobeVisualBackend.StaticFallback.also { cachedBackend = it }
-    }
-
-    fun isHyperOsDevice(): Boolean = isHyperOsRuntime()
+    fun useStaticFallback(): OobeVisualBackend = OobeVisualBackend.StaticFallback
 
     private fun detectBackend(context: Context?): OobeVisualBackend {
         if (!ValueAnimator.areAnimatorsEnabled() || !supportsRuntimeShader()) {
             return OobeVisualBackend.StaticFallback
         }
-        // 与应用内 Miuix 使用同一性能策略。Lite/低内存设备直接使用 HyperCeiler
-        // 同款静态降级资源，避免背景已降级、图标却仍按白色混色蒙版绘制。
-        if (context != null && !MiuixVisualEffectsPolicy.allowsCostlyVisualEffects(context)) {
-            return OobeVisualBackend.StaticFallback
+        if (!MiuixVisualEffectsPolicy.isHyperOsDevice() || context == null) {
+            return OobeVisualBackend.AndroidFallback
         }
-        val blurAllowed = context == null || MiuixVisualEffectsPolicy.allowsBlur(context)
-        return if (
-            isHyperOsRuntime() &&
-            blurAllowed &&
-            HyperOsBlurBridge.isSupported() &&
-            (context == null || HyperOsBlurBridge.isEffectEnabled(context))
-        ) {
-            OobeVisualBackend.HyperOsEnhanced
-        } else {
-            OobeVisualBackend.AndroidFallback
+
+        val tier = MiuixVisualEffectsPolicy.devicePerformanceTier(context)
+        val nativeEffectsAvailable = HyperOsBlurBridge.isSupported() &&
+            HyperOsBlurBridge.isEffectEnabled(context)
+        return when {
+            tier != MiuixDevicePerformanceTier.Low &&
+                MiuixVisualEffectsPolicy.allowsBlur(context) &&
+                nativeEffectsAvailable -> OobeVisualBackend.HyperOsEnhanced
+            tier != MiuixDevicePerformanceTier.Low &&
+                MiuixVisualEffectsPolicy.allowsIconColorMixing(context) &&
+                nativeEffectsAvailable -> OobeVisualBackend.HyperOsIconMixing
+            else -> OobeVisualBackend.AndroidFallback
         }
     }
 
@@ -94,19 +82,6 @@ internal object OobeVisualBackendResolver {
         RuntimeShader("half4 main(float2 position) { return half4(1.0); }")
     }.isSuccess
 
-    private fun isHyperOsRuntime(): Boolean {
-        val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
-        val brand = Build.BRAND.lowercase(Locale.ROOT)
-        val xiaomiBrand = manufacturer in XIAOMI_BRANDS || brand in XIAOMI_BRANDS
-        val hasMiuiProperty = listOf(
-            "ro.mi.os.version.name",
-            "ro.miui.ui.version.name",
-            "ro.miui.ui.version.code",
-        ).any { SystemPropertyReader.get(it).isNotBlank() }
-        return hasMiuiProperty || xiaomiBrand
-    }
-
-    private val XIAOMI_BRANDS = setOf("xiaomi", "redmi", "poco")
 }
 
 private object SystemPropertyReader {
@@ -144,9 +119,6 @@ internal object HyperOsBlurBridge {
             clearBlendColors != null
 
     fun isEffectEnabled(context: Context): Boolean {
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        if (activityManager?.isLowRamDevice == true) return false
-
         val supportedProperty = SystemPropertyReader
             .get("persist.sys.background_blur_supported")
             .trim()

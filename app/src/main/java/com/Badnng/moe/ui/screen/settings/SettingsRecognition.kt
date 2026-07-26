@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMe
 import androidx.compose.foundation.text.contextmenu.modifier.filterTextContextMenuComponents
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess as Md3eExpandLess
 import androidx.compose.material.icons.filled.ExpandMore as Md3eExpandMore
 import androidx.compose.material.icons.filled.Visibility
@@ -111,6 +112,7 @@ import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.icon.extended.Hide
 import top.yukonga.miuix.kmp.icon.extended.Show
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonLocation
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -120,6 +122,7 @@ fun RecognitionSettingsContent(
     performHaptic: () -> Unit,
     topPadding: Dp = 0.dp,
     scrollState: androidx.compose.foundation.ScrollState = rememberScrollState(),
+    onNavigateToPromptEditor: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -314,6 +317,7 @@ fun RecognitionSettingsContent(
                 canPasteApiKey = clipboardManager::hasPrimaryClip,
                 onPasteApiKey = ::pasteApiKey,
                 performHaptic = performHaptic,
+                onNavigateToPromptEditor = onNavigateToPromptEditor,
             )
         MiuixSettingsLazyColumn(
             sections = sections,
@@ -370,6 +374,7 @@ fun RecognitionSettingsContent(
                 canPasteApiKey = clipboardManager::hasPrimaryClip,
                 onPasteApiKey = ::pasteApiKey,
                 performHaptic = performHaptic,
+                onNavigateToPromptEditor = onNavigateToPromptEditor,
             )
             Spacer(Modifier.height(32.dp))
         }
@@ -420,6 +425,7 @@ private fun MiuixRecognitionSettingsSections(
     canPasteApiKey: () -> Boolean,
     onPasteApiKey: () -> Unit,
     performHaptic: () -> Unit,
+    onNavigateToPromptEditor: () -> Unit,
 ): List<@Composable () -> Unit> = buildList {
     add {
         SmallTitle("识别方式")
@@ -519,6 +525,22 @@ private fun MiuixRecognitionSettingsSections(
                         )),
                     )
                 }
+            }
+        }
+    }
+
+    add {
+        if (recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE) {
+            SmallTitle("识别提示词")
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
+                ArrowPreference(
+                    title = "自定义 Prompt",
+                    summary = "编辑在线识别使用的系统提示词",
+                    onClick = {
+                        performHaptic()
+                        onNavigateToPromptEditor()
+                    },
+                )
             }
         }
     }
@@ -691,6 +713,7 @@ private fun Md3eRecognitionSettings(
     canPasteApiKey: () -> Boolean,
     onPasteApiKey: () -> Unit,
     performHaptic: () -> Unit,
+    onNavigateToPromptEditor: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Md3eSection("识别方式") {
@@ -767,6 +790,28 @@ private fun Md3eRecognitionSettings(
                             onSelected = onModelSelected,
                         )
                     }
+                }
+            }
+
+            Md3eSection("识别提示词") {
+                SettingsCard {
+                    ListItem(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                performHaptic()
+                                onNavigateToPromptEditor()
+                            },
+                        headlineContent = { Text("自定义 Prompt") },
+                        supportingContent = { Text("编辑在线识别使用的系统提示词") },
+                        trailingContent = {
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
                 }
             }
 

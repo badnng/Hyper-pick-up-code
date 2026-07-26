@@ -3,16 +3,17 @@ package com.Badnng.moe.ui.screen.settings
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,10 +24,10 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -36,9 +37,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.Badnng.moe.data.db.OrderDatabase
+import com.Badnng.moe.R
 import com.Badnng.moe.helper.AppLogger
-import com.Badnng.moe.helper.BackupHelper
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.UpdateHelper
 import com.Badnng.moe.helper.UpdateInfo
@@ -48,6 +48,7 @@ import com.Badnng.moe.ui.component.PrivacyPolicyBottomSheet
 import com.Badnng.moe.ui.component.UpdateSheet
 import com.Badnng.moe.ui.component.UpdateProgressSheet
 import com.Badnng.moe.ui.component.GroupPosition
+import com.Badnng.moe.ui.component.Md3eNavigationRailExpandButton
 import com.Badnng.moe.ui.component.PreferenceSection
 import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
@@ -55,7 +56,13 @@ import com.Badnng.moe.ui.component.SettingsListItem
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
+import com.Badnng.moe.ui.miuix.MiuixDevicePerformanceTier
+import com.Badnng.moe.ui.miuix.MiuixVisualEffectsPolicy
+import com.Badnng.moe.ui.miuix.rememberMiuixBlurAllowed
+import com.Badnng.moe.ui.miuix.rememberMiuixDevicePerformanceTier
+import com.Badnng.moe.ui.miuix.rememberMiuixIconColorMixingBackdrop
 import com.Badnng.moe.ui.oobe.OobeCarvedLogoView
+import com.Badnng.moe.ui.screen.miuix.MiuixNavigationRailExpandButton
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
@@ -77,7 +84,22 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 private const val DEVELOPER_OPTIONS_TAP_THRESHOLD = 7
 
 @Composable
-fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose.ui.unit.Dp = 0.dp, scrollState: androidx.compose.foundation.ScrollState = androidx.compose.foundation.rememberScrollState(), onNavigateToCredits: () -> Unit = {}, onNavigateToDeveloperOptions: () -> Unit = {}, scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior? = null, onBack: () -> Unit = {}, supportingPane: Boolean = false) {
+fun AboutSettingsContent(
+    performHaptic: () -> Unit,
+    topPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    scrollState: androidx.compose.foundation.ScrollState = androidx.compose.foundation.rememberScrollState(),
+    miuixLazyListState: LazyListState? = null,
+    onNavigateToCredits: () -> Unit = {},
+    onNavigateToSponsor: () -> Unit = {},
+    onNavigateToBackup: () -> Unit = {},
+    onNavigateToDeveloperOptions: () -> Unit = {},
+    scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior? = null,
+    onBack: () -> Unit = {},
+    supportingPane: Boolean = false,
+    showBackButton: Boolean = true,
+    onExpandNavigationRail: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     val uriHandler = LocalUriHandler.current
@@ -169,13 +191,18 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
             onCheckUpdate = checkUpdateAction,
             performHaptic = performHaptic,
             topPadding = topPadding,
-            scrollState = scrollState,
+            lazyListState = miuixLazyListState,
             onVersionTap = onVersionTap,
             onNavigateToCredits = onNavigateToCredits,
+            onNavigateToSponsor = onNavigateToSponsor,
+            onNavigateToBackup = onNavigateToBackup,
             privacyAccepted = privacyAccepted,
             onShowPrivacyPolicy = { showPrivacyPolicy = true },
             onBack = onBack,
             supportingPane = supportingPane,
+            bottomPadding = bottomPadding,
+            showBackButton = showBackButton,
+            onExpandNavigationRail = onExpandNavigationRail,
         )
     } else {
         Md3eAboutPage(
@@ -188,8 +215,12 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
             topPadding = topPadding,
             scrollState = scrollState,
             onVersionTap = onVersionTap,
+            onNavigateToSponsor = onNavigateToSponsor,
+            onNavigateToBackup = onNavigateToBackup,
             privacyAccepted = privacyAccepted,
             onShowPrivacyPolicy = { showPrivacyPolicy = true },
+            bottomPadding = bottomPadding,
+            onExpandNavigationRail = onExpandNavigationRail,
         )
     }
 
@@ -303,7 +334,7 @@ fun AboutSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compose
                 downloadProgress = UpdateHelper.currentProgress
                 isPaused = UpdateHelper.isPaused
                 if (!isStartingDownload && !UpdateHelper.isDownloading) break
-                kotlinx.coroutines.delay(200)
+                kotlinx.coroutines.delay(100)
             }
         }
     }
@@ -348,18 +379,24 @@ private fun MiuixAboutPage(
     onCheckUpdate: () -> Unit,
     performHaptic: () -> Unit,
     topPadding: androidx.compose.ui.unit.Dp,
-    scrollState: androidx.compose.foundation.ScrollState,
+    lazyListState: LazyListState?,
     onVersionTap: () -> Unit,
     onNavigateToCredits: () -> Unit,
+    onNavigateToSponsor: () -> Unit,
+    onNavigateToBackup: () -> Unit,
     privacyAccepted: Boolean,
     onShowPrivacyPolicy: () -> Unit,
     onBack: () -> Unit = {},
     supportingPane: Boolean = false,
+    bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    showBackButton: Boolean = true,
+    onExpandNavigationRail: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val topAppBarScrollBehavior = top.yukonga.miuix.kmp.basic.MiuixScrollBehavior()
-    val lazyListState = rememberLazyListState()
+    val fallbackLazyListState = rememberLazyListState()
+    val resolvedLazyListState = lazyListState ?: fallbackLazyListState
     val density = LocalDensity.current
     val logoTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 120.dp
     val versionFadeEndPx = with(density) { 56.dp.toPx() }
@@ -367,29 +404,36 @@ private fun MiuixAboutPage(
     val nameFadeEndPx = with(density) { 112.dp.toPx() }
     val iconFadeStartPx = with(density) { 96.dp.toPx() }
     val iconFadeEndPx = with(density) { 176.dp.toPx() }
+    val headerCollapseDistance = 176.dp
 
-    var logoHeightDp by remember { mutableStateOf(300.dp) }
+    var logoHeightPx by rememberSaveable(density.density, density.fontScale) {
+        mutableIntStateOf(with(density) { 300.dp.roundToPx() })
+    }
+    var aboutContentHeightPx by rememberSaveable(density.density, density.fontScale) {
+        mutableIntStateOf(0)
+    }
+    val logoHeightDp = with(density) { logoHeightPx.toDp() }
+    val aboutContentHeightDp = with(density) { aboutContentHeightPx.toDp() }
 
-    val scrollProgress by remember {
+    val scrollProgress by remember(iconFadeEndPx) {
         derivedStateOf {
             when {
-                lazyListState.firstVisibleItemIndex > 0 -> 1f
-                else -> {
-                    val spacer = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "logoSpacer" }
-                    if (spacer != null && spacer.size > 0) {
-                        (lazyListState.firstVisibleItemScrollOffset.toFloat() / spacer.size).coerceIn(0f, 1f)
-                    } else {
-                        0f
-                    }
-                }
+                resolvedLazyListState.firstVisibleItemIndex > 0 -> 1f
+                iconFadeEndPx > 0f ->
+                    (resolvedLazyListState.firstVisibleItemScrollOffset / iconFadeEndPx).coerceIn(0f, 1f)
+                else -> 0f
             }
         }
     }
 
     val backdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
     val sheetBackdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
-    val collapsed by remember { derivedStateOf { scrollProgress == 1f } }
-    val blurActive by remember(backdrop) { derivedStateOf { backdrop != null && scrollProgress == 1f } }
+    val fullBlurAllowed = rememberMiuixBlurAllowed()
+    val performanceTier = rememberMiuixDevicePerformanceTier()
+    val collapsed by remember { derivedStateOf { scrollProgress >= 0.999f } }
+    val blurActive by remember(backdrop) {
+        derivedStateOf { backdrop != null && scrollProgress >= 0.999f }
+    }
     val aboutTopBar: @Composable () -> Unit = {
         val barColor = if (blurActive) {
             Color.Transparent
@@ -407,18 +451,25 @@ private fun MiuixAboutPage(
                 titleColor = titleColor,
                 defaultWindowInsetsPadding = false,
                 navigationIcon = {
-                    top.yukonga.miuix.kmp.basic.IconButton(onClick = {
-                        performHaptic()
-                        onBack()
-                    }) {
-                        top.yukonga.miuix.kmp.basic.Icon(
-                            if (supportingPane) {
-                                MiuixIcons.Regular.Close
-                            } else {
-                                MiuixIcons.Regular.Back
-                            },
-                            contentDescription = if (supportingPane) "关闭" else "返回",
-                        )
+                    when {
+                        onExpandNavigationRail != null -> {
+                            MiuixNavigationRailExpandButton(onClick = onExpandNavigationRail)
+                        }
+                        showBackButton -> {
+                            top.yukonga.miuix.kmp.basic.IconButton(onClick = {
+                                performHaptic()
+                                onBack()
+                            }) {
+                                top.yukonga.miuix.kmp.basic.Icon(
+                                    if (supportingPane) {
+                                        MiuixIcons.Regular.Close
+                                    } else {
+                                        MiuixIcons.Regular.Back
+                                    },
+                                    contentDescription = if (supportingPane) "关闭" else "返回",
+                                )
+                            }
+                        }
                     }
                 },
             )
@@ -437,10 +488,10 @@ private fun MiuixAboutPage(
     }
     val headerScrollOffsetPx by remember {
         derivedStateOf {
-            if (lazyListState.firstVisibleItemIndex > 0) {
+            if (resolvedLazyListState.firstVisibleItemIndex > 0) {
                 Float.POSITIVE_INFINITY
             } else {
-                lazyListState.firstVisibleItemScrollOffset.toFloat()
+                resolvedLazyListState.firstVisibleItemScrollOffset.toFloat()
             }
         }
     }
@@ -472,7 +523,15 @@ private fun MiuixAboutPage(
             topBar = { aboutTopBar() },
         ) { innerPadding ->
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            val textBackdrop = com.Badnng.moe.ui.miuix.rememberMiuixBackdrop()
+            val pageBottomPadding = maxOf(
+                innerPadding.calculateBottomPadding(),
+                bottomPadding,
+            )
+            val textBackdrop = rememberMiuixIconColorMixingBackdrop()
+            val isHyperOsDevice = remember(context.applicationContext) {
+                MiuixVisualEffectsPolicy.isHyperOsDevice()
+            }
+            val contentBlurBackdrop = textBackdrop.takeIf { fullBlurAllowed }
             val appPrefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
             var themeMode by remember { mutableStateOf(appPrefs.getString("theme_mode", "system") ?: "system") }
             DisposableEffect(appPrefs) {
@@ -515,9 +574,9 @@ private fun MiuixAboutPage(
             val aboutCardModifier = Modifier
                 .padding(horizontal = 12.dp)
                 .then(
-                    if (textBackdrop != null) {
+                    if (contentBlurBackdrop != null) {
                         Modifier.textureBlur(
-                            backdrop = textBackdrop,
+                            backdrop = contentBlurBackdrop,
                             shape = RoundedCornerShape(16.dp),
                             blurRadius = 60f,
                             colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
@@ -532,7 +591,7 @@ private fun MiuixAboutPage(
                     }
                 )
             val aboutCardColors = CardDefaults.defaultColors(
-                if (textBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
+                if (contentBlurBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
                 Color.Transparent,
             )
             val logoBlend = remember(isInDark) {
@@ -558,29 +617,45 @@ private fun MiuixAboutPage(
                 alpha = { 1f - scrollProgress },
                 bgModifier = if (textBackdrop != null) Modifier.layerBackdrop(textBackdrop) else Modifier,
             ) {
-                Box(modifier = Modifier.fillMaxSize()) {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val listTopPadding = innerPadding.calculateTopPadding()
+                    val listBottomPadding = pageBottomPadding + 32.dp
+                    val logoSpacerHeight =
+                        (logoHeightDp - listTopPadding + 8.dp).coerceAtLeast(0.dp)
+                    val collapseReserveHeight = (
+                        maxHeight + headerCollapseDistance + 1.dp -
+                            listTopPadding -
+                            listBottomPadding -
+                            logoSpacerHeight -
+                            aboutContentHeightDp
+                        ).coerceAtLeast(0.dp)
+
                     // 可滚动内容（先声明，Z 轴较低）
                     LazyColumn(
-                        state = lazyListState,
+                        state = resolvedLazyListState,
                         modifier = Modifier
                             .fillMaxSize()
                             .miuixScrollModifiers(topAppBarScrollBehavior),
                         contentPadding = PaddingValues(
-                            top = innerPadding.calculateTopPadding(),
-                            bottom = innerPadding.calculateBottomPadding() + 32.dp,
+                            top = listTopPadding,
+                            bottom = listBottomPadding,
                         ),
                     ) {
                         item(key = "logoSpacer") {
                             Spacer(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(logoHeightDp + 80.dp)
+                                    .height(logoSpacerHeight)
                             )
                         }
 
-                        item(key = "about") {
+                        item(key = "aboutContent") {
                             Column(
-                                modifier = Modifier.fillParentMaxHeight().padding(bottom = innerPadding.calculateBottomPadding()),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onSizeChanged { size ->
+                                        aboutContentHeightPx = size.height
+                                    },
                             ) {
                                 Card(
                                     modifier = aboutCardModifier,
@@ -614,6 +689,14 @@ private fun MiuixAboutPage(
                                             uriHandler.openUri("https://github.com/badnng/Hyper-pick-up-code/blob/master/LICENSE")
                                         }
                                     )
+                                    ArrowPreference(
+                                        title = "赞助",
+                                        summary = "支持项目持续更新",
+                                        onClick = {
+                                            performHaptic()
+                                            onNavigateToSponsor()
+                                        },
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(12.dp))
@@ -622,7 +705,14 @@ private fun MiuixAboutPage(
                                     modifier = aboutCardModifier,
                                     colors = aboutCardColors,
                                 ) {
-                                    MiuixAboutBackupSection(performHaptic = performHaptic)
+                                    ArrowPreference(
+                                        title = "备份与恢复",
+                                        summary = "选择内容、预检并恢复应用数据",
+                                        onClick = {
+                                            performHaptic()
+                                            onNavigateToBackup()
+                                        },
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(12.dp))
@@ -651,9 +741,9 @@ private fun MiuixAboutPage(
                                     ArrowPreference(
                                         title = "用户协议与隐私说明",
                                         summary = if (privacyAccepted) {
-                                            "已同意 · 点击查看或撤销"
+                                            "已同意，可查看或撤销"
                                         } else {
-                                            "未同意 · 点击查看"
+                                            "未同意，点击查看"
                                         },
                                         onClick = {
                                             performHaptic()
@@ -665,21 +755,26 @@ private fun MiuixAboutPage(
                                 Spacer(modifier = Modifier.height(12.dp))
                             }
                         }
+                        if (collapseReserveHeight > 0.dp) {
+                            item(key = "headerCollapseReserve") {
+                                Spacer(modifier = Modifier.height(collapseReserveHeight))
+                            }
+                        }
                     }
 
                     // Logo + 应用名 + 版本号 + 检查更新（后声明，Z 轴更高，可接收点击）
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .onSizeChanged { size ->
+                                logoHeightPx = size.height
+                            }
                             .padding(
                                 top = logoTopPadding,
                                 start = 16.dp,
                                 end = 16.dp,
                             )
-                            .align(Alignment.TopCenter)
-                            .onSizeChanged { size ->
-                                with(density) { logoHeightDp = size.height.toDp() }
-                            },
+                            .align(Alignment.TopCenter),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Box(
@@ -694,38 +789,58 @@ private fun MiuixAboutPage(
                                     scaleY = 1f - (iconFadeProgress * 0.05f)
                                 }
                         ) {
-                            val fallbackLogoColor = MiuixTheme.colorScheme.onBackground.toArgb()
-                            AndroidView(
-                                factory = { logoContext ->
-                                    OobeCarvedLogoView(logoContext)
-                                },
-                                update = { logoView ->
-                                    logoView.setBaseColor(
-                                        if (textBackdrop != null) {
-                                            android.graphics.Color.WHITE
-                                        } else {
-                                            fallbackLogoColor
-                                        },
-                                    )
-                                },
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .then(
-                                        if (textBackdrop != null) {
-                                            Modifier.textureBlur(
-                                                backdrop = textBackdrop,
-                                                shape = RoundedCornerShape(24.dp),
-                                                blurRadius = 150f,
-                                                colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
-                                                    blendColors = logoBlend,
-                                                ),
-                                                contentBlendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
-                                            )
-                                        } else {
-                                            Modifier
-                                        },
-                                    ),
-                            )
+                            if (
+                                performanceTier == MiuixDevicePerformanceTier.Low ||
+                                (textBackdrop == null && !isHyperOsDevice)
+                            ) {
+                                AndroidView(
+                                    factory = { logoContext ->
+                                        ImageView(logoContext).apply {
+                                            scaleType = ImageView.ScaleType.FIT_XY
+                                            importantForAccessibility =
+                                                android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                                        }
+                                    },
+                                    update = { logoView ->
+                                        logoView.setImageResource(R.mipmap.ic_launcher)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxSize(),
+                                )
+                            } else {
+                                val fallbackLogoColor = MiuixTheme.colorScheme.onBackground.toArgb()
+                                AndroidView(
+                                    factory = { logoContext ->
+                                        OobeCarvedLogoView(logoContext)
+                                    },
+                                    update = { logoView ->
+                                        logoView.setBaseColor(
+                                            if (textBackdrop != null) {
+                                                android.graphics.Color.WHITE
+                                            } else {
+                                                fallbackLogoColor
+                                            },
+                                        )
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(
+                                            if (textBackdrop != null) {
+                                                Modifier.textureBlur(
+                                                    backdrop = textBackdrop,
+                                                    shape = RoundedCornerShape(24.dp),
+                                                    blurRadius = 150f,
+                                                    colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
+                                                        blendColors = logoBlend,
+                                                    ),
+                                                    contentBlendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                                                )
+                                            } else {
+                                                Modifier
+                                            },
+                                        ),
+                                )
+                            }
                         }
                         // 应用名（带 textureBlur 渲染，contentBlendMode = DstIn 让模糊只作用于文字像素）
                         MiuixText(
@@ -831,22 +946,27 @@ private fun Md3eAboutPage(
     topPadding: androidx.compose.ui.unit.Dp,
     scrollState: androidx.compose.foundation.ScrollState,
     onVersionTap: () -> Unit,
+    onNavigateToSponsor: () -> Unit,
+    onNavigateToBackup: () -> Unit,
     privacyAccepted: Boolean,
     onShowPrivacyPolicy: () -> Unit,
+    bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    onExpandNavigationRail: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val coroutineScope = rememberCoroutineScope()
     val md3LogoColor = MaterialTheme.colorScheme.primary.toArgb()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(scrollState)
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(scrollState)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         Spacer(Modifier.height(topPadding))
 
         // 图标
@@ -918,19 +1038,39 @@ private fun Md3eAboutPage(
                 SettingsGroupItem(
                     title = "开源许可证",
                     description = "GNU AGPL v3.0",
-                    position = GroupPosition.Last,
+                    position = GroupPosition.Middle,
                     onClick = {
                         performHaptic()
                         uriHandler.openUri("https://github.com/badnng/Hyper-pick-up-code/blob/master/LICENSE")
                     }
+                )
+                SettingsGroupItem(
+                    title = "赞助",
+                    description = "支持项目持续更新",
+                    position = GroupPosition.Last,
+                    onClick = {
+                        performHaptic()
+                        onNavigateToSponsor()
+                    },
                 )
             }
         }
 
         Spacer(Modifier.height(32.dp))
 
-        // 备份与恢复
-        Md3eBackupSection(performHaptic = performHaptic)
+        PreferenceSection(title = "数据") {
+            SettingsGroup {
+                SettingsGroupItem(
+                    title = "备份与恢复",
+                    description = "选择内容、预检并恢复应用数据",
+                    position = GroupPosition.Single,
+                    onClick = {
+                        performHaptic()
+                        onNavigateToBackup()
+                    },
+                )
+            }
+        }
 
         Spacer(Modifier.height(32.dp))
 
@@ -950,7 +1090,7 @@ private fun Md3eAboutPage(
             Triple("Coil", "现代化的 Android 图片加载库", "https://coil-kt.github.io/coil/"),
             Triple("Kyant Backdrop", "优雅的毛玻璃与层级模糊效果实现", "https://github.com/Kyant0/AndroidLiquidGlass"),
             Triple("Paddle Lite", "使用深度识别算法在本地进行OCR识别", "https://www.paddlepaddle.org.cn/paddle/paddlelite"),
-            Triple("Paddle4Android", "不需要学习原理即可一键在Android上引入OCR识别", "https://github.com/equationl/paddleocr4android"),
+            Triple("PaddleOCR", "提供 PP-OCRv6 Tiny 模型与 Android ONNX Runtime 部署实现", "https://github.com/PaddlePaddle/PaddleOCR"),
             Triple("Miuix", "多平台UI/效果实现的UI设计库", "https://github.com/compose-miuix-ui/miuix/"),
             Triple("HyperCeiler", "首次使用引导的视觉效果与动画参考", "https://github.com/ReChronoRain/HyperCeiler"),
         )
@@ -974,9 +1114,9 @@ private fun Md3eAboutPage(
                 SettingsGroupItem(
                     title = "用户协议与隐私说明",
                     description = if (privacyAccepted) {
-                        "已同意 · 点击查看或撤销"
+                        "已同意，可查看或撤销"
                     } else {
-                        "未同意 · 点击查看"
+                        "未同意，点击查看"
                     },
                     position = GroupPosition.Single,
                     onClick = {
@@ -997,240 +1137,17 @@ private fun Md3eAboutPage(
             textAlign = TextAlign.Center,
             lineHeight = 20.sp
         )
-        Spacer(Modifier.height(32.dp))
-    }
-}
-
-// ═══════════════════════════════════════════
-//  备份与恢复（Miuix）
-// ═══════════════════════════════════════════
-
-@Composable
-private fun MiuixAboutBackupSection(performHaptic: () -> Unit) {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    var isBackingUp by remember { mutableStateOf(false) }
-    var isRestoring by remember { mutableStateOf(false) }
-    var pendingBackupData by remember { mutableStateOf<ByteArray?>(null) }
-
-    val createBackupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
-    ) { uri ->
-        uri?.let {
-            coroutineScope.launch {
-                try {
-                    pendingBackupData?.let { data ->
-                        context.contentResolver.openOutputStream(uri)?.use { it.write(data) }
-                        android.widget.Toast.makeText(context, "备份成功！", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                } catch (e: Exception) {
-                    android.widget.Toast.makeText(context, "保存备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                } finally {
-                    pendingBackupData = null
-                    isBackingUp = false
-                }
-            }
+            Spacer(Modifier.height(32.dp + bottomPadding))
         }
-    }
 
-    val restoreBackupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri?.let {
-            isRestoring = true
-            coroutineScope.launch {
-                try {
-                    val backupData = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw Exception("无法读取备份文件")
-                    val restoredData = BackupHelper.restoreBackup(context, backupData)
-                    val editor = prefs.edit()
-                    restoredData.settings.forEach { (key, value) ->
-                        when (value) {
-                            is Boolean -> editor.putBoolean(key, value)
-                            is String -> editor.putString(key, value)
-                            is Int -> editor.putInt(key, value)
-                            is Long -> editor.putLong(key, value)
-                            is Float -> editor.putFloat(key, value)
-                        }
-                    }
-                    editor.apply()
-                    val database = OrderDatabase.getDatabase(context)
-                    restoredData.orders.forEach { order ->
-                        if (database.orderDao().getOrderById(order.id) == null) database.orderDao().insert(order)
-                    }
-                    android.widget.Toast.makeText(context, "恢复成功！共恢复 ${restoredData.orders.size} 条取餐码", android.widget.Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    android.widget.Toast.makeText(context, "恢复备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                } finally {
-                    isRestoring = false
-                }
-            }
-        }
-    }
-
-    ArrowPreference(
-        title = "备份数据",
-        summary = "备份取餐码和设置到压缩包",
-            onClick = {
-                performHaptic()
-                isBackingUp = true
-                coroutineScope.launch {
-                    try {
-                        val database = OrderDatabase.getDatabase(context)
-                        val orders = database.orderDao().getAllOrdersList()
-                        val settingsMap = mutableMapOf<String, Any?>()
-                        prefs.all.forEach { (key, value) -> settingsMap[key] = value }
-                        val backupData = BackupHelper.createBackup(context, orders, settingsMap)
-                        pendingBackupData = backupData
-                        createBackupLauncher.launch(BackupHelper.generateBackupFileName())
-                    } catch (e: Exception) {
-                        android.widget.Toast.makeText(context, "备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                        isBackingUp = false
-                    }
-                }
-            }
-        )
-        ArrowPreference(
-            title = "恢复数据",
-            summary = "从备份文件恢复取餐码和设置",
-            onClick = {
-                performHaptic()
-                restoreBackupLauncher.launch(arrayOf("*/*"))
-            }
-        )
-}
-
-// ═══════════════════════════════════════════
-//  备份与恢复（MD3E）
-// ═══════════════════════════════════════════
-
-@Composable
-private fun Md3eBackupSection(performHaptic: () -> Unit) {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    var isBackingUp by remember { mutableStateOf(false) }
-    var isRestoring by remember { mutableStateOf(false) }
-    var pendingBackupData by remember { mutableStateOf<ByteArray?>(null) }
-
-    val createBackupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
-    ) { uri ->
-        uri?.let {
-            coroutineScope.launch {
-                try {
-                    pendingBackupData?.let { data ->
-                        context.contentResolver.openOutputStream(uri)?.use { it.write(data) }
-                        android.widget.Toast.makeText(context, "备份成功！", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                } catch (e: Exception) {
-                    android.widget.Toast.makeText(context, "保存备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                } finally {
-                    pendingBackupData = null
-                    isBackingUp = false
-                }
-            }
-        }
-    }
-
-    val restoreBackupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri?.let {
-            isRestoring = true
-            coroutineScope.launch {
-                try {
-                    val backupData = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw Exception("无法读取备份文件")
-                    val restoredData = BackupHelper.restoreBackup(context, backupData)
-                    val editor = prefs.edit()
-                    restoredData.settings.forEach { (key, value) ->
-                        when (value) {
-                            is Boolean -> editor.putBoolean(key, value)
-                            is String -> editor.putString(key, value)
-                            is Int -> editor.putInt(key, value)
-                            is Long -> editor.putLong(key, value)
-                            is Float -> editor.putFloat(key, value)
-                        }
-                    }
-                    editor.apply()
-                    val database = OrderDatabase.getDatabase(context)
-                    restoredData.orders.forEach { order ->
-                        if (database.orderDao().getOrderById(order.id) == null) database.orderDao().insert(order)
-                    }
-                    android.widget.Toast.makeText(context, "恢复成功！共恢复 ${restoredData.orders.size} 条取餐码", android.widget.Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    android.widget.Toast.makeText(context, "恢复备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                } finally {
-                    isRestoring = false
-                }
-            }
-        }
-    }
-
-    PreferenceSection(title = "备份与恢复") {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // 备份卡片
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "备份数据", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text(text = "备份取餐码和设置到压缩包", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Button(
-                        onClick = {
-                            performHaptic()
-                            isBackingUp = true
-                            coroutineScope.launch {
-                                try {
-                                    val database = OrderDatabase.getDatabase(context)
-                                    val orders = database.orderDao().getAllOrdersList()
-                                    val settingsMap = mutableMapOf<String, Any?>()
-                                    prefs.all.forEach { (key, value) -> settingsMap[key] = value }
-                                    val backupData = BackupHelper.createBackup(context, orders, settingsMap)
-                                    pendingBackupData = backupData
-                                    createBackupLauncher.launch(BackupHelper.generateBackupFileName())
-                                } catch (e: Exception) {
-                                    android.widget.Toast.makeText(context, "备份失败: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                                    isBackingUp = false
-                                }
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = !isBackingUp
-                    ) {
-                        if (isBackingUp) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        else Text("备份")
-                    }
-                }
-            }
-
-            // 恢复卡片
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "恢复数据", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text(text = "从备份文件恢复取餐码和设置", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Button(
-                        onClick = { performHaptic(); restoreBackupLauncher.launch(arrayOf("*/*")) },
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = !isRestoring
-                    ) {
-                        if (isRestoring) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        else Text("恢复")
-                    }
-                }
-            }
+        onExpandNavigationRail?.let { onExpand ->
+            Md3eNavigationRailExpandButton(
+                onClick = onExpand,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 8.dp, top = 8.dp),
+            )
         }
     }
 }
@@ -1380,7 +1297,7 @@ fun CreditsSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compo
         Triple("Coil", "现代化的 Android 图片加载库", "https://coil-kt.github.io/coil/"),
         Triple("Kyant Backdrop", "优雅的毛玻璃与层级模糊效果实现", "https://github.com/Kyant0/AndroidLiquidGlass"),
         Triple("Paddle Lite", "使用深度识别算法在本地进行OCR识别", "https://www.paddlepaddle.org.cn/paddle/paddlelite"),
-        Triple("Paddle4Android", "不需要学习原理即可一键在Android上引入OCR识别", "https://github.com/equationl/paddleocr4android"),
+        Triple("PaddleOCR", "提供 PP-OCRv6 Tiny 模型与 Android ONNX Runtime 部署实现", "https://github.com/PaddlePaddle/PaddleOCR"),
         Triple("Miuix", "多平台UI/效果实现的UI设计库", "https://github.com/compose-miuix-ui/miuix/"),
         Triple("HyperCeiler", "首次使用引导的视觉效果与动画参考", "https://github.com/ReChronoRain/HyperCeiler"),
     )

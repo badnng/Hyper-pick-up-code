@@ -3,6 +3,7 @@ package com.Badnng.moe.data.db
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
@@ -11,6 +12,9 @@ import kotlinx.coroutines.flow.Flow
 interface OrderDao {
     @Insert
     suspend fun insert(order: OrderEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrReplace(order: OrderEntity)
 
     @Update
     suspend fun update(order: OrderEntity)
@@ -35,6 +39,9 @@ interface OrderDao {
 
     @Query("DELETE FROM orders WHERE isCompleted = 1")
     suspend fun deleteCompletedOrders()
+
+    @Query("DELETE FROM orders")
+    suspend fun deleteAllOrders()
 
     @Query("SELECT * FROM orders ORDER BY createdAt DESC")
     suspend fun getAllOrdersList(): List<OrderEntity>

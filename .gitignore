@@ -1,5 +1,7 @@
 *.iml
 .gradle
+.gradle-isolated
+.gradle-isolated-ro
 /local.properties
 /.idea/caches
 /.idea/libraries

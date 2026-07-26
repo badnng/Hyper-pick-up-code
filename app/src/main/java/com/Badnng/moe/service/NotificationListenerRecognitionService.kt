@@ -11,7 +11,10 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
+import com.Badnng.moe.recognition.RecognizedOrderFactory
 import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.RecognitionTextSource
+import com.Badnng.moe.recognition.RecognitionTrigger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -95,7 +98,12 @@ class NotificationListenerRecognitionService : NotificationListenerService() {
     }
 
     private suspend fun processNotificationText(text: String, pkgName: String, appLabel: String) {
-        val results = RecognitionRouter(applicationContext).recognizeText(text).orders
+        val routedResult = RecognitionRouter(applicationContext).recognizeText(
+            text,
+            RecognitionTextSource.Notification,
+            RecognitionTrigger.NOTIFICATION,
+        )
+        val results = routedResult.orders
 
         Log.d("NotificationListener", "识别结果: ${results.size}个, codes=${results.map { it.code }}")
 
@@ -108,18 +116,14 @@ class NotificationListenerRecognitionService : NotificationListenerService() {
 
         for (result in results) {
             if (result.code == null) continue
-            val order = OrderEntity(
-                takeoutCode = result.code,
-                qrCodeData = result.qr,
+            val order = RecognizedOrderFactory.fromRecognition(
+                result = result,
+                metadata = routedResult.metadata,
                 screenshotPath = "",
                 recognizedText = text,
-                orderType = result.type,
-                brandName = result.brand,
-                fullText = result.fullText,
-                pickupLocation = result.pickupLocation,
-                sourceApp = "通知识别",
-                sourcePackage = pkgName
-            )
+                sourceApp = appLabel,
+                sourcePackage = pkgName,
+            ) ?: continue
             orderDao.insert(order)
             insertedOrders.add(order)
         }
@@ -233,7 +237,12 @@ class NotificationListenerRecognitionService : NotificationListenerService() {
         fun testNotificationRecognition(context: Context, text: String) {
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 try {
-                    val results = RecognitionRouter(context).recognizeTextOffline(text)
+                    val routedResult = RecognitionRouter(context).recognizeTextOffline(
+                        text,
+                        RecognitionTextSource.Notification,
+                        RecognitionTrigger.TEST_NOTIFICATION,
+                    )
+                    val results = routedResult.orders
 
                     if (results.isEmpty()) {
                         android.util.Log.d("NotificationListener", "测试识别: 未识别到码")
@@ -246,18 +255,14 @@ class NotificationListenerRecognitionService : NotificationListenerService() {
 
                     for (result in results) {
                         if (result.code == null) continue
-                        val order = OrderEntity(
-                            takeoutCode = result.code,
-                            qrCodeData = result.qr,
+                        val order = RecognizedOrderFactory.fromRecognition(
+                            result = result,
+                            metadata = routedResult.metadata,
                             screenshotPath = "",
                             recognizedText = text,
-                            orderType = result.type,
-                            brandName = result.brand,
-                            fullText = result.fullText,
-                            pickupLocation = result.pickupLocation,
                             sourceApp = "通知识别",
-                            sourcePackage = "测试通知"
-                        )
+                            sourcePackage = "测试通知",
+                        ) ?: continue
                         orderDao.insert(order)
                     }
 

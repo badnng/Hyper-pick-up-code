@@ -50,6 +50,37 @@ object EdgeToEdgeHelper {
         }
     }
 
+    /**
+     * 快速查看窗口会在原页面上绘制深色半透明遮罩，因此系统栏必须保持透明并使用浅色图标。
+     */
+    fun applyQuickViewEdgeToEdge(activity: Activity) {
+        val window = activity.window
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
+
+        fun applySystemBarAppearance() {
+            WindowInsetsControllerCompat(window, window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                isAppearanceLightStatusBars = false
+                isAppearanceLightNavigationBars = false
+                show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+
+        applySystemBarAppearance()
+        applyMaxRefreshRate(activity, activity.display ?: window.decorView.display)
+        window.decorView.post {
+            applySystemBarAppearance()
+            applyMaxRefreshRate(activity, activity.display ?: window.decorView.display)
+        }
+    }
+
     private fun applyMaxRefreshRate(activity: Activity, display: Display?) {
         try {
             val d = display ?: return

@@ -10,7 +10,10 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
+import com.Badnng.moe.recognition.RecognizedOrderFactory
 import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.RecognitionTextSource
+import com.Badnng.moe.recognition.RecognitionTrigger
 import com.Badnng.moe.service.SmsRecognitionService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +68,12 @@ class SmsRecognitionReceiver : BroadcastReceiver() {
 
     private suspend fun processSms(context: Context, smsText: String, sender: String) {
         withContext(Dispatchers.IO) {
-            val results = RecognitionRouter(context).recognizeText(smsText).orders
+            val routedResult = RecognitionRouter(context).recognizeText(
+                smsText,
+                RecognitionTextSource.Sms,
+                RecognitionTrigger.SMS,
+            )
+            val results = routedResult.orders
 
             Log.d("SmsRecognition", "识别结果：${results.size}个, codes=${results.map { it.code }}")
 
@@ -78,18 +86,14 @@ class SmsRecognitionReceiver : BroadcastReceiver() {
 
             for (result in results) {
                 if (result.code == null) continue
-                val order = OrderEntity(
-                    takeoutCode = result.code,
-                    qrCodeData = result.qr,
+                val order = RecognizedOrderFactory.fromRecognition(
+                    result = result,
+                    metadata = routedResult.metadata,
                     screenshotPath = "",
                     recognizedText = smsText,
-                    orderType = result.type,
-                    brandName = result.brand,
-                    fullText = result.fullText,
-                    pickupLocation = result.pickupLocation,
                     sourceApp = "短信识别",
-                    sourcePackage = sender
-                )
+                    sourcePackage = sender,
+                ) ?: continue
                 orderDao.insert(order)
                 insertedOrders.add(order)
             }

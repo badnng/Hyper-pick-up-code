@@ -24,6 +24,7 @@ import com.Badnng.moe.ui.component.PreferenceSection
 import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsGroupSwitchItem
+import com.Badnng.moe.ocr.OcrDiagnosticsPreferences
 import com.Badnng.moe.ui.miuix.MIUIX_FORCE_LOW_END_DEVICE_STANDARD_KEY
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
@@ -43,13 +44,15 @@ fun DeveloperSettingsContent(
             prefs.getBoolean(MIUIX_FORCE_LOW_END_DEVICE_STANDARD_KEY, false),
         )
     }
-
+    var ocrDebugDetailsEnabled by remember {
+        mutableStateOf(prefs.getBoolean(OcrDiagnosticsPreferences.DETAILS_ENABLED_KEY, false))
+    }
     val deviceSection: @Composable () -> Unit = {
         PreferenceSection(title = "设备兼容") {
             SettingsGroup {
                 SettingsGroupSwitchItem(
                     title = "使用低级设备标准",
-                    description = "强制关闭 Miuix 高开销动态效果与模糊；关闭后恢复自动判断",
+                    description = "强制按 CPU Level 低档处理：关闭 Miuix 模糊与 OOBE 箭头转场，保留动画",
                     position = GroupPosition.Single,
                     checked = forceLowEndDeviceStandard,
                     onCheckedChange = { enabled ->
@@ -66,10 +69,23 @@ fun DeveloperSettingsContent(
     val diagnosticsSection: @Composable () -> Unit = {
         PreferenceSection(title = "调试") {
             SettingsGroup {
+                SettingsGroupSwitchItem(
+                    title = "显示 OCR 调试信息",
+                    description = "保存后续本地图片识别的检测框、逐行置信度和推理耗时，并在识别详情中显示",
+                    position = GroupPosition.First,
+                    checked = ocrDebugDetailsEnabled,
+                    onCheckedChange = { enabled ->
+                        performHaptic()
+                        ocrDebugDetailsEnabled = enabled
+                        prefs.edit()
+                            .putBoolean(OcrDiagnosticsPreferences.DETAILS_ENABLED_KEY, enabled)
+                            .apply()
+                    },
+                )
                 SettingsGroupItem(
                     title = "点击自动崩溃",
                     description = "立即触发测试崩溃，用于检查异常日志",
-                    position = GroupPosition.Single,
+                    position = GroupPosition.Last,
                     onClick = {
                         performHaptic()
                         throw RuntimeException("Test crash triggered from developer options")

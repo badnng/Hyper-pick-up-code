@@ -29,13 +29,17 @@ internal object OobeActivityTransition {
         hyperOsBlurEnabled: Boolean,
         onReady: (Bundle?) -> Unit,
     ) {
+        if (!useHyperOsTransition) {
+            onReady(null)
+            return
+        }
         if (source.width <= 0 || source.height <= 0) {
             onReady(null)
             return
         }
         val handler = Handler(Looper.getMainLooper())
         captureCircularBitmap(activity, source, handler) { bitmap ->
-            val hyperOsOptions = if (useHyperOsTransition && bitmap != null) {
+            val hyperOsOptions = if (bitmap != null) {
                 createHyperOsOptions(
                     source = source,
                     bitmap = bitmap,

@@ -1,5 +1,6 @@
 package com.Badnng.moe.ui.component
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -70,12 +71,30 @@ fun UpdateProgressSheet(
     onDismiss: () -> Unit
 ) {
     val isMiuix = rememberMiuixStyle()
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress?.coerceIn(0f, 1f) ?: 0f,
+        animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
+        label = "updateDownloadProgress",
+    )
+    val displayedProgress = if (progress == null) {
+        null
+    } else {
+        animatedProgress.coerceIn(0f, 1f)
+    }
     if (isMiuix) {
-        MiuixUpdateProgressSheet(show = show, updateInfo = updateInfo, progress = progress, isPaused = isPaused, onPause = onPause, onResume = onResume, onDismiss = onDismiss)
+        MiuixUpdateProgressSheet(
+            show = show,
+            updateInfo = updateInfo,
+            progress = displayedProgress,
+            isPaused = isPaused,
+            onPause = onPause,
+            onResume = onResume,
+            onDismiss = onDismiss,
+        )
     } else if (show) {
         Md3eUpdateProgressSheet(
             updateInfo = updateInfo,
-            progress = progress,
+            progress = displayedProgress,
             isPaused = isPaused,
             onPause = onPause,
             onResume = onResume,
@@ -544,7 +563,7 @@ private fun Md3eUpdateSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun Md3eUpdateProgressSheet(
     updateInfo: UpdateInfo,
@@ -624,21 +643,15 @@ private fun Md3eUpdateProgressSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (progress == null) {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
+                    LinearWavyProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
                 } else {
-                    LinearProgressIndicator(
+                    LinearWavyProgressIndicator(
                         progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
+                        modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )

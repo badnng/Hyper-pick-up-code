@@ -109,6 +109,7 @@ class NotificationHelper(private val context: Context) {
                 isExpress = isExpress,
                 completePendingIntent = completePendingIntent,
                 viewPendingIntent = viewPendingIntent,
+                qrDetailPendingIntent = qrDetailPendingIntent,
                 identityChooserPendingIntent = identityChooserPendingIntent
             )
             notificationManager.notify(order.id.hashCode(), islandNotification)
@@ -189,6 +190,22 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val qrDetailPendingIntent = orders.firstOrNull { !it.qrCodeData.isNullOrBlank() }?.let { qrOrder ->
+            val qrDetailIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("highlight_order_id", qrOrder.id)
+                putExtra("show_qr_detail", true)
+                putExtra("order_id", qrOrder.id)
+                putExtra("from_notification", true)
+            }
+            PendingIntent.getActivity(
+                context,
+                qrOrder.id.hashCode() + 2,
+                qrDetailIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
         val completedCount = orders.count { it.isCompleted }
         val totalCount = orders.size
         val brandToUse = group.brandName
@@ -214,6 +231,7 @@ class NotificationHelper(private val context: Context) {
                 isExpress = isExpress,
                 completeAllPendingIntent = completeAllPendingIntent,
                 groupDetailPendingIntent = groupDetailPendingIntent,
+                qrDetailPendingIntent = qrDetailPendingIntent,
                 identityChooserPendingIntent = identityChooserPendingIntent
             )
             notificationManager.notify(group.id.hashCode(), islandNotification)

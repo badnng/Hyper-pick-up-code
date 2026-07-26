@@ -34,5 +34,15 @@ data class OrderEntity(
     val sourcePackage: String? = null,
     val fullText: String? = null,
     val pickupLocation: String? = null,
-    val groupId: Long? = null  // 关联到 OrderGroup 的 id
+    val groupId: Long? = null,  // 关联到 OrderGroup 的 id
+    val recognitionMode: String? = null,
+    val recognitionInputType: String? = null,
+    val recognitionTrigger: String? = null,
+    val recognitionProvider: String? = null,
+    val recognitionModel: String? = null,
+    val recognitionUsedOfflineFallback: Boolean? = null,
+    val recognitionError: String? = null,
+    val recognitionErrorDetail: String? = null,
+    val recognitionDurationMs: Long? = null,
+    val ocrDiagnosticData: String? = null,
 )

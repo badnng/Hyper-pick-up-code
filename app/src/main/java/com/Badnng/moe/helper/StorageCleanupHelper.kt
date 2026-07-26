@@ -25,6 +25,17 @@ object StorageCleanupHelper {
 
     suspend fun runStartupCleanup(context: Context) {
         AppLogger.update("StorageCleanup runStartupCleanup start")
+        runCatching { ScreenshotStorage.migrateLegacyScreenshots(context) }
+            .onSuccess { result ->
+                if (result.migratedFiles > 0 || result.failedFiles > 0) {
+                    AppLogger.update(
+                        "Screenshot migration: files=${result.migratedFiles}, " +
+                            "orders=${result.updatedOrders}, groups=${result.updatedGroups}, " +
+                            "failed=${result.failedFiles}",
+                    )
+                }
+            }
+            .onFailure { AppLogger.update("Screenshot migration failed: ${it.message}") }
         cleanupPendingUpdateApks(context)
         cleanupExpiredCompletedScreenshots(context)
         AppLogger.update("StorageCleanup runStartupCleanup done")
@@ -82,8 +93,7 @@ object StorageCleanupHelper {
             var deletedCount = 0
             expiredCompletedPaths.forEach { path ->
                 if (path in protectedPaths) return@forEach
-                val file = File(path)
-                if (file.exists() && file.delete()) {
+                if (ScreenshotStorage.exists(context, path) && ScreenshotStorage.delete(context, path)) {
                     deletedCount++
                 }
             }

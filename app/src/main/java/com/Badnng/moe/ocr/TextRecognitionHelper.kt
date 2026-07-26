@@ -31,9 +31,7 @@ class TextRecognitionHelper(private val context: Context) {
     /**
      * 初始化 OCR 引擎（需要在应用启动时调用）
      */
-    fun initOcr(): Boolean {
-        return paddleOcr.init()
-    }
+    suspend fun initOcr(): Boolean = paddleOcr.initAsync()
 
     /**
      * OCR 结果数据类，用于在多个识别方法间复用
@@ -42,7 +40,8 @@ class TextRecognitionHelper(private val context: Context) {
         val rawFullText: String,
         val textBlocks: List<PaddleOcrHelper.TextBlock>,
         val mergedText: String,
-        val correctedBlocks: List<PaddleOcrHelper.TextBlock>
+        val correctedBlocks: List<PaddleOcrHelper.TextBlock>,
+        val diagnosticResult: PaddleOcrHelper.DiagnosticResult?,
     )
 
     suspend fun recognizeAll(bitmap: Bitmap, sourceApp: String? = null, sourcePkg: String? = null, existingOcr: OcrResult? = null): Pair<RecognitionResult, OcrResult> {
@@ -56,7 +55,7 @@ class TextRecognitionHelper(private val context: Context) {
         }
         if (!paddleOcr.isInitialized) {
             Log.e("RecognitionMonitor", "OCR 未初始化，尝试同步初始化")
-            paddleOcr.init()
+            paddleOcr.initAsync()
         }
 
         // 使用已有的 OCR 结果或重新识别
@@ -68,7 +67,7 @@ class TextRecognitionHelper(private val context: Context) {
             barcodeResult = null
             Log.d("RecognitionMonitor", "复用已有 OCR 结果")
         } else {
-            val rawOcr = paddleOcr.recognize(bitmap)
+            val rawOcr = paddleOcr.recognizeAsync(bitmap)
             Log.d("RecognitionMonitor", "OCR result: ${if (rawOcr != null) "not null, blocks=${rawOcr.textBlocks.size}" else "NULL"}")
             val rawFullText = rawOcr?.fullText ?: ""
             val textBlocks = rawOcr?.textBlocks ?: emptyList()
@@ -76,7 +75,13 @@ class TextRecognitionHelper(private val context: Context) {
             val correctedBlocks = textBlocks.map { block ->
                 block.copy(text = applyCorrections(block.text))
             }
-            ocrResult = OcrResult(rawFullText, textBlocks, mergedText, correctedBlocks)
+            ocrResult = OcrResult(
+                rawFullText = rawFullText,
+                textBlocks = textBlocks,
+                mergedText = mergedText,
+                correctedBlocks = correctedBlocks,
+                diagnosticResult = rawOcr?.diagnosticResult,
+            )
 
             // 保留 ML Kit 条码扫描
             barcodeResult = barcodeScanner?.let { scanner ->
@@ -561,6 +566,24 @@ class TextRecognitionHelper(private val context: Context) {
 
         val candidates = mutableListOf<Pair<String, Int>>()
 
+        val locationLines = if (blocks.isNotEmpty()) {
+            blocks.map { it.text }
+        } else {
+            mergedText.lines()
+        }
+        RecognitionTextStructure.trailingLocationCandidates(
+            lines = locationLines,
+            labels = plConfig.trailingLabels,
+        ).forEach { rawCandidate ->
+            val candidate = truncateLocation(rawCandidate, trimLeadingNoise = false)
+            if (
+                candidate.length > locScoring.addressFallbackMinLength &&
+                !isGarbageMatch(candidate)
+            ) {
+                candidates.add(candidate to locationScore(candidate) + locScoring.addressBonus)
+            }
+        }
+
         val addressPattern = Regex("地址[:：\\s]*(.{4,80}?(?:${targetKeywords.joinToString("|")}))")
         val addressMatch = addressPattern.find(mergedText)
         if (addressMatch != null) {
@@ -590,10 +613,9 @@ class TextRecognitionHelper(private val context: Context) {
             if (!isGarbageMatch(loc)) candidates.add(loc to locationScore(loc))
         }
 
-        // OCR 全文按屏幕从下到上拼接。这里仅为地点识别恢复自然阅读顺序，
-        // 让“取件码 + 到达地点 + 下一行取件”这类换行消息保持完整。
+        // OCR 文本框已经按自然阅读顺序排列，这里连接后续两行以覆盖跨行地点。
         if (blocks.size >= 2) {
-            val readingOrderBlocks = blocks.asReversed().map { block ->
+            val readingOrderBlocks = blocks.map { block ->
                 block.text.replace("\n", "").replace(" ", "")
             }
             val codePatterns = engine.getExpressPatterns().filter {
@@ -704,6 +726,17 @@ class TextRecognitionHelper(private val context: Context) {
         return result
     }
 
+    private fun cleanCodeMatchingText(text: String): String {
+        val cleanConfig = engine.rules.textCleaning
+        return RecognitionTextStructure.normalizeForCodeMatching(
+            text = text,
+            datetimePattern = cleanConfig.datetimePattern,
+            spaceCollapsePattern = cleanConfig.spaceCollapse,
+            charRemovals = cleanConfig.charRemovals,
+            corrections = engine.getTextCorrections(),
+        )
+    }
+
     private fun applyCorrections(text: String): String {
         var result = text
         for ((from, to) in engine.getTextCorrections()) {
@@ -740,6 +773,7 @@ class TextRecognitionHelper(private val context: Context) {
     // ─────────── 纯文字识别（用于划选文字处理） ───────────
     fun recognizeFromText(text: String): List<RecognitionResult> {
         val mergedText = cleanChineseText(text)
+        val codeMatchingText = cleanCodeMatchingText(text)
         Log.d("ExpressExtract", "recognizeFromText: engine patterns=${engine.getExpressPatterns().size}, sourceId=${engine.currentSourceId}")
 
         // 第一步：品牌识别
@@ -789,7 +823,7 @@ class TextRecognitionHelper(private val context: Context) {
         // 第三步：提取取件码
         val pickupLocation = findPickupLocation(mergedText, emptyList())
         val results = if (category == "快递") {
-            val codes = extractExpressCodeFromText(mergedText)
+            val codes = extractExpressCodeFromText(mergedText, codeMatchingText)
             Log.d("ExpressExtract", "[text] 第三步提取: codes=$codes")
             codes.map { code ->
                 val brand = findBrandForCode(code, mergedText)
@@ -818,12 +852,22 @@ class TextRecognitionHelper(private val context: Context) {
         return results
     }
 
-    private fun extractExpressCodeFromText(mergedText: String): List<String> {
+    private fun extractExpressCodeFromText(
+        mergedText: String,
+        codeMatchingText: String = mergedText,
+    ): List<String> {
         val expressKeywords = engine.getExpressTriggerKeywords()
         val hasExpressKeyword = expressKeywords.any { mergedText.contains(it) }
         val hasExpressBrand = expressBrandKeywords.any { mergedText.contains(it) }
         val contextualMatches = findExpressCodesNearKeywords(mergedText)
-        val configuredThreeSegmentMatches = findConfiguredThreeSegmentCodes(mergedText)
+        val configuredThreeSegmentMatches = findConfiguredThreeSegmentCodes(codeMatchingText).map { (code, range) ->
+            val mergedIndex = mergedText.indexOf(code)
+            code to if (mergedIndex >= 0) {
+                mergedIndex until (mergedIndex + code.length)
+            } else {
+                range
+            }
+        }
         val highConfidenceMatches = (contextualMatches + configuredThreeSegmentMatches)
             .distinctBy { it.first }
             .sortedBy { it.second.first }
@@ -1092,11 +1136,11 @@ class TextRecognitionHelper(private val context: Context) {
             waitCount++
         }
         if (!paddleOcr.isInitialized) {
-            paddleOcr.init()
+            paddleOcr.initAsync()
         }
 
         // 使用 PaddleOCR 进行文字识别
-        val ocrResult = paddleOcr.recognize(bitmap)
+        val ocrResult = paddleOcr.recognizeAsync(bitmap)
         val rawFullText = ocrResult?.fullText ?: ""
         val textBlocks = ocrResult?.textBlocks ?: emptyList()
 
@@ -1157,7 +1201,18 @@ class TextRecognitionHelper(private val context: Context) {
         for ((code, range) in findExpressCodesNearKeywords(mergedText)) {
             addOrderIfValid(code, range)
         }
-        for ((code, range) in findConfiguredThreeSegmentCodes(mergedText)) {
+        val lineAwareText = cleanCodeMatchingText(rawFullText)
+        val threeSegmentMatches = (
+            findConfiguredThreeSegmentCodes(mergedText) +
+                findConfiguredThreeSegmentCodes(lineAwareText)
+            ).distinctBy { it.first }
+        for ((code, originalRange) in threeSegmentMatches) {
+            val mergedIndex = mergedText.indexOf(code)
+            val range = if (mergedIndex >= 0) {
+                mergedIndex until (mergedIndex + code.length)
+            } else {
+                originalRange
+            }
             addOrderIfValid(code, range)
         }
         Log.d("RecognitionMonitor", "关键词及三段码扫描完成，找到 ${orders.size} 个取件码")

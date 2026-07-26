@@ -5,8 +5,13 @@ import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -47,6 +52,8 @@ object AppLogger {
     private var logsDir: File? = null
     private val scope = CoroutineScope(Dispatchers.IO)
     private var logcatProcess: Process? = null
+    private var logcatCaptureJob: Job? = null
+    private val logcatLifecycleMutex = Mutex()
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -84,7 +91,7 @@ object AppLogger {
     // ==================== Logcat 捕获 ====================
 
     private fun startLogcatCapture() {
-        scope.launch {
+        logcatCaptureJob = scope.launch {
             try {
                 Runtime.getRuntime().exec(arrayOf("logcat", "-c")).waitFor()
 
@@ -329,6 +336,34 @@ object AppLogger {
     }
 
     // ==================== 清理 ====================
+
+    suspend fun clearLogs(context: Context): Boolean = withContext(Dispatchers.IO + NonCancellable) {
+        logcatLifecycleMutex.withLock {
+            val directory = File(context.filesDir, LOG_DIR)
+            try {
+                logcatProcess?.destroy()
+                logcatCaptureJob?.cancelAndJoin()
+                logcatCaptureJob = null
+                logcatProcess = null
+                closeWriters()
+
+                val cleared = !directory.exists() || directory.deleteRecursively()
+                logsDir = directory.apply { mkdirs() }
+                currentDate = dateFormat.format(Date())
+                openWriters()
+                startLogcatCapture()
+                cleared
+            } catch (e: Exception) {
+                Log.e(TAG, "clearLogs failed", e)
+                logsDir = directory.apply { mkdirs() }
+                currentDate = dateFormat.format(Date())
+                closeWriters()
+                openWriters()
+                if (logcatCaptureJob?.isActive != true) startLogcatCapture()
+                false
+            }
+        }
+    }
 
     fun cleanupOldLogs(context: Context) {
         val cutoff = System.currentTimeMillis() - RETENTION_DAYS * 24L * 60 * 60 * 1000

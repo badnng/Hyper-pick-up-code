@@ -48,6 +48,9 @@ interface OrderGroupDao {
     @Query("DELETE FROM order_groups WHERE isCompleted = 1")
     suspend fun deleteCompletedGroups()
 
+    @Query("DELETE FROM order_groups")
+    suspend fun deleteAllGroups()
+
     @Query("SELECT * FROM order_groups ORDER BY createdAt DESC")
     suspend fun getAllGroupsList(): List<OrderGroup>
 

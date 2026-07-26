@@ -58,6 +58,20 @@ class SecureApiKeyStore(context: Context) {
 
     fun has(provider: OnlineRecognitionProvider): Boolean = !get(provider).isNullOrBlank()
 
+    fun exportApiKeys(): Map<String, String> = buildMap<String, String> {
+        OnlineRecognitionProvider.entries.forEach { provider ->
+            this@SecureApiKeyStore.get(provider)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { put(provider.key, it) }
+        }
+    }
+
+    fun replaceApiKeys(values: Map<String, String>) {
+        OnlineRecognitionProvider.entries.forEach { provider ->
+            save(provider, values[provider.key].orEmpty())
+        }
+    }
+
     private fun getOrCreateSecretKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }

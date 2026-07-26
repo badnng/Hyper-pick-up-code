@@ -23,11 +23,13 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.AppLogger
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
+import com.Badnng.moe.helper.ImageSourceMetadataResolver
 import com.Badnng.moe.helper.NotificationHelper
-import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.helper.ScreenshotStorage
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
-import java.io.File
-import java.io.FileOutputStream
+import com.Badnng.moe.recognition.RecognizedOrderFactory
+import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.RecognitionTrigger
 
 class ShareRecognitionService : Service() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -64,6 +66,12 @@ class ShareRecognitionService : Service() {
     }
 
     private suspend fun processImage(imageUri: Uri) {
+        val imageSource = ImageSourceMetadataResolver.resolve(applicationContext, imageUri)
+        val resolvedSourceApp = imageSource.appName ?: imageSource.packageName
+        AppLogger.recognition(
+            "ShareRecognition source: file=${imageSource.displayName}, " +
+                "package=${imageSource.packageName}, app=$resolvedSourceApp"
+        )
         val inputStream = contentResolver.openInputStream(imageUri)
         val bitmap = BitmapFactory.decodeStream(inputStream)
         inputStream?.close()
@@ -75,7 +83,12 @@ class ShareRecognitionService : Service() {
         val onlineRecognition = OnlineRecognitionPreferences.isOnline(applicationContext)
         val croppedBitmap = if (onlineRecognition) bitmap else cropStatusBar(bitmap)
         try {
-            val routedResult = RecognitionRouter(applicationContext).recognizeImage(bitmap)
+            val routedResult = RecognitionRouter(applicationContext).recognizeImage(
+                bitmap,
+                resolvedSourceApp,
+                imageSource.packageName,
+                RecognitionTrigger.SHARED_IMAGE,
+            )
             val recognizedOrders = routedResult.orders
             routedResult.onlineError?.let {
                 Log.w("ShareRecognition", "Online recognition fallback: $it")
@@ -102,11 +115,11 @@ class ShareRecognitionService : Service() {
                 return
             }
 
-            val screenshotFile = File(filesDir, "screenshots/shared_${System.currentTimeMillis()}.png")
-            screenshotFile.parentFile?.mkdirs()
-            FileOutputStream(screenshotFile).use { outputStream ->
-                bitmapToUse.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-            }
+            val screenshotPath = ScreenshotStorage.saveBitmap(
+                applicationContext,
+                bitmapToUse,
+                namePrefix = "分享识别",
+            )
 
             val database = OrderDatabase.getDatabase(applicationContext)
             val orderDao = database.orderDao()
@@ -115,17 +128,14 @@ class ShareRecognitionService : Service() {
             for (result in recognizedOrders) {
                 val code = result.code ?: continue
                 AppLogger.recognition("ShareRecognition code=$code, type=${result.type}, brand=${result.brand}, pickup=${result.pickupLocation}")
-                val order = OrderEntity(
-                    takeoutCode = code,
-                    qrCodeData = result.qr,
-                    screenshotPath = screenshotFile.absolutePath,
+                val order = RecognizedOrderFactory.fromRecognition(
+                    result = result,
+                    metadata = routedResult.metadata,
+                    screenshotPath = screenshotPath,
                     recognizedText = "\u5206\u4eab\u8bc6\u522b",
-                    orderType = result.type,
-                    brandName = result.brand,
-                    fullText = result.fullText,
-                    pickupLocation = result.pickupLocation,
-                    sourceApp = "\u5206\u4eab\u8bc6\u522b"
-                )
+                    sourceApp = resolvedSourceApp ?: "\u5206\u4eab\u8bc6\u522b",
+                    sourcePackage = imageSource.packageName,
+                ) ?: continue
                 orderDao.insert(order)
                 insertedOrders.add(order)
             }

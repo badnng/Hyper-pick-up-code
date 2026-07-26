@@ -40,6 +40,8 @@ import com.Badnng.moe.rules.*
 import com.Badnng.moe.ui.miuix.MiuixBlurredBar
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.rememberMiuixBackdrop
+import com.Badnng.moe.ui.component.rememberBlockedWordsEditorState
+import com.Badnng.moe.ui.LocalAppUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,6 +82,7 @@ fun MiuixRulesScreen(
     onModalVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val appUi = LocalAppUi.current
     val scope = rememberCoroutineScope()
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
@@ -101,6 +104,8 @@ fun MiuixRulesScreen(
 
     var localExpanded by remember { mutableStateOf(true) }
     var onlineExpanded by remember { mutableStateOf(false) }
+    var blockedWordsExpanded by remember { mutableStateOf(false) }
+    val blockedWordsState = rememberBlockedWordsEditorState()
 
     var showAddSourceDialog by remember { mutableStateOf(false) }
     var editingSource by remember { mutableStateOf<OnlineRuleSource?>(null) }
@@ -571,6 +576,72 @@ fun MiuixRulesScreen(
                             Icon(MiuixIcons.Regular.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("添加规则源")
+                        }
+                    }
+                }
+
+                item {
+                    val interactionSource = remember { MutableInteractionSource() }
+                    val indicationColor = MiuixTheme.colorScheme.onSurface
+                    val indication = remember(indicationColor) {
+                        top.yukonga.miuix.kmp.utils.MiuixIndication(color = indicationColor)
+                    }
+                    SmallTitle(text = "过滤设置")
+                    Card(
+                        modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .squircleClip(15.dp)
+                                    .clickable(
+                                        interactionSource = interactionSource,
+                                        indication = indication,
+                                        onClick = {
+                                            performHaptic()
+                                            blockedWordsExpanded = !blockedWordsExpanded
+                                        },
+                                    )
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "自定义屏蔽词",
+                                        style = MiuixTheme.textStyles.body1,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    Text(
+                                        text = if (blockedWordsState.words.isEmpty()) {
+                                            "未设置"
+                                        } else {
+                                            "${blockedWordsState.words.size} 个词条"
+                                        },
+                                        style = MiuixTheme.textStyles.body2,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                                val arrowRotation by animateFloatAsState(
+                                    targetValue = if (blockedWordsExpanded) 180f else 0f,
+                                    animationSpec = spring(),
+                                    label = "blockedWordsArrow",
+                                )
+                                Icon(
+                                    imageVector = MiuixIcons.Regular.ExpandMore,
+                                    contentDescription = if (blockedWordsExpanded) "收起" else "展开",
+                                    modifier = Modifier.rotate(arrowRotation),
+                                )
+                            }
+                            AnimatedVisibility(
+                                visible = blockedWordsExpanded,
+                                enter = fadeIn() + expandVertically(),
+                                exit = fadeOut() + shrinkVertically(),
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp).padding(top = 0.dp)) {
+                                    appUi.blockedWordsEditor(blockedWordsState, performHaptic)
+                                }
+                            }
                         }
                     }
                 }

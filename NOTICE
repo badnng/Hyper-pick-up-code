@@ -44,6 +44,19 @@ These parts were adapted into native Android Views and Jetpack Compose.
 Hyper Note retains its own onboarding text, permissions, screenshot choices,
 feature descriptions, name, and application artwork.
 
+PaddleOCR attribution
+=====================
+
+This distribution includes the official PaddleOCR Android SDK source and
+PP-OCRv6 Tiny detection/recognition models:
+
+  Source: https://github.com/PaddlePaddle/PaddleOCR
+  Commit: 2661c7c0ef5c613e8f93c6e93b2e052399f0f854
+  Copyright (c) 2026 PaddlePaddle Authors
+  License: Apache License 2.0
+
+The SDK source files retain their original copyright and license headers.
+
 Names and marks
 ===============
 

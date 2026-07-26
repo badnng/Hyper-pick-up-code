@@ -36,11 +36,12 @@ import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.RootHelper
-import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.helper.ScreenshotStorage
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
+import com.Badnng.moe.recognition.RecognizedOrderFactory
+import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.RecognitionTrigger
 import rikka.shizuku.Shizuku
-import java.io.File
-import java.io.FileOutputStream
 
 class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
@@ -346,8 +347,12 @@ class ScreenCaptureService : Service() {
     private fun recognizeAndStop(bitmap: Bitmap, sourceApp: String?, sourcePkg: String?, triggeredByAccessibilityShortcut: Boolean) {
         scope.launch {
             try {
-                val routedResult = RecognitionRouter(applicationContext)
-                    .recognizeImage(bitmap, sourceApp, sourcePkg)
+                val routedResult = RecognitionRouter(applicationContext).recognizeImage(
+                    bitmap,
+                    sourceApp,
+                    sourcePkg,
+                    RecognitionTrigger.SCREEN_CAPTURE,
+                )
                 val recognizedOrders = routedResult.orders
                 routedResult.onlineError?.let {
                     Log.w("CaptureLog", "Online recognition fallback: $it")
@@ -358,11 +363,11 @@ class ScreenCaptureService : Service() {
                     return@launch
                 }
 
-                val screenshotFile = File(filesDir, "screenshots/${System.currentTimeMillis()}.png")
-                screenshotFile.parentFile?.mkdirs()
-                FileOutputStream(screenshotFile).use { fos ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
-                }
+                val screenshotPath = ScreenshotStorage.saveBitmap(
+                    applicationContext,
+                    bitmap,
+                    namePrefix = "识屏",
+                )
 
                 val database = OrderDatabase.getDatabase(applicationContext)
                 val orderGroupDao = database.orderGroupDao()
@@ -371,18 +376,14 @@ class ScreenCaptureService : Service() {
                 for (result in recognizedOrders) {
                     val code = result.code ?: continue
                     AppLogger.recognition("code=$code, type=${result.type}, brand=${result.brand}, pickup=${result.pickupLocation}")
-                    val order = OrderEntity(
-                        takeoutCode = code,
-                        qrCodeData = result.qr,
-                        screenshotPath = screenshotFile.absolutePath,
+                    val order = RecognizedOrderFactory.fromRecognition(
+                        result = result,
+                        metadata = routedResult.metadata,
+                        screenshotPath = screenshotPath,
                         recognizedText = "\u81ea\u52a8\u8bc6\u522b",
-                        orderType = result.type,
-                        brandName = result.brand,
-                        fullText = result.fullText,
                         sourceApp = sourceApp,
                         sourcePackage = sourcePkg,
-                        pickupLocation = result.pickupLocation
-                    )
+                    ) ?: continue
                     orderDao.insert(order)
                     insertedOrders.add(order)
                 }

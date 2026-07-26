@@ -15,7 +15,7 @@
 
 本应用同时提供：
 
-- 使用 PaddleOCR ncnn、ML Kit 条码扫描和本地规则完成的离线识别；
+- 使用 PP-OCRv6 Tiny、ONNX Runtime、ML Kit 条码扫描和本地规则完成的离线识别；
 - 由用户自行选择供应商、自行申请并配置 API Key 的第三方在线模型识别；
 - 截图识别、分享识别、划词识别、短信识别和通知识别；
 - 订单记录、分组、提醒、本地备份、规则管理和应用更新功能。
@@ -363,7 +363,7 @@ API Key 会作为鉴权信息发送给其对应的供应商；自定义供应商
 
 ### 本地识别与图片
 
-- PaddleOCR ncnn / Paddle4Android；
+- PaddleOCR PP-OCRv6 Tiny、ONNX Runtime 与 OpenCV；
 - ZXing；
 - Coil。
 

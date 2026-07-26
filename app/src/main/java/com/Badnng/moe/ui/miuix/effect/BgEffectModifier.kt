@@ -114,6 +114,7 @@ private class BgEffectNode(
         this.deviceType = deviceType
         this.isDarkTheme = isDarkTheme
         this.surface = surface
+        this.isFullSize = isFullSize
         this.colorStage = colorStage
         this.alpha = alpha
 

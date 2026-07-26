@@ -2,30 +2,37 @@ package com.Badnng.moe.ocr
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Point
 import android.graphics.Rect
 import android.os.Build
 import android.util.Log
-import com.equationl.ncnnandroidppocr.OCR
-import com.equationl.ncnnandroidppocr.bean.Device
-import com.equationl.ncnnandroidppocr.bean.DrawModel
-import com.equationl.ncnnandroidppocr.bean.ImageSize
-import com.equationl.ncnnandroidppocr.bean.ModelType
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicBoolean
+import com.paddle.ocr.EngineConfig
+import com.paddle.ocr.PaddleOCR
+import com.paddle.ocr.PaddleOCRConfig
+import com.paddle.ocr.model.OCRRunResult
+import com.paddle.ocr.util.OpenCVUtils
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.Locale
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /**
- * PaddleOCR 封装类 (ncnn 版本，支持 16KB 页面大小)
+ * PP-OCRv6 Tiny 官方 Android SDK 封装。
  */
 class PaddleOcrHelper private constructor(private val context: Context) {
+    @Volatile
+    private var ocr: PaddleOCR? = null
+    private val initializationMutex = Mutex()
+    private val recognitionMutex = Mutex()
 
-    private var ocr: OCR? = null
-    private val initialized = AtomicBoolean(false)
-    private val initializing = AtomicBoolean(false)
-    @Volatile private var isRecognizing = false
+    @Volatile
+    private var initialized = false
 
-    val isInitialized: Boolean get() = initialized.get()
+    @Volatile
+    private var lastInferenceTimeMs = -1L
+
+    val isInitialized: Boolean get() = initialized
 
     private fun isEmulator(): Boolean {
         return Build.FINGERPRINT.startsWith("generic") ||
@@ -44,319 +51,247 @@ class PaddleOcrHelper private constructor(private val context: Context) {
     data class TextBlock(
         val text: String,
         val boundingBox: Rect?,
-        val confidence: Float
+        val confidence: Float,
     )
 
     data class RecognizeResult(
         val fullText: String,
-        val textBlocks: List<TextBlock>
+        val textBlocks: List<TextBlock>,
+        val diagnosticResult: DiagnosticResult,
     )
 
-    /**
-     * 异步初始化，推荐在 Application.onCreate() 或 Activity.onCreate() 时调用
-     */
-    suspend fun initAsync(
-        modelType: ModelType = ModelType.Mobile,
-        imageSize: ImageSize = ImageSize.Size720,
-        device: Device = Device.CPU
-    ): Boolean = withContext(Dispatchers.IO) {
+    data class DiagnosticPoint(
+        val x: Float,
+        val y: Float,
+    )
+
+    data class DiagnosticTextBlock(
+        val text: String,
+        val confidence: Float,
+        val points: List<DiagnosticPoint>,
+        val recognitionTimeMs: Long?,
+    )
+
+    data class DiagnosticResult(
+        val textBlocks: List<DiagnosticTextBlock>,
+        val imageWidth: Int,
+        val imageHeight: Int,
+        val detectionTimeMs: Long,
+        val recognitionTimeMs: Long,
+        val totalTimeMs: Long,
+    )
+
+    suspend fun initAsync(): Boolean {
         if (isEmulator()) {
-            Log.w(TAG, "检测到模拟器，跳过 PaddleOCR 初始化")
-            return@withContext false
-        }
-        synchronized(this@PaddleOcrHelper) {
-            if (initialized.get()) {
-                Log.d(TAG, "PaddleOCR 已初始化，跳过")
-                return@withContext true
-            }
-
-            if (!initializing.compareAndSet(false, true)) {
-                Log.d(TAG, "PaddleOCR 正在初始化，等待...")
-                // 等待其他线程初始化完成
-                while (!initialized.get()) {
-                    Thread.sleep(50)
-                }
-                return@withContext true
-            }
-        }
-
-        Log.d(TAG, "开始初始化 PaddleOCR (ncnn)...")
-
-        return@withContext try {
-            val newOcr = OCR()
-            val success = newOcr.initModelFromAssert(
-                context.assets,
-                modelType,      // 可配置
-                imageSize,      // 可配置
-                device          // 可配置
-            )
-
-            synchronized(this@PaddleOcrHelper) {
-                ocr = newOcr
-                initialized.set(success)
-            }
-
-            if (success) {
-                Log.i(TAG, "PaddleOCR (ncnn) 初始化成功!")
-            } else {
-                Log.e(TAG, "PaddleOCR (ncnn) 初始化失败")
-                initializing.set(false)
-            }
-            success
-        } catch (e: Exception) {
-            Log.e(TAG, "PaddleOCR (ncnn) 初始化异常: ${e.message}", e)
-            initializing.set(false)
-            false
-        }
-    }
-
-    /**
-     * 同步初始化，用于快速初始化场景
-     */
-    fun init(
-        modelType: ModelType = ModelType.Mobile,
-        imageSize: ImageSize = ImageSize.Size720,
-        device: Device = Device.CPU
-    ): Boolean {
-        if (isEmulator()) {
-            Log.w(TAG, "检测到模拟器，跳过 PaddleOCR 初始化")
+            Log.w(TAG, "检测到模拟器，跳过 PP-OCRv6 Tiny 初始化")
             return false
         }
-        synchronized(this@PaddleOcrHelper) {
-            if (initialized.get()) return true
+        if (initialized) return true
 
-            if (initializing.get()) {
-                Log.d(TAG, "PaddleOCR 正在初始化，等待...")
-            }
-        }
-
-        // 等待初始化完成
-        while (initializing.get() && !initialized.get()) {
-            Thread.sleep(50)
-        }
-
-        if (initialized.get()) return true
-
-        synchronized(this@PaddleOcrHelper) {
-            if (initialized.get()) return true
-
-            Log.d(TAG, "同步初始化 PaddleOCR (ncnn)...")
-            return try {
-                val newOcr = OCR()
-
-                // 🚀 优化：预热模型（如果 ncnn 支持）
-                val success = newOcr.initModelFromAssert(
-                    context.assets,
-                    modelType,
-                    imageSize,
-                    device
+        return initializationMutex.withLock {
+            if (initialized) return@withLock true
+            try {
+                check(OpenCVUtils.init(context)) { "OpenCV 初始化失败" }
+                val newOcr = PaddleOCR.create(
+                    context = context,
+                    config = PaddleOCRConfig(
+                        detLimitSideLen = 64,
+                        detLimitType = "min",
+                        detMaxSideLimit = 2560,
+                        detThresh = 0.2f,
+                        detBoxThresh = 0.4f,
+                        detUnclipRatio = 1.4f,
+                        detMaxCandidates = 3000,
+                        detUseDilation = false,
+                        detScoreMode = "fast",
+                        detBoxType = "quad",
+                        // 保留 SDK 原始结果用于诊断日志，业务阈值在 parseResult() 中执行。
+                        recScoreThresh = 0f,
+                        recBatchSize = 1,
+                    ),
+                    engineConfig = EngineConfig(numThreads = 4),
+                    detModelAssetPath = DET_MODEL_ASSET,
+                    recModelAssetPath = REC_MODEL_ASSET,
+                    recConfigAssetPath = REC_CONFIG_ASSET,
                 )
                 ocr = newOcr
-                initialized.set(success)
-
-                if (success) {
-                    Log.i(TAG, "PaddleOCR (ncnn) 初始化成功!")
-                }
-                success
-            } catch (e: Exception) {
-                Log.e(TAG, "PaddleOCR (ncnn) 初始化异常: ${e.message}", e)
+                initialized = true
+                Log.i(
+                    TAG,
+                    "PP-OCRv6 Tiny 初始化成功, coldLoad=${newOcr.coldLoadTimeMs}ms, " +
+                        "recThreshold=$OCR_MIN_CONFIDENCE",
+                )
+                true
+            } catch (error: Throwable) {
+                ocr = null
+                initialized = false
+                Log.e(TAG, "PP-OCRv6 Tiny 初始化失败: ${error.message}", error)
                 false
             }
         }
     }
 
-    /**
-     * 🚀 核心优化：识别方法 - 复用已初始化的 OCR 实例
-     */
-    suspend fun recognizeAsync(bitmap: Bitmap): RecognizeResult? = withContext(Dispatchers.Default) {
-        recognize(bitmap)
-    }
+    fun init(): Boolean = runBlocking { initAsync() }
 
-    fun recognize(bitmap: Bitmap): RecognizeResult? {
-        val currentOcr: OCR?
-        synchronized(this@PaddleOcrHelper) {
-            currentOcr = ocr
-        }
-
-        if (currentOcr == null || !initialized.get()) {
-            Log.e(TAG, "PaddleOCR 未初始化，无法识别")
-            return null
-        }
-
-        // 🚀 优化：预处理图片，确保格式为 ARGB_8888
-        val processedBitmap = if (bitmap.width > 960 || bitmap.height > 960) {
-            val scale = 960f / maxOf(bitmap.width, bitmap.height)
-            val newWidth = (bitmap.width * scale).toInt()
-            val newHeight = (bitmap.height * scale).toInt()
-            Log.d(TAG, "缩小图片: ${bitmap.width}x${bitmap.height} -> ${newWidth}x${newHeight}")
-            // 创建缩放后的 bitmap，并确保格式为 ARGB_8888
-            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
-            // 如果不是 ARGB_8888 格式，转换为 ARGB_8888
-            if (scaledBitmap.config != Bitmap.Config.ARGB_8888) {
-                val argbBitmap = scaledBitmap.copy(Bitmap.Config.ARGB_8888, false)
-                scaledBitmap.recycle()
-                argbBitmap
-            } else {
-                scaledBitmap
-            }
-        } else {
-            // 确保原始 bitmap 也是 ARGB_8888 格式
-            if (bitmap.config != Bitmap.Config.ARGB_8888) {
-                bitmap.copy(Bitmap.Config.ARGB_8888, false)
-            } else {
-                bitmap
-            }
-        }
-
-        Log.d(TAG, "开始识别图片: ${processedBitmap.width}x${processedBitmap.height}")
-
-        // 🚀 优化：更智能的并发控制
-        var waitCount = 0
-        while (isRecognizing && waitCount < 300) {  // 最多等待 30 秒
-            Thread.sleep(100)
-            waitCount++
-        }
-        if (isRecognizing) {
-            Log.e(TAG, "PaddleOCR 上一轮识别超时，强制重置")
-            isRecognizing = false
-        }
-        isRecognizing = true
-
-        return try {
-            // 🚀 核心：复用 OCR 实例，无需重新初始化
-            val result = currentOcr.detectBitmap(processedBitmap, DrawModel.None)
-
-            if (result == null) {
-                Log.e(TAG, "PaddleOCR (ncnn) 识别返回 null")
-                return null
-            }
-
-            val parsedResult = parseResult(result)
-            Log.i(TAG, "PaddleOCR (ncnn) 识别成功: ${parsedResult.textBlocks.size} 个文本块, 耗时: ${result.inferenceTime}ms")
-
-            parsedResult
-        } catch (e: Exception) {
-            Log.e(TAG, "PaddleOCR (ncnn) 识别异常: ${e.message}", e)
-            null
-        } finally {
-            isRecognizing = false
-        }
-    }
-
-    /**
-     * 🚀 优化：批量识别方法（如果需要）
-     */
-    suspend fun recognizeBatch(bitmaps: List<Bitmap>): List<RecognizeResult?> = withContext(Dispatchers.Default) {
-        bitmaps.map { recognize(it) }
-    }
-
-    private fun parseResult(result: com.equationl.ncnnandroidppocr.bean.OcrResult): RecognizeResult {
-        val textBlocks = mutableListOf<TextBlock>()
-        val fullTextBuilder = StringBuilder()
-
-        result.textLines.forEach { line ->
-            val text = line.text ?: ""
-            val confidence = line.confidence ?: -1f
-
-            val boundingBox = if (line.points.isNotEmpty()) {
-                pointsToRect(line.points)
-            } else {
+    suspend fun recognizeAsync(bitmap: Bitmap): RecognizeResult? {
+        if (!initialized && !initAsync()) return null
+        return recognitionMutex.withLock {
+            val currentOcr = ocr ?: return@withLock null
+            try {
+                val result = currentOcr.recognize(bitmap)
+                lastInferenceTimeMs = result.totalTimeMs
+                logRawResults(result)
+                parseResult(result, bitmap.width, bitmap.height)
+            } catch (error: Throwable) {
+                Log.e(TAG, "PP-OCRv6 Tiny 识别失败: ${error.message}", error)
                 null
             }
-
-            if (text.isNotEmpty()) {
-                textBlocks.add(TextBlock(text, boundingBox, confidence))
-            }
-        }
-
-        // 按照从下到上的顺序排序文字块（根据 boundingBox 的 bottom 坐标降序）
-        val sortedTextBlocks = textBlocks.sortedByDescending { it.boundingBox?.bottom ?: 0 }
-
-        // 按照排序后的顺序拼接全文
-        sortedTextBlocks.forEachIndexed { index, textBlock ->
-            if (index > 0) {
-                fullTextBuilder.append("\n")
-            }
-            fullTextBuilder.append(textBlock.text)
-        }
-
-        Log.i(TAG, "解析完成: ${sortedTextBlocks.size} 个有效文本块，从下到上排序")
-
-        return RecognizeResult(fullTextBuilder.toString(), sortedTextBlocks)
-    }
-
-    private fun pointsToRect(points: List<Point>): Rect? {
-        if (points.isEmpty()) return null
-
-        var minX = Int.MAX_VALUE
-        var minY = Int.MAX_VALUE
-        var maxX = Int.MIN_VALUE
-        var maxY = Int.MIN_VALUE
-
-        points.forEach { point ->
-            minX = minOf(minX, point.x)
-            minY = minOf(minY, point.y)
-            maxX = maxOf(maxX, point.x)
-            maxY = maxOf(maxY, point.y)
-        }
-
-        return if (minX != Int.MAX_VALUE) {
-            Rect(minX, minY, maxX, maxY)
-        } else {
-            null
         }
     }
 
-    /**
-     * 🚀 优化：优雅关闭 - 可在 Application.onDestroy() 调用
-     */
+    fun recognize(bitmap: Bitmap): RecognizeResult? = runBlocking {
+        recognizeAsync(bitmap)
+    }
+
+    suspend fun recognizeDiagnosticAsync(bitmap: Bitmap): DiagnosticResult? {
+        if (!initialized && !initAsync()) return null
+        return recognitionMutex.withLock {
+            val currentOcr = ocr ?: return@withLock null
+            try {
+                val result = currentOcr.recognize(bitmap)
+                lastInferenceTimeMs = result.totalTimeMs
+                logRawResults(result)
+                DiagnosticResult(
+                    textBlocks = result.results.mapIndexed { index, line ->
+                        DiagnosticTextBlock(
+                            text = line.text,
+                            confidence = line.confidence,
+                            points = line.box.points.map { point ->
+                                DiagnosticPoint(point.x, point.y)
+                            },
+                            recognitionTimeMs = result.perLineRecMs.getOrNull(index),
+                        )
+                    },
+                    imageWidth = bitmap.width,
+                    imageHeight = bitmap.height,
+                    detectionTimeMs = result.detectionTimeMs,
+                    recognitionTimeMs = result.recognitionTimeMs,
+                    totalTimeMs = result.totalTimeMs,
+                )
+            } catch (error: Throwable) {
+                Log.e(TAG, "PP-OCRv6 Tiny 诊断识别失败: ${error.message}", error)
+                null
+            }
+        }
+    }
+
+    suspend fun recognizeBatch(bitmaps: List<Bitmap>): List<RecognizeResult?> =
+        bitmaps.map { recognizeAsync(it) }
+
+    private fun logRawResults(result: OCRRunResult) {
+        Log.d(RAW_LOG_TAG, "PP-OCRv6 原始识别结果，共 ${result.results.size} 行")
+        result.results.forEach { line ->
+            val accuracy = String.format(
+                Locale.US,
+                "%.2f%%",
+                line.confidence.coerceIn(0f, 1f) * 100f,
+            )
+            Log.d(RAW_LOG_TAG, "${line.text}\t准确率=$accuracy")
+        }
+    }
+
+    private fun parseResult(result: OCRRunResult, imageWidth: Int, imageHeight: Int): RecognizeResult {
+        val diagnosticResult = DiagnosticResult(
+            textBlocks = result.results.mapIndexed { index, line ->
+                DiagnosticTextBlock(
+                    text = line.text,
+                    confidence = line.confidence,
+                    points = line.box.points.map { point -> DiagnosticPoint(point.x, point.y) },
+                    recognitionTimeMs = result.perLineRecMs.getOrNull(index),
+                )
+            },
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            detectionTimeMs = result.detectionTimeMs,
+            recognitionTimeMs = result.recognitionTimeMs,
+            totalTimeMs = result.totalTimeMs,
+        )
+        val regions = result.results
+            .asSequence()
+            .filter { it.text.isNotBlank() }
+            .mapNotNull { line ->
+                val points = line.box.points
+                if (points.size != 4) return@mapNotNull null
+                OcrTextRegion(
+                    text = line.text,
+                    confidence = line.confidence,
+                    left = points.minOf { it.x },
+                    top = points.minOf { it.y },
+                    right = points.maxOf { it.x },
+                    bottom = points.maxOf { it.y },
+                )
+            }
+            .toList()
+        val lines = OcrReadingOrder.groupIntoLines(regions)
+        val blocks = lines.flatten().map { region ->
+            TextBlock(
+                text = region.text,
+                boundingBox = Rect(
+                    floor(region.left).toInt(),
+                    floor(region.top).toInt(),
+                    ceil(region.right).toInt(),
+                    ceil(region.bottom).toInt(),
+                ),
+                confidence = region.confidence,
+            )
+        }
+        val fullText = OcrReadingOrder.buildFullText(lines)
+        Log.i(
+            TAG,
+            "PP-OCRv6 Tiny 识别完成: accepted=${blocks.size}/${result.results.size}, " +
+                "lines=${lines.size}, total=${result.totalTimeMs}ms",
+        )
+        return RecognizeResult(
+            fullText = fullText,
+            textBlocks = blocks,
+            diagnosticResult = diagnosticResult,
+        )
+    }
+
     fun close() {
-        synchronized(this@PaddleOcrHelper) {
-            Log.d(TAG, "释放 PaddleOCR 资源")
-            ocr?.release()
-            ocr = null
-            initialized.set(false)
-            initializing.set(false)
-        }
-    }
-
-    /**
-     * 获取当前 OCR 实例的推理时间（用于性能监控）
-     */
-    fun getLastInferenceTime(): Long {
-        // 如果 ncnn OCR 支持获取最后一次推理时间
-        return ocr?.let {
-            // 可能需要在 OCR 类中添加获取时间的方法
-            -1L // 暂时返回 -1
-        } ?: -1L
-    }
-
-    companion object {
-        private const val TAG = "PaddleOcrHelper"
-
-        @Volatile
-        private var instance: PaddleOcrHelper? = null
-        private val lock = Any()
-
-        fun getInstance(context: Context): PaddleOcrHelper {
-            return instance ?: synchronized(lock) {
-                instance ?: PaddleOcrHelper(context.applicationContext).also {
-                    instance = it
+        runBlocking {
+            recognitionMutex.withLock {
+                initializationMutex.withLock {
+                    val current = ocr
+                    ocr = null
+                    initialized = false
+                    lastInferenceTimeMs = -1L
+                    current?.release()
                 }
             }
         }
+    }
 
-        /**
-         * 🚀 优化：预初始化（推荐在 Application 中调用）
-         */
+    fun getLastInferenceTime(): Long = lastInferenceTimeMs
+
+    companion object {
+        private const val TAG = "PaddleOcrHelper"
+        private const val RAW_LOG_TAG = "PaddleOcrRaw"
+        private const val DET_MODEL_ASSET = "models/ppocrv6_tiny/det/inference.onnx"
+        private const val REC_MODEL_ASSET = "models/ppocrv6_tiny/rec/inference.onnx"
+        private const val REC_CONFIG_ASSET = "models/ppocrv6_tiny/rec/inference.yml"
+
+        @Volatile
+        private var instance: PaddleOcrHelper? = null
+
+        fun getInstance(context: Context): PaddleOcrHelper =
+            instance ?: synchronized(this) {
+                instance ?: PaddleOcrHelper(context.applicationContext).also { instance = it }
+            }
+
         fun preInitAsync(context: Context) {
             Thread {
-                val helper = getInstance(context)
-                helper.init(
-                    modelType = ModelType.Mobile,
-                    imageSize = ImageSize.Size720,
-                    device = Device.CPU
-                )
+                runBlocking { getInstance(context).initAsync() }
             }.start()
         }
     }

@@ -39,9 +39,26 @@ internal class BgEffectPainter {
     }
 
     fun updateBoundIfNeeded(drawHeight: Float, totalHeight: Float, totalWidth: Float) {
-        val isPortrait = totalWidth <= totalHeight
-        val boundHeight = if (isPortrait) drawHeight / totalHeight else 1f
-        shader.setFloatUniform("uBound", 0f, 0f, 1f, boundHeight)
+        val heightRatio = drawHeight / totalHeight
+        if (totalWidth <= totalHeight) {
+            shader.setFloatUniform(
+                "uBound",
+                0f,
+                1f - heightRatio,
+                1f,
+                heightRatio,
+            )
+        } else {
+            val aspectRatio = totalWidth / totalHeight
+            val contentCenterY = 1f - heightRatio / 2f
+            shader.setFloatUniform(
+                "uBound",
+                0f,
+                contentCenterY - aspectRatio / 2f,
+                1f,
+                aspectRatio,
+            )
+        }
     }
 
     fun updatePresetIfNeeded(deviceType: DeviceType, isDark: Boolean) {

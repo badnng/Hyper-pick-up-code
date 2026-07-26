@@ -67,8 +67,17 @@ fun rememberMiuixStyle(): Boolean {
 
 @Composable
 fun rememberMiuixBackdrop(): LayerBackdrop? {
-    val blurAllowed = rememberMiuixBlurAllowed()
-    if (!blurAllowed || !isRenderEffectSupported() || !isRuntimeShaderSupported()) return null
+    return rememberAllowedMiuixBackdrop(rememberMiuixBlurAllowed())
+}
+
+@Composable
+fun rememberMiuixIconColorMixingBackdrop(): LayerBackdrop? {
+    return rememberAllowedMiuixBackdrop(rememberMiuixIconColorMixingAllowed())
+}
+
+@Composable
+private fun rememberAllowedMiuixBackdrop(allowed: Boolean): LayerBackdrop? {
+    if (!allowed || !isRenderEffectSupported() || !isRuntimeShaderSupported()) return null
     val surfaceColor = MiuixTheme.colorScheme.surface
     return rememberLayerBackdrop {
         drawRect(surfaceColor)

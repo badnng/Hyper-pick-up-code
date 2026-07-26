@@ -14,10 +14,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,31 +25,38 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Home as OutlinedHome
+import androidx.compose.material.icons.outlined.Info as OutlinedInfo
+import androidx.compose.material.icons.outlined.Settings as OutlinedSettings
+import androidx.compose.material.icons.outlined.Tune as OutlinedTune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
-import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -58,24 +64,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.Badnng.moe.activity.MainActivity
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
-import com.Badnng.moe.helper.AppMemoryPressureState
+import com.Badnng.moe.helper.ImageSourceMetadataResolver
+import com.Badnng.moe.helper.ScreenshotStorage
+import com.Badnng.moe.recognition.RecognizedOrderFactory
+import com.Badnng.moe.recognition.RecognitionExecutionMetadata
 import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
+import com.Badnng.moe.recognition.RecognitionTrigger
 import com.Badnng.moe.viewmodel.OrderViewModel
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.effects.lens
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop as rememberMiuixBackdrop
-import top.yukonga.miuix.kmp.blur.layerBackdrop as miuixLayerBackdrop
-import top.yukonga.miuix.kmp.blur.textureBlur
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import kotlinx.coroutines.launch
 import com.Badnng.moe.ui.screen.settings.SettingsScreen
-import kotlin.math.abs
+import com.Badnng.moe.ui.screen.settings.SettingsPage
+import com.Badnng.moe.ui.screen.settings.SubPage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 
@@ -86,8 +88,12 @@ import kotlinx.coroutines.flow.Flow
 @Composable
 fun rememberSaveablePagerState(pageCount: () -> Int): PagerState {
     val currentPage = rememberSaveable { mutableIntStateOf(0) }
-    val pagerState = remember(pageCount) {
-        PagerState(currentPage = currentPage.value, pageCount = pageCount)
+    val latestPageCount by rememberUpdatedState(pageCount)
+    val pagerState = remember {
+        PagerState(
+            currentPage = currentPage.value,
+            pageCount = { latestPageCount() },
+        )
     }
 
     // 首次加载时从保存的状态恢复页面位置
@@ -97,24 +103,25 @@ fun rememberSaveablePagerState(pageCount: () -> Int): PagerState {
         }
     }
 
-    // 同步 pagerState 的当前页回到 rememberSaveable
-    LaunchedEffect(pagerState.currentPage) {
-        if (currentPage.value != pagerState.currentPage) {
-            currentPage.intValue = pagerState.currentPage
+    // 只保存已经停稳的页面。窗口失焦可能中断拖动，currentPage 此时只是临时页，
+    // 若直接保存会在恢复窗口时跳到相邻页面。
+    LaunchedEffect(pagerState.settledPage) {
+        if (currentPage.value != pagerState.settledPage) {
+            currentPage.intValue = pagerState.settledPage
         }
     }
 
     return pagerState
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
     intentToProcess: Intent? = null
 ) {
     val isMiuix = com.Badnng.moe.ui.miuix.rememberMiuixStyle()
-    val pagerState = rememberSaveablePagerState(pageCount = { 3 })
+    val pagerState = rememberSaveablePagerState(pageCount = { 4 })
 
     if (isMiuix) {
         com.Badnng.moe.ui.screen.miuix.MiuixHomeScreen(
@@ -135,8 +142,7 @@ fun HomeScreen(
     var selectedOrderForQr by remember { mutableStateOf<OrderEntity?>(null) }
     var detailOrder by remember { mutableStateOf<OrderEntity?>(null) }
     var detailGroup by remember { mutableStateOf<OrderGroup?>(null) }
-    var previousDetailOrder by remember { mutableStateOf<OrderEntity?>(null) }
-    var previousDetailGroup by remember { mutableStateOf<OrderGroup?>(null) }
+    var settingsDetailStack by remember { mutableStateOf<List<SettingsPage>>(emptyList()) }
     var isFromNotification by rememberSaveable { mutableStateOf(false) }
     var isManaging by rememberSaveable { mutableStateOf(false) }
     var groupOrders by remember { mutableStateOf<List<OrderEntity>>(emptyList()) }
@@ -147,24 +153,54 @@ fun HomeScreen(
 
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
 
-    var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
-    var largeScreenNavAdaptiveEnabled by remember {
-        mutableStateOf(prefs.getBoolean("large_screen_nav_adaptive_enabled", true))
-    }
-    var dynamicNavAlignment by remember { mutableStateOf<String?>(null) }
-    var dynamicFabSide by remember {
-        mutableStateOf(
-            if ((prefs.getString("nav_alignment", "center") ?: "center") == "left") "left" else "right"
-        )
-    }
-    // 关键修复：hapticEnabled 现在是实时响应的状态
     var hapticEnabled by remember { mutableStateOf(prefs.getBoolean("haptic_enabled", true)) }
     var predictiveBackEnabled by remember {
         mutableStateOf(prefs.getBoolean("predictive_back_enabled", true))
     }
     var amoledPureBlack by remember { mutableStateOf(prefs.getBoolean("amoled_pure_black", false)) }
+    var useFloatingNavBar by remember {
+        mutableStateOf(prefs.getBoolean("use_floating_nav_bar", false))
+    }
     val configuration = LocalConfiguration.current
     val isLargeScreen = configuration.screenWidthDp >= 700
+    val compactNavigationRail = isLargeScreen &&
+        configuration.screenWidthDp < MD3E_FIXED_NAVIGATION_RAIL_MIN_WIDTH_DP
+    val navigationRailState = rememberWideNavigationRailState(
+        initialValue = if (compactNavigationRail) {
+            WideNavigationRailValue.Collapsed
+        } else {
+            WideNavigationRailValue.Expanded
+        },
+    )
+    val navigationRailExpanded =
+        navigationRailState.targetValue == WideNavigationRailValue.Expanded
+    val navigationRailOverlayVisible = navigationRailExpanded ||
+        navigationRailState.currentValue == WideNavigationRailValue.Expanded
+    var selectedTopLevelPage by rememberSaveable {
+        mutableIntStateOf(pagerState.currentPage)
+    }
+    var directTopLevelTransition by remember {
+        mutableStateOf<Md3eDirectTopLevelTransition?>(null)
+    }
+    val directTopLevelTransitionProgress = remember { Animatable(0f) }
+
+    LaunchedEffect(isLargeScreen, compactNavigationRail) {
+        when {
+            !isLargeScreen -> navigationRailState.collapse()
+            compactNavigationRail -> navigationRailState.collapse()
+            else -> navigationRailState.expand()
+        }
+    }
+    LaunchedEffect(isLargeScreen) {
+        if (!isLargeScreen && pagerState.currentPage != selectedTopLevelPage) {
+            pagerState.scrollToPage(selectedTopLevelPage)
+        }
+    }
+    LaunchedEffect(pagerState.currentPage, isLargeScreen) {
+        if (!isLargeScreen && selectedTopLevelPage != pagerState.currentPage) {
+            selectedTopLevelPage = pagerState.currentPage
+        }
+    }
 
     // 折叠屏开合检测
     val windowInfoTracker = remember(context) { WindowInfoTracker.getOrCreate(context) }
@@ -173,65 +209,19 @@ fun HomeScreen(
     val foldingFeature = layoutInfo?.displayFeatures?.filterIsInstance<FoldingFeature>()?.firstOrNull()
     val isFolded = foldingFeature?.state == FoldingFeature.State.HALF_OPENED
     val imeBottomPadding = WindowInsets.ime.getBottom(LocalDensity.current)
-    val isImeVisible = imeBottomPadding > 0
-    val navAdaptiveActive = isLargeScreen && largeScreenNavAdaptiveEnabled
-    val effectiveNavAlignment = if (navAdaptiveActive) (dynamicNavAlignment ?: navAlignment) else navAlignment
-    var allowPagerHorizontalSwipe by remember { mutableStateOf(true) }
-    val targetBottomBarBias = when (effectiveNavAlignment) {
-        "left" -> -1f
-        "right" -> 1f
-        else -> 0f
-    }
-    val animatedBottomBarBias by animateFloatAsState(
-        targetValue = targetBottomBarBias,
-        animationSpec = spring(dampingRatio = 0.92f, stiffness = 260f),
-        label = "bottomBarBias"
-    )
-    val effectiveFabSide = if (navAdaptiveActive) {
-        if (effectiveNavAlignment == "center") "right" else dynamicFabSide
-    } else {
-        effectiveNavAlignment
-    }
-    val targetFabBias = when (effectiveFabSide) {
-        "left" -> -1f
-        else -> 1f
-    }
-    val animatedFabBias by animateFloatAsState(
-        targetValue = targetFabBias,
-        animationSpec = spring(dampingRatio = 0.92f, stiffness = 260f),
-        label = "fabBias"
-    )
+    val isImeVisible = imeBottomPadding > 0 && LocalWindowInfo.current.isWindowFocused
 
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             when (key) {
-                "nav_alignment" -> navAlignment = p.getString(key, "center") ?: "center"
                 "haptic_enabled" -> hapticEnabled = p.getBoolean(key, true)
                 "predictive_back_enabled" -> predictiveBackEnabled = p.getBoolean(key, true)
                 "amoled_pure_black" -> amoledPureBlack = p.getBoolean(key, false)
-                "large_screen_nav_adaptive_enabled" -> largeScreenNavAdaptiveEnabled =
-                    p.getBoolean(key, true)
-            }
-            if (key == "nav_alignment") {
-                val updated = p.getString(key, "center") ?: "center"
-                if (updated == "left" || updated == "right") {
-                    dynamicFabSide = updated
-                }
+                "use_floating_nav_bar" -> useFloatingNavBar = p.getBoolean(key, false)
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
-    }
-
-    LaunchedEffect(navAdaptiveActive, navAlignment) {
-        if (!navAdaptiveActive) {
-            dynamicNavAlignment = null
-            if (navAlignment == "left" || navAlignment == "right") {
-                dynamicFabSide = navAlignment
-            } else {
-                dynamicFabSide = "right"
-            }
-        }
     }
 
     val performHaptic = {
@@ -239,33 +229,43 @@ fun HomeScreen(
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
-    val bottomBarWidth = 275.dp
+    val onExpandNavigationRail: (() -> Unit)? = if (
+        compactNavigationRail && !navigationRailOverlayVisible
+    ) {
+        {
+            performHaptic()
+            coroutineScope.launch { navigationRailState.expand() }
+        }
+    } else {
+        null
+    }
+    val motionScheme = MaterialTheme.motionScheme
+    val compactNavigationRailOffset by animateDpAsState(
+        targetValue = if (navigationRailExpanded) {
+            0.dp
+        } else {
+            -MD3E_COLLAPSED_NAVIGATION_RAIL_WIDTH
+        },
+        animationSpec = motionScheme.defaultSpatialSpec<Dp>(),
+        label = "compactNavigationRailOffset",
+    )
     val fontScale = LocalDensity.current.fontScale
     val largeFont = fontScale >= 1.2f
     val bottomBarHeight = if (largeFont) 72.dp else 64.dp
-    val fabAboveBottomBarPadding = bottomBarHeight + 70.dp
-    val fabHorizontalPadding = when (effectiveNavAlignment) {
-        "left", "right", "center" -> 24.dp
-        else -> 24.dp
+    val targetFabAboveBottomBarPadding = when {
+        isLargeScreen -> 24.dp
+        useFloatingNavBar -> bottomBarHeight + 70.dp
+        else -> bottomBarHeight + 24.dp
     }
-    val fabColumnAlignment = if (effectiveNavAlignment == "left") Alignment.Start else Alignment.End
+    val fabAboveBottomBarPadding by animateDpAsState(
+        targetValue = targetFabAboveBottomBarPadding,
+        animationSpec = motionScheme.defaultSpatialSpec<Dp>(),
+        label = "md3eFabBottomPadding",
+    )
+    val fabHorizontalPadding = 24.dp
+    val fabColumnAlignment = Alignment.End
     val identityContainerOffsetX = 0.dp
-    val fabContentAlignment = when (effectiveNavAlignment) {
-        "left" -> Alignment.BottomStart
-        else -> Alignment.BottomEnd
-    }
-
-    LaunchedEffect(detailOrder) {
-        detailOrder?.let {
-            previousDetailOrder = it
-        }
-    }
-
-    LaunchedEffect(detailGroup) {
-        detailGroup?.let {
-            previousDetailGroup = it
-        }
-    }
+    val fabContentAlignment = Alignment.BottomEnd
 
     LaunchedEffect(detailGroup) {
         detailGroup?.let { group ->
@@ -277,7 +277,8 @@ fun HomeScreen(
 
 
     PredictiveBackHandler(
-        enabled = predictiveBackEnabled && (detailOrder != null || detailGroup != null)
+        enabled = predictiveBackEnabled &&
+            (settingsDetailStack.isNotEmpty() || detailOrder != null || detailGroup != null)
     ) { backEvent: Flow<androidx.activity.BackEventCompat> ->
         isPredictiveBackInProgress = true
         try {
@@ -285,17 +286,13 @@ fun HomeScreen(
                 backProgress = event.progress
                 backSwipeEdge = event.swipeEdge
             }
-            if (detailGroup != null) {
-                detailGroup = null
-            } else {
-                detailOrder = null
+            when {
+                settingsDetailStack.isNotEmpty() -> settingsDetailStack = settingsDetailStack.dropLast(1)
+                detailOrder != null -> detailOrder = null
+                detailGroup != null -> detailGroup = null
             }
         } catch (e: CancellationException) {
-            if (previousDetailGroup != null && detailGroup == null) {
-                detailGroup = previousDetailGroup
-            } else {
-                detailOrder = previousDetailOrder
-            }
+            // 手势取消时状态尚未提交，无需恢复详情对象。
         } finally {
             isPredictiveBackInProgress = false
             backProgress = 0f
@@ -303,20 +300,26 @@ fun HomeScreen(
     }
 
     BackHandler(
-        enabled = !predictiveBackEnabled && (detailOrder != null || detailGroup != null)
+        enabled = !predictiveBackEnabled &&
+            (settingsDetailStack.isNotEmpty() || detailOrder != null || detailGroup != null)
     ) {
-        if (detailGroup != null) {
-            detailGroup = null
-        } else {
-            detailOrder = null
+        when {
+            settingsDetailStack.isNotEmpty() -> settingsDetailStack = settingsDetailStack.dropLast(1)
+            detailOrder != null -> detailOrder = null
+            detailGroup != null -> detailGroup = null
         }
     }
 
     val activity = context as? MainActivity
 
     // 主页面按返回键时，从最近任务移除卡片
-    BackHandler(enabled = detailOrder == null && detailGroup == null) {
+    BackHandler(
+        enabled = settingsDetailStack.isEmpty() && detailOrder == null && detailGroup == null,
+    ) {
         activity?.finishAndRemoveTask()
+    }
+    BackHandler(enabled = compactNavigationRail && navigationRailExpanded) {
+        coroutineScope.launch { navigationRailState.collapse() }
     }
 
     val currentScale = if (isPredictiveBackInProgress) 1f - (backProgress * 0.08f) else 1f
@@ -338,7 +341,18 @@ fun HomeScreen(
         }
         if (intentToProcess?.hasExtra("highlight_order_id") == true) {
             detailOrder = null // 自动关闭详情页回到列表
-            coroutineScope.launch { pagerState.animateScrollToPage(0) }
+            detailGroup = null
+            settingsDetailStack = emptyList()
+            if (isLargeScreen) {
+                selectedTopLevelPage = 0
+            } else {
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(
+                        page = 0,
+                        animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+                    )
+                }
+            }
         }
     }
 
@@ -346,40 +360,50 @@ fun HomeScreen(
         if (intentToProcess?.getBooleanExtra("show_group_detail", false) == true) {
             detailOrder = null
             detailGroup = null
-            coroutineScope.launch { pagerState.animateScrollToPage(0) }
+            settingsDetailStack = emptyList()
+            if (isLargeScreen) {
+                selectedTopLevelPage = 0
+            } else {
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(
+                        page = 0,
+                        animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+                    )
+                }
+            }
         }
     }
 
-    // 从更新下载通知进入时，跳转到设置页
+    // 从更新下载通知进入时，跳转到关于页
     LaunchedEffect(intentToProcess) {
         if (intentToProcess?.getBooleanExtra("show_update_download", false) == true) {
-            coroutineScope.launch { pagerState.animateScrollToPage(2) }
+            if (isLargeScreen) {
+                selectedTopLevelPage = 3
+            } else {
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(
+                        page = 3,
+                        animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+                    )
+                }
+            }
             activity?.intentToProcess = null
         }
     }
 
     val backgroundColor = MaterialTheme.colorScheme.background
-    val memoryPressureActive = AppMemoryPressureState.active
-    val backdrop = if (!memoryPressureActive) {
-        rememberLayerBackdrop {
-            drawRect(backgroundColor)
-            drawContent()
-        }
-    } else {
-        null
-    }
     val isDarkPalette = backgroundColor.luminance() < 0.5f
     val usePureBlackHomeBackground = amoledPureBlack && isDarkPalette
     val homeBackgroundColor = if (usePureBlackHomeBackground) Color.Black else backgroundColor
 
-    val miuixBackdrop = if (!memoryPressureActive) rememberMiuixBackdrop() else null
-
-    var isSettingsSubPageOpen by remember { mutableStateOf(false) }
     var isScrollingDown by remember { mutableStateOf(false) }
-    val isUiHidden = isSettingsSubPageOpen || isManaging
+    val isUiHidden = settingsDetailStack.isNotEmpty() ||
+        detailOrder != null ||
+        detailGroup != null ||
+        isManaging
 
     // 切换页面时重置滚动状态，确保底栏和FAB正确显示
-    LaunchedEffect(pagerState.currentPage) {
+    LaunchedEffect(selectedTopLevelPage) {
         isScrollingDown = false
     }
 
@@ -390,263 +414,315 @@ fun HomeScreen(
     var menuDelete by remember { mutableStateOf<(() -> Unit)?>(null) }
     var menuExport by remember { mutableStateOf<(() -> Unit)?>(null) }
 
+    val navigateToTopLevel: (Int) -> Unit = { page ->
+        if (directTopLevelTransition == null) {
+            performHaptic()
+            selectedTopLevelPage = page
+            if (compactNavigationRail) {
+                coroutineScope.launch { navigationRailState.collapse() }
+            }
+            if (!isLargeScreen && page != pagerState.currentPage) {
+                val sourcePage = pagerState.currentPage
+                if (kotlin.math.abs(page - sourcePage) > 1) {
+                    directTopLevelTransition = Md3eDirectTopLevelTransition(
+                        sourcePage = sourcePage,
+                        targetPage = page,
+                    )
+                    coroutineScope.launch {
+                        directTopLevelTransitionProgress.snapTo(0f)
+                        try {
+                            directTopLevelTransitionProgress.animateTo(
+                                targetValue = 1f,
+                                animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+                            )
+                            // 目标页完全覆盖后再同步 Pager，避免跨页滚动渲染中间页面。
+                            pagerState.scrollToPage(page)
+                            withFrameNanos { }
+                        } finally {
+                            directTopLevelTransition = null
+                            directTopLevelTransitionProgress.snapTo(0f)
+                        }
+                    }
+                } else {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(
+                            page = page,
+                            animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    val openSettingsDetail: (SettingsPage) -> Unit = { page ->
+        detailOrder = null
+        detailGroup = null
+        settingsDetailStack = listOf(page)
+    }
+    val pageContent: @Composable (Int) -> Unit = { page ->
+        when (page) {
+            0 -> CaptureScreen(
+                modifier = Modifier.fillMaxSize(),
+                bottomPadding = if (isLargeScreen) 24.dp else 100.dp,
+                onExpandNavigationRail = onExpandNavigationRail,
+                onEditModeChange = { isManaging = it },
+                onScrollStateChange = { isScrollingDown = it },
+                onNavigateToDetail = { detailItem ->
+                    settingsDetailStack = emptyList()
+                    when (detailItem) {
+                        is OrderEntity -> {
+                            detailGroup = null
+                            detailOrder = detailItem
+                        }
+                        is OrderGroup -> {
+                            detailOrder = null
+                            detailGroup = detailItem
+                        }
+                    }
+                },
+            )
+            1 -> RulesScreen(
+                modifier = Modifier.fillMaxSize(),
+                onExpandNavigationRail = onExpandNavigationRail,
+                onShowMenu = { position, rename, delete, export ->
+                    menuPosition = position
+                    menuRename = rename
+                    menuDelete = delete
+                    menuExport = export
+                    showMenu = true
+                },
+                onDismissMenu = { showMenu = false },
+            )
+            2 -> SettingsScreen(
+                modifier = Modifier.fillMaxSize(),
+                onExpandNavigationRail = onExpandNavigationRail,
+                onNavigateToSubPage = openSettingsDetail,
+            )
+            3 -> SettingsScreen(
+                modifier = Modifier.fillMaxSize(),
+                rootPage = SettingsPage.About,
+                onExpandNavigationRail = onExpandNavigationRail,
+                rootContentTopPadding = WindowInsets.statusBars
+                    .asPaddingValues()
+                    .calculateTopPadding() + 24.dp,
+                rootContentBottomPadding = if (isLargeScreen) 24.dp else 100.dp,
+                onNavigateToSubPage = openSettingsDetail,
+            )
+        }
+    }
+
+    val currentDetailTarget = when {
+        settingsDetailStack.isNotEmpty() -> Md3eHomeDetailTarget.Settings(
+            page = settingsDetailStack.last(),
+            depth = settingsDetailStack.size,
+        )
+        detailOrder != null -> Md3eHomeDetailTarget.Order(
+            order = detailOrder!!,
+            depth = if (detailGroup != null) 2 else 1,
+        )
+        detailGroup != null -> Md3eHomeDetailTarget.Group(detailGroup!!)
+        else -> null
+    }
+    val homeDetailContent: @Composable (Md3eHomeDetailTarget) -> Unit = { target ->
+        Md3eHomeDetailContent(
+            target = target,
+            groupOrders = groupOrders,
+            supportingPane = isLargeScreen,
+            performHaptic = performHaptic,
+            onSettingsBack = {
+                performHaptic()
+                settingsDetailStack = settingsDetailStack.dropLast(1)
+            },
+            onSettingsNavigate = { page ->
+                settingsDetailStack = settingsDetailStack + page
+            },
+            onOrderBack = { detailOrder = null },
+            onGroupBack = { detailGroup = null },
+            onOpenGroupOrder = { order -> detailOrder = order },
+            onMarkGroupCompleted = { group ->
+                val completedAt = System.currentTimeMillis()
+                groupOrders = groupOrders.map {
+                    if (it.isCompleted) it else it.copy(isCompleted = true, completedAt = completedAt)
+                }
+                detailGroup = group.copy(
+                    isCompleted = true,
+                    completedAt = completedAt,
+                    orderCount = groupOrders.size,
+                )
+                viewModel.markGroupAsCompleted(group.id)
+            },
+            onMarkOrderCompleted = { order ->
+                groupOrders = groupOrders.map {
+                    if (it.id == order.id) {
+                        it.copy(isCompleted = true, completedAt = System.currentTimeMillis())
+                    } else {
+                        it
+                    }
+                }
+                viewModel.markAsCompleted(order.id)
+            },
+        )
+    }
+
     Box(modifier = modifier.fillMaxSize().background(homeBackgroundColor)) {
-        // 内层：miuixLayerBackdrop 只捕获 Scaffold 内容（不含菜单叠加层）
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (isLargeScreen && !compactNavigationRail) {
+            Md3eHomeNavigationRail(
+                state = navigationRailState,
+                selectedPage = selectedTopLevelPage,
+                onNavigate = navigateToTopLevel,
+                onToggle = performHaptic,
+            )
+        }
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(homeBackgroundColor)
-                .then(
-                    if (miuixBackdrop != null) {
-                        Modifier.miuixLayerBackdrop(miuixBackdrop)
-                    } else {
-                        Modifier
-                    },
-                ),
+                .weight(1f)
+                .fillMaxHeight()
+                .background(homeBackgroundColor),
         ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = homeBackgroundColor,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                AnimatedVisibility(
-                    visible = !isUiHidden && !isFolded && !isImeVisible && !isScrollingDown,
-                    enter = fadeIn() + slideInVertically { it },
-                    exit = fadeOut() + slideOutVertically { it }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !isLargeScreen &&
+                        !isUiHidden &&
+                        !isFolded &&
+                        !isImeVisible &&
+                        !isScrollingDown,
+                    enter = fadeIn(
+                        animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                    ) + slideInVertically(
+                        animationSpec = motionScheme.defaultSpatialSpec<IntOffset>(),
+                    ) { it },
+                    exit = fadeOut(
+                        animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                    ) + slideOutVertically(
+                        animationSpec = motionScheme.defaultSpatialSpec<IntOffset>(),
+                    ) { it },
                 ) {
-                    // MD3E 模式：悬浮药丸底栏 + Kyant Backdrop
-                    val alignment = BiasAlignment(animatedBottomBarBias, 1f)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
-                            .padding(horizontal = 24.dp, vertical = 16.dp),
-                        contentAlignment = alignment
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .width(bottomBarWidth)
-                                .height(bottomBarHeight)
-                                .border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
-                                .then(
-                                    if (backdrop != null) {
-                                        Modifier.drawBackdrop(
-                                            backdrop = backdrop,
-                                            shape = { RoundedCornerShape(20.dp) },
-                                            effects = {
-                                                vibrancy()
-                                                blur(16.dp.toPx())
-                                                lens(20.dp.toPx(), 40.dp.toPx())
-                                            },
-                                            onDrawSurface = {
-                                                drawRect(Color.White.copy(alpha = 0.1f))
-                                            },
-                                        )
-                                    } else {
-                                        Modifier.background(
-                                            color = MaterialTheme.colorScheme.surfaceContainer,
-                                            shape = RoundedCornerShape(20.dp),
-                                        )
-                                    },
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            NavigationBar(containerColor = Color.Transparent, modifier = Modifier.fillMaxSize(), windowInsets = WindowInsets(0, 0, 0, 0)) {
-                                NavigationBarItem(
-                                    icon = { val s by animateDpAsState(if (pagerState.currentPage == 0) 28.dp else 24.dp); Icon(Icons.Default.Home, null, Modifier.size(s)) },
-                                    label = { Text("主页", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                    selected = pagerState.currentPage == 0,
-                                    alwaysShowLabel = true,
-                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                                )
-                                NavigationBarItem(
-                                    icon = { val s by animateDpAsState(if (pagerState.currentPage == 1) 28.dp else 24.dp); Icon(Icons.Default.Tune, null, Modifier.size(s)) },
-                                    label = { Text("规则", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                    selected = pagerState.currentPage == 1,
-                                    alwaysShowLabel = true,
-                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(1) } },
-                                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                                )
-                                NavigationBarItem(
-                                    icon = { val s by animateDpAsState(if (pagerState.currentPage == 2) 28.dp else 24.dp); Icon(Icons.Default.Settings, null, Modifier.size(s)) },
-                                    label = { Text("设置", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                    selected = pagerState.currentPage == 2,
-                                    alwaysShowLabel = true,
-                                    onClick = { performHaptic(); coroutineScope.launch { pagerState.animateScrollToPage(2) } },
-                                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                    AnimatedContent(
+                        targetState = useFloatingNavBar,
+                        transitionSpec = {
+                            fadeIn(animationSpec = motionScheme.defaultEffectsSpec<Float>()) togetherWith
+                                fadeOut(animationSpec = motionScheme.defaultEffectsSpec<Float>())
+                        },
+                        label = "md3eBottomBarStyle",
+                    ) { floating ->
+                        if (floating) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+                                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                                contentAlignment = Alignment.BottomCenter,
+                            ) {
+                                Md3eFloatingNavigationBar(
+                                    selectedPage = selectedTopLevelPage,
+                                    onNavigate = navigateToTopLevel,
                                 )
                             }
+                        } else {
+                            Md3eStandardNavigationBar(
+                                selectedPage = selectedTopLevelPage,
+                                onNavigate = navigateToTopLevel,
+                            )
                         }
                     }
                 }
                 },
-            floatingActionButton = {
-                {}
-            }
         ) { _ ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(
-                        if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier,
-                    ),
+            Md3eSupportingPaneLayout(
+                detailTarget = if (isLargeScreen) currentDetailTarget else null,
+                detailContent = homeDetailContent,
             ) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(isLargeScreen, navAdaptiveActive, pagerState.currentPage, isUiHidden) {
-                            var gestureActive = false
-                            var downX = 0f
-                            var downY = 0f
-                            var downZone = "center"
-                            // 0=未判定, 1=纵向, -1=横向
-                            var gestureDirection = 0
-                            var directionLocked = false
-                            val directionThresholdPx = 14f
-                            val axisRatio = 1.2f
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                                    if (pagerState.currentPage != 0 || isUiHidden) {
-                                        if (!allowPagerHorizontalSwipe) allowPagerHorizontalSwipe = true
-                                        gestureActive = false
-                                        gestureDirection = 0
-                                        directionLocked = false
-                                        continue
-                                    }
-                                    val change = event.changes.firstOrNull() ?: continue
-                                    val x = change.position.x
-                                    val y = change.position.y
-                                    val width = size.width.toFloat().coerceAtLeast(1f)
-                                    val zoneAtX = when {
-                                        x < width / 3f -> "left"
-                                        x > width * 2f / 3f -> "right"
-                                        else -> "center"
-                                    }
-
-                                    if (change.changedToDownIgnoreConsumed()) {
-                                        gestureActive = true
-                                        gestureDirection = 0
-                                        directionLocked = false
-                                        // 手势开始保持可切页，避免“先纵滑后立刻横滑”出现延迟体感
-                                        if (!allowPagerHorizontalSwipe) allowPagerHorizontalSwipe = true
-                                        downX = x
-                                        downY = y
-                                        downZone = zoneAtX
-                                    }
-
-                                    if (gestureActive && change.pressed && !directionLocked) {
-                                        val dx = x - downX
-                                        val dy = y - downY
-                                        val absDx = abs(dx)
-                                        val absDy = abs(dy)
-                                        if (absDx >= directionThresholdPx || absDy >= directionThresholdPx) {
-                                            val verticalDominant = absDy > absDx * axisRatio
-                                            val horizontalDominant = absDx > absDy * axisRatio
-                                            if (!verticalDominant && !horizontalDominant) {
-                                                // 比值未明显偏向，继续等待更多位移再判定
-                                                continue
-                                            }
-                                            gestureDirection = if (verticalDominant) 1 else -1
-                                            directionLocked = true
-                                            // 仅纵向手势触发底栏切换，并锁定为按下时区域，避免长按后横移误触发
-                                            if (gestureDirection == 1 && navAdaptiveActive) {
-                                                // 方向锁定为纵向后，横向切页彻底关闭，直到抬手重置
-                                                if (allowPagerHorizontalSwipe) allowPagerHorizontalSwipe = false
-                                                if (dynamicNavAlignment != downZone) dynamicNavAlignment = downZone
-                                                if (downZone == "left" || downZone == "right") {
-                                                    if (dynamicFabSide != downZone) dynamicFabSide = downZone
-                                                } else if (dynamicFabSide != "right") {
-                                                    dynamicFabSide = "right"
-                                                }
-                                            } else if (gestureDirection == -1) {
-                                                // 方向锁定为横向后，仅保留切页响应
-                                                if (!allowPagerHorizontalSwipe) allowPagerHorizontalSwipe = true
-                                            }
-                                        }
-                                    }
-
-                                    if (change.changedToUpIgnoreConsumed() || event.changes.none { it.pressed }) {
-                                        gestureActive = false
-                                        gestureDirection = 0
-                                        directionLocked = false
-                                        if (!allowPagerHorizontalSwipe) allowPagerHorizontalSwipe = true
-                                    }
-                                }
-                            }
+                if (isLargeScreen) {
+                    AnimatedContent(
+                        targetState = selectedTopLevelPage,
+                        transitionSpec = {
+                            fadeIn(animationSpec = motionScheme.defaultEffectsSpec<Float>()) togetherWith
+                                fadeOut(animationSpec = motionScheme.defaultEffectsSpec<Float>())
                         },
-                    beyondViewportPageCount = 1,
-                    userScrollEnabled = !isManaging &&
-                        !isSettingsSubPageOpen &&
-                        detailOrder == null &&
-                        detailGroup == null &&
-                        allowPagerHorizontalSwipe
-                ) { page ->
-                    when (page) {
-                        0 -> CaptureScreen(modifier = Modifier.fillMaxSize(), bottomPadding = 100.dp, onEditModeChange = { isManaging = it }, onScrollStateChange = { isScrollingDown = it }, onNavigateToDetail = { detailItem ->
-                            when (detailItem) {
-                                is OrderEntity -> detailOrder = detailItem
-                                is OrderGroup -> detailGroup = detailItem
+                        label = "md3eTopLevelPage",
+                    ) { page ->
+                        pageContent(page)
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clipToBounds(),
+                    ) {
+                        val transition = directTopLevelTransition
+                        val transitionProgress = directTopLevelTransitionProgress.value
+                        val transitionDirection = if (
+                            transition != null && transition.targetPage > transition.sourcePage
+                        ) {
+                            1f
+                        } else {
+                            -1f
+                        }
+
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    translationX = if (transition == null) {
+                                        0f
+                                    } else {
+                                        -transitionDirection * transitionProgress * size.width
+                                    }
+                                },
+                            beyondViewportPageCount = 1,
+                            userScrollEnabled = !isManaging && !isUiHidden && transition == null,
+                        ) { page ->
+                            pageContent(page)
+                        }
+
+                        if (transition != null) {
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .graphicsLayer {
+                                        translationX = transitionDirection *
+                                            (1f - transitionProgress) * size.width
+                                    }
+                                    .background(homeBackgroundColor),
+                            ) {
+                                pageContent(transition.targetPage)
                             }
-                        })
-                        1 -> RulesScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            onShowMenu = { position, rename, delete, export ->
-                                menuPosition = position
-                                menuRename = rename
-                                menuDelete = delete
-                                menuExport = export
-                                showMenu = true
-                            },
-                            onDismissMenu = { showMenu = false }
-                        )
-                        2 -> SettingsScreen(modifier = Modifier.fillMaxSize(), onSubPageStatusChange = { isSettingsSubPageOpen = it })
+                        }
                     }
                 }
             }
         }
-        } // 关闭 miuixLayerBackdrop 内层 Box
 
-        // 全屏毛玻璃快捷菜单（覆盖底栏）
-        val animatedBlurRadius by animateFloatAsState(
-            targetValue = if (showMenu) 60f else 0f,
-            animationSpec = tween(durationMillis = 300)
+        // MD3E 快捷菜单使用标准 scrim，不调用 Miuix 模糊组件。
+        val animatedScrimAlpha by animateFloatAsState(
+            targetValue = if (showMenu) 0.32f else 0f,
+            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
+            label = "rulesMenuScrim",
         )
         val animatedCardAlpha by animateFloatAsState(
             targetValue = if (showMenu) 1f else 0f,
-            animationSpec = tween(durationMillis = 250, delayMillis = 50)
+            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
+            label = "rulesMenuAlpha",
         )
         val animatedCardScale by animateFloatAsState(
             targetValue = if (showMenu) 1f else 0.9f,
-            animationSpec = tween(durationMillis = 250, delayMillis = 50)
+            animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>(),
+            label = "rulesMenuScale",
         )
-        if (animatedBlurRadius > 0f) {
+        if (animatedScrimAlpha > 0f) {
             val density = LocalDensity.current
             Box(modifier = Modifier.fillMaxSize()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .then(
-                            if (miuixBackdrop != null) {
-                                Modifier.textureBlur(
-                                    backdrop = miuixBackdrop,
-                                    shape = RoundedCornerShape(0.dp),
-                                    blurRadius = animatedBlurRadius,
-                                    colors = top.yukonga.miuix.kmp.blur.BlurColors(
-                                        brightness = -0.15f,
-                                    ),
-                                )
-                            } else {
-                                Modifier.background(
-                                    MaterialTheme.colorScheme.scrim.copy(
-                                        alpha = 0.32f *
-                                            (animatedBlurRadius / 60f).coerceIn(0f, 1f),
-                                    ),
-                                )
-                            },
-                        )
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = animatedScrimAlpha))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -655,7 +731,6 @@ fun HomeScreen(
                 val configuration = LocalConfiguration.current
                 val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
                 val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
-                val cardWidthPx = 280f
                 val cardMaxHeightPx = with(density) { 160.dp.toPx() }
 
                 var cardWidthMeasured by remember { mutableIntStateOf(0) }
@@ -735,15 +810,11 @@ fun HomeScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = pagerState.currentPage == 0 && !isUiHidden && !isScrollingDown,
+        androidx.compose.animation.AnimatedVisibility(
+            visible = selectedTopLevelPage == 0 && !isUiHidden && !isScrollingDown,
             enter = scaleIn() + fadeIn(),
             exit = scaleOut() + fadeOut(),
-            modifier = if (isLargeScreen) {
-                Modifier.align(BiasAlignment(animatedFabBias, 1f))
-            } else {
-                Modifier.align(fabContentAlignment)
-            }
+            modifier = Modifier.align(fabContentAlignment),
         ) {
             Box(
                 modifier = Modifier
@@ -844,94 +915,16 @@ fun HomeScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = detailOrder != null,
-            enter = slideInHorizontally { it } + fadeIn(),
-            exit = slideOutHorizontally { it } + fadeOut()
-        ) {
-            val displayOrder = detailOrder ?: previousDetailOrder
-            if (displayOrder != null) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize() // 完全全屏，不限制宽度
-                            .graphicsLayer {
-                                scaleX = currentScale; scaleY = currentScale;
-                                translationX = currentTranslationX;
-                                shape = RoundedCornerShape(currentCornerRadius);
-                                clip = true
-                            }
-                            .border(
-                                width = if (isPredictiveBackInProgress) 1.dp else 0.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = backProgress),
-                                shape = RoundedCornerShape(currentCornerRadius)
-                            )
-                            .background(MaterialTheme.colorScheme.background)
-                    ) {
-                        OrderDetailScreen(order = displayOrder, onBack = { detailOrder = null })
-                    }
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = detailGroup != null,
-            enter = slideInHorizontally { it } + fadeIn(),
-            exit = slideOutHorizontally { it } + fadeOut()
-        ) {
-            val displayGroup = detailGroup ?: previousDetailGroup
-            if (displayGroup != null) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize() // 完全全屏，不限制宽度
-                            .graphicsLayer {
-                                scaleX = currentScale; scaleY = currentScale;
-                                translationX = currentTranslationX;
-                                shape = RoundedCornerShape(currentCornerRadius);
-                                clip = true
-                            }
-                            .border(
-                                width = if (isPredictiveBackInProgress) 1.dp else 0.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = backProgress),
-                                shape = RoundedCornerShape(currentCornerRadius)
-                            )
-                            .background(MaterialTheme.colorScheme.background)
-                    ) {
-                    GroupDetailScreen(
-                        group = displayGroup,
-                        orders = groupOrders,
-                        onBack = { detailGroup = null },
-                        onMarkAllCompleted = {
-                            val completedAt = System.currentTimeMillis()
-                            groupOrders = groupOrders.map {
-                                if (it.isCompleted) it else it.copy(isCompleted = true, completedAt = completedAt)
-                            }
-                            detailGroup = displayGroup.copy(
-                                isCompleted = true,
-                                completedAt = completedAt,
-                                orderCount = groupOrders.size
-                            )
-                            previousDetailGroup = detailGroup
-                            viewModel.markGroupAsCompleted(displayGroup.id)
-                        },
-                        onMarkOrderCompleted = { order ->
-                            groupOrders = groupOrders.map {
-                                if (it.id == order.id) it.copy(isCompleted = true, completedAt = System.currentTimeMillis()) else it
-                            }
-                            viewModel.markAsCompleted(order.id)
-                        }
-                    )
-                }
-            }
-        }
-        }
+        Md3eMobileDetailOverlay(
+            visible = !isLargeScreen && currentDetailTarget != null,
+            detailTarget = currentDetailTarget,
+            scale = currentScale,
+            translationX = currentTranslationX,
+            cornerRadius = currentCornerRadius,
+            borderAlpha = backProgress,
+            showPredictiveBorder = isPredictiveBackInProgress,
+            detailContent = homeDetailContent,
+        )
 
         if (showBottomSheet) {
             ModalBottomSheet(
@@ -947,6 +940,10 @@ fun HomeScreen(
                 var orderType by remember { mutableStateOf("餐食") }
                 var brandName by remember { mutableStateOf<String?>(null) }
                 var pickupLocation by remember { mutableStateOf<String?>(null) }
+                var recognizedFullText by remember { mutableStateOf<String?>(null) }
+                var imageSourceApp by remember { mutableStateOf<String?>(null) }
+                var imageSourcePackage by remember { mutableStateOf<String?>(null) }
+                var recognitionMetadata by remember { mutableStateOf<RecognitionExecutionMetadata?>(null) }
                 var expanded by remember { mutableStateOf(false) }
                 val options = listOf("餐食", "饮品", "快递")
                 val context = LocalContext.current
@@ -986,6 +983,12 @@ fun HomeScreen(
                 val photoPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.PickVisualMedia()) { uri ->
                     if (uri != null) {
                         coroutineScope.launch {
+                            val imageSource = ImageSourceMetadataResolver.resolve(context, uri)
+                            imageSourceApp = imageSource.appName ?: imageSource.packageName
+                            imageSourcePackage = imageSource.packageName
+                            recognizedFullText = null
+                            recognitionMetadata = null
+                            screenshotPath = null
                             val originalBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                                 ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
                             } else {
@@ -999,10 +1002,18 @@ fun HomeScreen(
                                 cropStatusBar(originalBitmap)
                             }
 
-                            val result = RecognitionRouter(context).recognizeImage(bitmap).orders.firstOrNull()
+                            val routedResult = RecognitionRouter(context).recognizeImage(
+                                bitmap,
+                                imageSourceApp,
+                                imageSourcePackage,
+                                RecognitionTrigger.IMPORTED_IMAGE,
+                            )
+                            val result = routedResult.orders.firstOrNull()
+                            recognitionMetadata = routedResult.metadata
 
                             text = result?.code ?: ""
                             detectedQrData = result?.qr
+                            recognizedFullText = result?.fullText?.takeIf { it.isNotBlank() }
                             result?.let {
                                 orderType = it.type
                                 brandName = it.brand
@@ -1011,12 +1022,11 @@ fun HomeScreen(
 
                             // 保存本次识别使用的图片。
                             if (result?.code != null) {
-                                val screenshotFile = java.io.File(context.filesDir, "screenshots/manual_${System.currentTimeMillis()}.png")
-                                screenshotFile.parentFile?.mkdirs()
-                                val outputStream = java.io.FileOutputStream(screenshotFile)
-                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                                outputStream.close()
-                                screenshotPath = screenshotFile.absolutePath
+                                screenshotPath = ScreenshotStorage.saveBitmap(
+                                    context,
+                                    bitmap,
+                                    namePrefix = "导入图片",
+                                )
                             }
 
                         }
@@ -1066,15 +1076,32 @@ fun HomeScreen(
                             }
                             Button(onClick = {
                                 performHaptic()
-                                viewModel.addOrder(OrderEntity(
-                                    takeoutCode = text,
-                                    qrCodeData = detectedQrData,
-                                    screenshotPath = screenshotPath ?: "",
-                                    recognizedText = "手动输入",
-                                    orderType = orderType,
-                                    brandName = brandName,
-                                    pickupLocation = pickupLocation
-                                ))
+                                val hasImportedImage = screenshotPath != null
+                                val order = if (hasImportedImage && recognitionMetadata != null) {
+                                    RecognizedOrderFactory.fromValues(
+                                        takeoutCode = text,
+                                        metadata = recognitionMetadata!!,
+                                        qrCodeData = detectedQrData,
+                                        screenshotPath = screenshotPath.orEmpty(),
+                                        recognizedText = "图片识别",
+                                        orderType = orderType,
+                                        brandName = brandName,
+                                        sourceApp = imageSourceApp ?: "图片识别",
+                                        sourcePackage = imageSourcePackage,
+                                        fullText = recognizedFullText,
+                                        pickupLocation = pickupLocation,
+                                    )
+                                } else {
+                                    RecognizedOrderFactory.manual(
+                                        takeoutCode = text,
+                                        qrCodeData = detectedQrData,
+                                        orderType = orderType,
+                                        brandName = brandName,
+                                        fullText = recognizedFullText,
+                                        pickupLocation = pickupLocation,
+                                    )
+                                }
+                                viewModel.addOrder(order)
                                 showBottomSheet = false
                             }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
                                 Text("添加")
@@ -1095,4 +1122,532 @@ fun HomeScreen(
             })
         }
     }
+    }
+
+    if (compactNavigationRail) {
+        AnimatedVisibility(
+            visible = navigationRailOverlayVisible,
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec<Float>()),
+            exit = fadeOut(animationSpec = motionScheme.defaultEffectsSpec<Float>()),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        coroutineScope.launch { navigationRailState.collapse() }
+                    },
+            )
+        }
+        Md3eHomeNavigationRail(
+            state = navigationRailState,
+            selectedPage = selectedTopLevelPage,
+            onNavigate = navigateToTopLevel,
+            onToggle = performHaptic,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(x = compactNavigationRailOffset)
+                .fillMaxHeight(),
+        )
+    }
+}
+}
+
+private const val MD3E_FIXED_NAVIGATION_RAIL_MIN_WIDTH_DP = 900
+private val MD3E_COLLAPSED_NAVIGATION_RAIL_WIDTH = 96.dp
+
+private data class Md3eDirectTopLevelTransition(
+    val sourcePage: Int,
+    val targetPage: Int,
+)
+
+private data class Md3eNavigationDestination(
+    val label: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
+)
+
+private val md3eNavigationDestinations = listOf(
+    Md3eNavigationDestination("主页", Icons.Filled.Home, Icons.Outlined.OutlinedHome),
+    Md3eNavigationDestination("规则", Icons.Filled.Tune, Icons.Outlined.OutlinedTune),
+    Md3eNavigationDestination("设置", Icons.Filled.Settings, Icons.Outlined.OutlinedSettings),
+    Md3eNavigationDestination("关于", Icons.Filled.Info, Icons.Outlined.OutlinedInfo),
+)
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun Md3eHomeNavigationRail(
+    state: WideNavigationRailState,
+    selectedPage: Int,
+    onNavigate: (Int) -> Unit,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val motionScheme = MaterialTheme.motionScheme
+    val expanded = state.targetValue == WideNavigationRailValue.Expanded
+    val header: @Composable () -> Unit = {
+        Box(
+            modifier = Modifier.width(MD3E_COLLAPSED_NAVIGATION_RAIL_WIDTH),
+            contentAlignment = Alignment.Center,
+        ) {
+            Surface(
+                onClick = {
+                    onToggle()
+                    scope.launch { state.toggle() }
+                },
+                modifier = Modifier.size(56.dp),
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (expanded) Icons.AutoMirrored.Filled.MenuOpen else Icons.Default.Menu,
+                        contentDescription = if (expanded) "收起侧边栏" else "展开侧边栏",
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+        }
+    }
+    val content: @Composable () -> Unit = {
+        md3eNavigationDestinations.forEachIndexed { index, destination ->
+            val selected = selectedPage == index
+            WideNavigationRailItem(
+                selected = selected,
+                onClick = { onNavigate(index) },
+                icon = {
+                    AnimatedContent(
+                        targetState = selected,
+                        transitionSpec = {
+                            (fadeIn(
+                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                            ) + scaleIn(
+                                animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+                                initialScale = 0.82f,
+                            )) togetherWith (fadeOut(
+                                animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                            ) + scaleOut(
+                                animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+                                targetScale = 0.82f,
+                            ))
+                        },
+                        label = "md3eRailItemIcon",
+                    ) { active ->
+                        Icon(
+                            imageVector = if (active) {
+                                destination.selectedIcon
+                            } else {
+                                destination.unselectedIcon
+                            },
+                            contentDescription = destination.label,
+                        )
+                    }
+                },
+                label = { Text(destination.label) },
+                railExpanded = expanded,
+            )
+        }
+    }
+
+    WideNavigationRail(
+        modifier = modifier,
+        state = state,
+        header = header,
+        contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
+        content = content,
+    )
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun Md3eFloatingNavigationBar(
+    selectedPage: Int,
+    onNavigate: (Int) -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .widthIn(max = 344.dp)
+            .fillMaxWidth()
+            .height(76.dp),
+        shape = RoundedCornerShape(38.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 6.dp,
+        shadowElevation = 3.dp,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            md3eNavigationDestinations.forEachIndexed { index, destination ->
+                Md3eFloatingNavigationItem(
+                    destination = destination,
+                    selected = selectedPage == index,
+                    onClick = { onNavigate(index) },
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun RowScope.Md3eFloatingNavigationItem(
+    destination: Md3eNavigationDestination,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val motionScheme = MaterialTheme.motionScheme
+    val animatedWeight by animateFloatAsState(
+        targetValue = if (selected) 1.14f else 1f,
+        animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+        label = "md3eNavigationItemWeight",
+    )
+    val selectedProgress by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+        label = "md3eNavigationItemSelection",
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.08f else 1f,
+        animationSpec = motionScheme.defaultSpatialSpec<Float>(),
+        label = "md3eNavigationItemIconScale",
+    )
+    val containerColor = androidx.compose.ui.graphics.lerp(
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0f),
+        MaterialTheme.colorScheme.secondaryContainer,
+        selectedProgress,
+    )
+    val contentColor = androidx.compose.ui.graphics.lerp(
+        MaterialTheme.colorScheme.onSurfaceVariant,
+        MaterialTheme.colorScheme.onSecondaryContainer,
+        selectedProgress,
+    )
+
+    Surface(
+        modifier = Modifier
+            .weight(animatedWeight)
+            .fillMaxHeight(),
+        shape = RoundedCornerShape(34.dp),
+        color = containerColor,
+        contentColor = contentColor,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .selectable(
+                    selected = selected,
+                    onClick = onClick,
+                    role = Role.Tab,
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(23.dp)
+                    .graphicsLayer {
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                AnimatedContent(
+                    targetState = selected,
+                    transitionSpec = {
+                        fadeIn(
+                            animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                        ) togetherWith fadeOut(
+                            animationSpec = motionScheme.defaultEffectsSpec<Float>(),
+                        )
+                    },
+                    label = "md3eNavigationItemIcon",
+                ) { active ->
+                    Icon(
+                        imageVector = if (active) {
+                            destination.selectedIcon
+                        } else {
+                            destination.unselectedIcon
+                        },
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+                text = destination.label,
+                color = contentColor,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Md3eStandardNavigationBar(
+    selectedPage: Int,
+    onNavigate: (Int) -> Unit,
+) {
+    NavigationBar(
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        windowInsets = NavigationBarDefaults.windowInsets,
+    ) {
+        md3eNavigationDestinations.forEachIndexed { index, destination ->
+            val selected = selectedPage == index
+            NavigationBarItem(
+                selected = selected,
+                onClick = { onNavigate(index) },
+                icon = {
+                    Icon(
+                        imageVector = if (selected) {
+                            destination.selectedIcon
+                        } else {
+                            destination.unselectedIcon
+                        },
+                        contentDescription = destination.label,
+                    )
+                },
+                label = { Text(destination.label) },
+                alwaysShowLabel = true,
+            )
+        }
+    }
+}
+
+private sealed interface Md3eHomeDetailTarget {
+    val depth: Int
+    val contentKey: Any
+
+    data class Settings(
+        val page: SettingsPage,
+        override val depth: Int,
+    ) : Md3eHomeDetailTarget {
+        override val contentKey: Any = "settings:$page:$depth"
+    }
+
+    data class Order(
+        val order: OrderEntity,
+        override val depth: Int = 1,
+    ) : Md3eHomeDetailTarget {
+        override val contentKey: Any = "order:${order.id}"
+    }
+
+    data class Group(val group: OrderGroup) : Md3eHomeDetailTarget {
+        override val depth: Int = 1
+        override val contentKey: Any = "group:${group.id}"
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun Md3eSupportingPaneLayout(
+    detailTarget: Md3eHomeDetailTarget?,
+    detailContent: @Composable (Md3eHomeDetailTarget) -> Unit,
+    mainContent: @Composable () -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val motionScheme = MaterialTheme.motionScheme
+        val detailPaneWidth = (maxWidth * 0.42f).coerceIn(360.dp, 600.dp)
+        var retainedTarget by remember { mutableStateOf(detailTarget) }
+        if (detailTarget != null) {
+            SideEffect { retainedTarget = detailTarget }
+        }
+        val renderedTarget = detailTarget ?: retainedTarget
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+            ) {
+                mainContent()
+            }
+            AnimatedVisibility(
+                visible = detailTarget != null,
+                enter = expandHorizontally(
+                    animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                    expandFrom = Alignment.End,
+                ) + fadeIn(animationSpec = motionScheme.defaultEffectsSpec<Float>()),
+                exit = shrinkHorizontally(
+                    animationSpec = motionScheme.defaultSpatialSpec<IntSize>(),
+                    shrinkTowards = Alignment.End,
+                ) + fadeOut(animationSpec = motionScheme.defaultEffectsSpec<Float>()),
+            ) {
+                Row(modifier = Modifier.fillMaxHeight()) {
+                    VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Box(
+                        modifier = Modifier
+                            .width(detailPaneWidth)
+                            .fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        renderedTarget?.let { target ->
+                            Md3eAnimatedDetailContent(target, detailContent)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun Md3eMobileDetailOverlay(
+    visible: Boolean,
+    detailTarget: Md3eHomeDetailTarget?,
+    scale: Float,
+    translationX: Float,
+    cornerRadius: androidx.compose.ui.unit.Dp,
+    borderAlpha: Float,
+    showPredictiveBorder: Boolean,
+    detailContent: @Composable (Md3eHomeDetailTarget) -> Unit,
+) {
+    val motionScheme = MaterialTheme.motionScheme
+    var retainedTarget by remember { mutableStateOf(detailTarget) }
+    if (detailTarget != null) {
+        SideEffect { retainedTarget = detailTarget }
+    }
+    val renderedTarget = detailTarget ?: retainedTarget
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInHorizontally(
+            animationSpec = motionScheme.defaultSpatialSpec<IntOffset>(),
+            initialOffsetX = { it },
+        ) + fadeIn(animationSpec = motionScheme.defaultEffectsSpec<Float>()),
+        exit = slideOutHorizontally(
+            animationSpec = motionScheme.defaultSpatialSpec<IntOffset>(),
+            targetOffsetX = { it },
+        ) + fadeOut(animationSpec = motionScheme.defaultEffectsSpec<Float>()),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    this.translationX = translationX
+                    shape = RoundedCornerShape(cornerRadius)
+                    clip = true
+                }
+                .border(
+                    width = if (showPredictiveBorder) 1.dp else 0.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha),
+                    shape = RoundedCornerShape(cornerRadius),
+                )
+                .background(MaterialTheme.colorScheme.background),
+        ) {
+            renderedTarget?.let { target ->
+                Md3eAnimatedDetailContent(target, detailContent)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun Md3eAnimatedDetailContent(
+    target: Md3eHomeDetailTarget,
+    detailContent: @Composable (Md3eHomeDetailTarget) -> Unit,
+) {
+    val motionScheme = MaterialTheme.motionScheme
+    AnimatedContent(
+        targetState = target,
+        contentKey = { it.contentKey },
+        transitionSpec = {
+            val spatialSpec = motionScheme.defaultSpatialSpec<IntOffset>()
+            val effectsSpec = motionScheme.defaultEffectsSpec<Float>()
+            when {
+                targetState.depth > initialState.depth -> {
+                    (slideInHorizontally(spatialSpec) { it } + fadeIn(effectsSpec)) togetherWith
+                        (slideOutHorizontally(spatialSpec) { -it / 4 } + fadeOut(effectsSpec))
+                }
+                targetState.depth < initialState.depth -> {
+                    (slideInHorizontally(spatialSpec) { -it / 4 } + fadeIn(effectsSpec)) togetherWith
+                        (slideOutHorizontally(spatialSpec) { it } + fadeOut(effectsSpec))
+                }
+                else -> fadeIn(effectsSpec) togetherWith fadeOut(effectsSpec)
+            }
+        },
+        label = "md3eDetailNavigation",
+    ) { renderedTarget ->
+        detailContent(renderedTarget)
+    }
+}
+
+@Composable
+private fun Md3eHomeDetailContent(
+    target: Md3eHomeDetailTarget,
+    groupOrders: List<OrderEntity>,
+    supportingPane: Boolean,
+    performHaptic: () -> Unit,
+    onSettingsBack: () -> Unit,
+    onSettingsNavigate: (SettingsPage) -> Unit,
+    onOrderBack: () -> Unit,
+    onGroupBack: () -> Unit,
+    onOpenGroupOrder: (OrderEntity) -> Unit,
+    onMarkGroupCompleted: (OrderGroup) -> Unit,
+    onMarkOrderCompleted: (OrderEntity) -> Unit,
+) {
+    when (target) {
+        is Md3eHomeDetailTarget.Settings -> SubPage(
+            title = target.page.md3eTitle(),
+            page = target.page,
+            performHaptic = performHaptic,
+            onNavigate = onSettingsNavigate,
+            onBack = onSettingsBack,
+            isMiuix = false,
+            supportingPane = supportingPane,
+        )
+        is Md3eHomeDetailTarget.Order -> OrderDetailScreen(
+            order = target.order,
+            onBack = onOrderBack,
+            supportingPane = supportingPane,
+        )
+        is Md3eHomeDetailTarget.Group -> GroupDetailScreen(
+            group = target.group,
+            orders = groupOrders,
+            onBack = onGroupBack,
+            onMarkAllCompleted = { onMarkGroupCompleted(target.group) },
+            onMarkOrderCompleted = onMarkOrderCompleted,
+            onOpenOrder = onOpenGroupOrder,
+            supportingPane = supportingPane,
+        )
+    }
+}
+
+private fun SettingsPage.md3eTitle(): String = when (this) {
+    SettingsPage.Main -> "设置"
+    SettingsPage.Preference -> "偏好设置"
+    SettingsPage.Permission -> "权限与保活"
+    SettingsPage.Screenshot -> "截图方式"
+    SettingsPage.Recognition -> "识别方式"
+    SettingsPage.CustomPrompt -> "自定义 Prompt"
+    SettingsPage.KeepAlive -> "保活设置"
+    SettingsPage.Storage -> "清理空间"
+    SettingsPage.About -> "关于"
+    SettingsPage.Backup -> "备份与恢复"
+    SettingsPage.Sponsor -> "赞助"
+    SettingsPage.NotificationApps -> "通知识别应用管理"
+    SettingsPage.Credits -> "致谢"
+    SettingsPage.Developer -> "开发者选项"
 }

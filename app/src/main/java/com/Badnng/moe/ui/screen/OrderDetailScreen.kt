@@ -1,340 +1,74 @@
 package com.Badnng.moe.ui.screen
 
-import android.view.ViewGroup
-import android.graphics.drawable.ColorDrawable
-import androidx.compose.animation.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
-import coil.compose.AsyncImage
-import com.Badnng.moe.R
 import com.Badnng.moe.data.db.OrderEntity
-import com.Badnng.moe.helper.AppMemoryPressureState
-import top.yukonga.miuix.kmp.blur.BlurColors
-import top.yukonga.miuix.kmp.shader.isRenderEffectSupported
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
-import top.yukonga.miuix.kmp.blur.textureBlur
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrderDetailScreen(
     order: OrderEntity,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    supportingPane: Boolean = false,
 ) {
-    var showFullScreen by remember { mutableStateOf(false) }
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val canBlur = !AppMemoryPressureState.active && isRenderEffectSupported()
-    val backdrop = if (canBlur) {
-        rememberLayerBackdrop {
-            drawRect(surfaceColor)
-            drawContent()
-        }
-    } else {
-        null
-    }
-
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        // 内容层
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-        ) {
-            Spacer(modifier = Modifier.height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp))
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    InfoItem("来源应用", order.sourceApp ?: "无数据")
-                    InfoItem("来源包名", order.sourcePackage ?: "暂无记录")
-                    InfoItem("识别类型", order.orderType)
-                    if (!order.brandName.isNullOrEmpty()) {
-                        InfoItem("品牌", order.brandName)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("原文记录", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(8.dp))
-            FullTextCodeBlock(text = order.fullText)
-
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("截图副本", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(8.dp))
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (!order.screenshotPath.isNullOrEmpty() && File(order.screenshotPath).exists()) {
-                        AsyncImage(
-                            model = File(order.screenshotPath),
-                            contentDescription = "原图",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(400.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { showFullScreen = true },
-                            contentScale = ContentScale.Fit
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "点击截图可查看全图",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            topBar = {
+                TopAppBar(
+                    title = { Text("识别详情", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
                             Icon(
-                                painter = painterResource(id = R.drawable.note),
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp).alpha(0.2f),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "暂无图片数据",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                fontSize = 14.sp
+                                imageVector = if (supportingPane) {
+                                    Icons.Default.Close
+                                } else {
+                                    Icons.AutoMirrored.Filled.ArrowBack
+                                },
+                                contentDescription = if (supportingPane) "关闭" else "返回",
                             )
                         }
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.navigationBarsPadding())
-            Spacer(modifier = Modifier.height(100.dp)) // Extra space for bottom bar
-        }
-    }
-
-    if (showFullScreen && !order.screenshotPath.isNullOrEmpty()) {
-        FullScreenImageDialog(imagePath = order.screenshotPath) {
-            showFullScreen = false
-        }
-    }
-
-    // 毛玻璃 TopAppBar 覆盖层
-    if (backdrop != null) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .textureBlur(
-                        backdrop = backdrop,
-                        shape = RectangleShape,
-                        blurRadius = 80f,
-                        colors = BlurColors(brightness = -0.2f)
-                    )
-                    .frostedGlassMask()
-            )
-            TopAppBar(
-                title = { Text("识别详情", fontSize = 20.sp, fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-            )
-        }
-    } else {
-        Surface(
-            color = surfaceColor.copy(alpha = 0.9f),
-            tonalElevation = 2.dp
-        ) {
-            TopAppBar(
-                title = { Text("识别详情", fontSize = 20.sp, fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-            )
-        }
-    }
-    }
-}
-
-@Composable
-fun FullTextCodeBlock(text: String?) {
-    var expanded by remember { mutableStateOf(false) }
-    val clipboardManager = LocalClipboardManager.current
-    
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "LOG_CONTENT",
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    ),
                 )
-                Row {
-                    IconButton(onClick = { text?.let { clipboardManager.setText(AnnotatedString(it)) } }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.ContentCopy, null, Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
-                        Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(20.dp))
-                    }
-                }
-            }
-            
-            SelectionContainer {
-                Text(
-                    text = text ?: "旧版数据或未记录",
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 18.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (expanded) Int.MAX_VALUE else 4,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp).animateContentSize()
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun FullScreenImageDialog(imagePath: String, onDismiss: () -> Unit) {
-    val view = LocalView.current
-    DisposableEffect(Unit) {
-        val window = (view.parent as? DialogWindowProvider)?.window
-        window?.let {
-            val insetsController = WindowCompat.getInsetsController(it, view)
-            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            insetsController.hide(WindowInsetsCompat.Type.systemBars())
-        }
-        onDispose {
-            val window = (view.parent as? DialogWindowProvider)?.window
-            window?.let {
-                val insetsController = WindowCompat.getInsetsController(it, view)
-                insetsController.show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-    }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onDismiss() },
-            contentAlignment = Alignment.Center
-        ) {
-            AsyncImage(
-                model = File(imagePath),
-                contentDescription = "全图",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
+            },
+        ) { innerPadding ->
+            val navigationBarPadding = WindowInsets.navigationBars
+                .asPaddingValues()
+                .calculateBottomPadding()
+            OrderDetailHost(
+                order = order,
+                bottomSpacing = navigationBarPadding + if (supportingPane) 24.dp else 100.dp,
+                modifier = Modifier.padding(top = innerPadding.calculateTopPadding()),
             )
         }
     }
-}
-
-@Composable
-fun InfoItem(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(
-            text = label,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(80.dp)
-        )
-        Text(
-            text = value,
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-private fun Modifier.frostedGlassMask(): Modifier = this.drawWithContent {
-    drawContent()
-    drawRect(
-        brush = Brush.verticalGradient(
-            colorStops = arrayOf(
-                0f to Color.Black,
-                0.55f to Color.Black,
-                1f to Color.Transparent
-            )
-        ),
-        blendMode = BlendMode.DstIn
-    )
 }

@@ -40,6 +40,7 @@ import com.Badnng.moe.rules.RecognitionRuleEngine
 import com.Badnng.moe.service.ScreenCaptureService
 import com.Badnng.moe.ui.screen.HomeScreen
 import com.Badnng.moe.ui.screen.OnboardingScreen
+import com.Badnng.moe.ui.miuix.MiuixVisualEffectsPolicy
 import com.Badnng.moe.ui.oobe.OOBE_HOME_ENTER_MILLIS
 import com.Badnng.moe.ui.oobe.OobeActivityTransition
 import com.Badnng.moe.ui.oobe.OobeHomeReadiness
@@ -307,7 +308,8 @@ class MainActivity : ComponentActivity() {
         OobeActivityTransition.createLaunchOptions(
             activity = this,
             source = source,
-            useHyperOsTransition = OobeVisualBackendResolver.isHyperOsDevice(),
+            useHyperOsTransition = MiuixVisualEffectsPolicy
+                .allowsOobeArrowTransition(applicationContext),
             hyperOsBlurEnabled = backend == OobeVisualBackend.HyperOsEnhanced,
         ) { options ->
             if (isFinishing || isDestroyed) {

@@ -128,6 +128,8 @@ private enum class OnboardingStep {
 
 private val LocalOobeBackend = staticCompositionLocalOf { OobeVisualBackend.AndroidFallback }
 private val LocalOobeDarkTheme = staticCompositionLocalOf { false }
+private const val FEATURES_ACK_COUNTDOWN_SECONDS = 15
+private const val FEATURES_ACK_COUNTDOWN_MILLIS = FEATURES_ACK_COUNTDOWN_SECONDS * 1000L
 private const val OOBE_ONLINE_RECOGNITION_DESCRIPTION =
     "使用在线多模态模型。截图、分享图片、通知文字、短信内容或所选文字会发送给您选择的供应商，请在下方完成供应商和 API 密钥配置。"
 
@@ -171,7 +173,8 @@ fun OnboardingScreen(
     var isIgnoringBattery by remember { mutableStateOf(false) }
     var hasUsageStatsPermission by remember { mutableStateOf(checkUsageStatsPermission(context)) }
     var shizukuReady by remember { mutableStateOf(false) }
-    var featuresAckCountdown by remember { mutableIntStateOf(15) }
+    var featuresAckCountdown by rememberSaveable { mutableIntStateOf(15) }
+    var featuresAckDeadlineMillis by rememberSaveable { mutableLongStateOf(0L) }
     var privacyAccepted by remember { mutableStateOf(PrivacyConsent.isAccepted(prefs)) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var preferredRecognitionMode by rememberSaveable {
@@ -202,10 +205,18 @@ fun OnboardingScreen(
 
     LaunchedEffect(currentStep) {
         if (currentStep == OnboardingStep.Features) {
-            featuresAckCountdown = 15
-            while (featuresAckCountdown > 0) {
-                delay(1000)
-                featuresAckCountdown -= 1
+            val now = android.os.SystemClock.elapsedRealtime()
+            val deadline = featuresAckDeadlineMillis.takeIf { it > 0L } ?: run {
+                (now + FEATURES_ACK_COUNTDOWN_MILLIS).also {
+                    featuresAckDeadlineMillis = it
+                }
+            }
+            while (currentStep == OnboardingStep.Features) {
+                val remainingMillis = (deadline - android.os.SystemClock.elapsedRealtime())
+                    .coerceAtLeast(0L)
+                featuresAckCountdown = ((remainingMillis + 999L) / 1000L).toInt()
+                if (remainingMillis == 0L) break
+                delay(minOf(1000L, remainingMillis))
             }
         }
     }
@@ -214,6 +225,11 @@ fun OnboardingScreen(
         if (transitionLocked) return
         performHaptic()
         transitionLocked = true
+        if (step == OnboardingStep.Features && currentStep != OnboardingStep.Features) {
+            featuresAckCountdown = FEATURES_ACK_COUNTDOWN_SECONDS
+            featuresAckDeadlineMillis = android.os.SystemClock.elapsedRealtime() +
+                FEATURES_ACK_COUNTDOWN_MILLIS
+        }
         currentStep = step
         coroutineScope.launch {
             delay(OOBE_PAGE_TRANSITION_MILLIS.toLong())

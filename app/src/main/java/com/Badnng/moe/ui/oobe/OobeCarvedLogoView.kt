@@ -10,6 +10,7 @@ import android.graphics.PorterDuffXfermode
 import android.content.res.ColorStateList
 import android.widget.ImageView
 import com.Badnng.moe.R
+import kotlin.math.roundToInt
 
 /** Draws the app mark as a transparent engraving in a solid, blur-tinted tile. */
 internal class OobeCarvedLogoView(context: Context) : ImageView(context) {
@@ -40,9 +41,14 @@ internal class OobeCarvedLogoView(context: Context) : ImageView(context) {
         canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), cornerRadius, cornerRadius, tilePaint)
 
         val markMask = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        context.getDrawable(R.drawable.abouttopicon)?.mutate()?.apply {
+        context.getDrawable(R.drawable.ic_launcher_foreground)?.mutate()?.apply {
             setTint(Color.WHITE)
-            setBounds(0, 0, width, height)
+            // Adaptive icons expose the central 72dp of a 108dp layer on the launcher.
+            val layerWidth = (width * ADAPTIVE_ICON_LAYER_SCALE).roundToInt()
+            val layerHeight = (height * ADAPTIVE_ICON_LAYER_SCALE).roundToInt()
+            val layerLeft = (width - layerWidth) / 2
+            val layerTop = (height - layerHeight) / 2
+            setBounds(layerLeft, layerTop, layerLeft + layerWidth, layerTop + layerHeight)
             draw(Canvas(markMask))
         }
         canvas.drawBitmap(
@@ -62,6 +68,7 @@ internal class OobeCarvedLogoView(context: Context) : ImageView(context) {
     }
 
     private companion object {
+        const val ADAPTIVE_ICON_LAYER_SCALE = 1.5f
         const val CORNER_RADIUS_RATIO = 0.25f
     }
 }

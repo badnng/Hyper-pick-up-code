@@ -15,7 +15,10 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
+import com.Badnng.moe.recognition.RecognizedOrderFactory
 import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.RecognitionTextSource
+import com.Badnng.moe.recognition.RecognitionTrigger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -70,12 +73,21 @@ class SmsRecognitionService : Service() {
         forceOffline: Boolean = false,
     ) {
         val router = RecognitionRouter(applicationContext)
-        val results = if (forceOffline) {
+        val routedResult = if (forceOffline) {
             // 与“测试通知识别”一致，测试入口只验证本地识别链路，不消耗在线额度。
-            router.recognizeTextOffline(smsText)
+            router.recognizeTextOffline(
+                smsText,
+                RecognitionTextSource.Sms,
+                RecognitionTrigger.TEST_SMS,
+            )
         } else {
-            router.recognizeText(smsText).orders
+            router.recognizeText(
+                smsText,
+                RecognitionTextSource.Sms,
+                RecognitionTrigger.SMS,
+            )
         }
+        val results = routedResult.orders
 
         Log.d("SmsRecognition", "识别结果：${results.size}个, codes=${results.map { it.code }}")
 
@@ -88,18 +100,14 @@ class SmsRecognitionService : Service() {
 
         for (result in results) {
             if (result.code == null) continue
-            val order = OrderEntity(
-                takeoutCode = result.code,
-                qrCodeData = result.qr,
+            val order = RecognizedOrderFactory.fromRecognition(
+                result = result,
+                metadata = routedResult.metadata,
                 screenshotPath = "",
                 recognizedText = smsText,
-                orderType = result.type,
-                brandName = result.brand,
-                fullText = result.fullText,
-                pickupLocation = result.pickupLocation,
                 sourceApp = "短信识别",
-                sourcePackage = sender
-            )
+                sourcePackage = sender,
+            ) ?: continue
             orderDao.insert(order)
             insertedOrders.add(order)
         }

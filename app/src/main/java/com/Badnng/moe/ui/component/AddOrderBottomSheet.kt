@@ -41,8 +41,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.Badnng.moe.data.db.OrderEntity
+import com.Badnng.moe.helper.ImageSourceMetadataResolver
+import com.Badnng.moe.helper.ScreenshotStorage
+import com.Badnng.moe.recognition.RecognizedOrderFactory
+import com.Badnng.moe.recognition.RecognitionExecutionMetadata
 import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
+import com.Badnng.moe.recognition.RecognitionTrigger
 import com.Badnng.moe.viewmodel.OrderViewModel
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.utils.MiuixIndication
@@ -153,6 +158,10 @@ fun AddOrderBottomSheet(
         var orderType by remember { mutableStateOf("餐食") }
         var brandName by remember { mutableStateOf<String?>(null) }
         var pickupLocation by remember { mutableStateOf<String?>(null) }
+        var recognizedFullText by remember { mutableStateOf<String?>(null) }
+        var imageSourceApp by remember { mutableStateOf<String?>(null) }
+        var imageSourcePackage by remember { mutableStateOf<String?>(null) }
+        var recognitionMetadata by remember { mutableStateOf<RecognitionExecutionMetadata?>(null) }
         val options = listOf("餐食", "饮品", "快递")
         var screenshotPath by remember { mutableStateOf<String?>(null) }
 
@@ -161,6 +170,12 @@ fun AddOrderBottomSheet(
         ) { uri ->
             if (uri != null) {
                 coroutineScope.launch {
+                    val imageSource = ImageSourceMetadataResolver.resolve(context, uri)
+                    imageSourceApp = imageSource.appName ?: imageSource.packageName
+                    imageSourcePackage = imageSource.packageName
+                    recognizedFullText = null
+                    recognitionMetadata = null
+                    screenshotPath = null
                     val originalBitmap = if (Build.VERSION.SDK_INT >= 28) {
                         android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(context.contentResolver, uri))
                     } else {
@@ -177,21 +192,28 @@ fun AddOrderBottomSheet(
                         Bitmap.createBitmap(originalBitmap, sideMargin, statusBarHeight, targetWidth, targetHeight)
                     } else originalBitmap
 
-                    val result = RecognitionRouter(context).recognizeImage(bitmap).orders.firstOrNull()
+                    val routedResult = RecognitionRouter(context).recognizeImage(
+                        bitmap,
+                        imageSourceApp,
+                        imageSourcePackage,
+                        RecognitionTrigger.IMPORTED_IMAGE,
+                    )
+                    val result = routedResult.orders.firstOrNull()
+                    recognitionMetadata = routedResult.metadata
                     text = result?.code ?: ""
                     detectedQrData = result?.qr
+                    recognizedFullText = result?.fullText?.takeIf { it.isNotBlank() }
                     result?.let {
                         orderType = it.type
                         brandName = it.brand
                         pickupLocation = it.pickupLocation
                     }
                     if (result?.code != null) {
-                        val screenshotFile = java.io.File(context.filesDir, "screenshots/manual_${System.currentTimeMillis()}.png")
-                        screenshotFile.parentFile?.mkdirs()
-                        val outputStream = java.io.FileOutputStream(screenshotFile)
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                        outputStream.close()
-                        screenshotPath = screenshotFile.absolutePath
+                        screenshotPath = ScreenshotStorage.saveBitmap(
+                            context,
+                            bitmap,
+                            namePrefix = "导入图片",
+                        )
                     }
                 }
             }
@@ -247,17 +269,32 @@ fun AddOrderBottomSheet(
                     TextButton(
                         text = "添加",
                         onClick = {
-                            viewModel.addOrder(
-                                OrderEntity(
+                            val hasImportedImage = screenshotPath != null
+                            val order = if (hasImportedImage && recognitionMetadata != null) {
+                                RecognizedOrderFactory.fromValues(
                                     takeoutCode = text,
+                                    metadata = recognitionMetadata!!,
                                     qrCodeData = detectedQrData,
-                                    screenshotPath = screenshotPath ?: "",
-                                    recognizedText = "手动输入",
+                                    screenshotPath = screenshotPath.orEmpty(),
+                                    recognizedText = "图片识别",
                                     orderType = orderType,
                                     brandName = brandName,
-                                    pickupLocation = pickupLocation
+                                    sourceApp = imageSourceApp ?: "图片识别",
+                                    sourcePackage = imageSourcePackage,
+                                    fullText = recognizedFullText,
+                                    pickupLocation = pickupLocation,
                                 )
-                            )
+                            } else {
+                                RecognizedOrderFactory.manual(
+                                    takeoutCode = text,
+                                    qrCodeData = detectedQrData,
+                                    orderType = orderType,
+                                    brandName = brandName,
+                                    fullText = recognizedFullText,
+                                    pickupLocation = pickupLocation,
+                                )
+                            }
+                            viewModel.addOrder(order)
                             dismiss?.invoke()
                         },
                         modifier = Modifier.weight(1f),

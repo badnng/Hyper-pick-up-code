@@ -22,10 +22,6 @@
 -keep class com.google.mlkit.** { *; }
 -keep interface com.google.mlkit.** { *; }
 
-# PaddleOCR ncnn 库
--keep class com.equationl.ncnnandroidppocr.** { *; }
--keep interface com.equationl.ncnnandroidppocr.** { *; }
-
-# ncnn 库（OCR 依赖）
--keep class org.ncnn.** { *; }
--keep interface org.ncnn.** { *; }
+# PaddleOCR v6 官方 Android SDK 与 ONNX Runtime
+-keep class com.paddle.ocr.** { *; }
+-keep class ai.onnxruntime.** { *; }

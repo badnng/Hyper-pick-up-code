@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OrderEntity::class, OrderGroup::class], version = 6, exportSchema = false)
+@Database(entities = [OrderEntity::class, OrderGroup::class], version = 8, exportSchema = false)
 abstract class OrderDatabase : RoomDatabase() {
     abstract fun orderDao(): OrderDao
     abstract fun orderGroupDao(): OrderGroupDao
@@ -96,6 +96,48 @@ abstract class OrderDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "orders", "recognitionMode", "TEXT")
+                addColumnIfMissing(db, "orders", "recognitionInputType", "TEXT")
+                addColumnIfMissing(db, "orders", "recognitionTrigger", "TEXT")
+                addColumnIfMissing(db, "orders", "recognitionProvider", "TEXT")
+                addColumnIfMissing(db, "orders", "recognitionModel", "TEXT")
+                addColumnIfMissing(db, "orders", "recognitionUsedOfflineFallback", "INTEGER")
+                addColumnIfMissing(db, "orders", "recognitionError", "TEXT")
+                addColumnIfMissing(db, "orders", "recognitionErrorDetail", "TEXT")
+                addColumnIfMissing(db, "orders", "recognitionDurationMs", "INTEGER")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "orders", "ocrDiagnosticData", "TEXT")
+            }
+        }
+
+        private fun addColumnIfMissing(
+            db: SupportSQLiteDatabase,
+            table: String,
+            column: String,
+            sqlType: String,
+        ) {
+            val exists = db.query("PRAGMA table_info(`$table`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                var found = false
+                while (cursor.moveToNext()) {
+                    if (nameIndex >= 0 && cursor.getString(nameIndex) == column) {
+                        found = true
+                        break
+                    }
+                }
+                found
+            }
+            if (!exists) {
+                db.execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $sqlType")
+            }
+        }
+
         fun getDatabase(context: Context): OrderDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -103,7 +145,14 @@ abstract class OrderDatabase : RoomDatabase() {
                     OrderDatabase::class.java,
                     "order_database"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
+                    )
                     .build()
                 INSTANCE = instance
                 instance

@@ -37,4 +37,5 @@ internal object MiuixHomeBottomLayoutDefaults {
     val IosLikeBottomSpacing = 8.dp
     val IosLikeNoInsetBottomSpacing = 36.dp
     val IosLikeLargeScreenMaxWidth = 440.dp
+    val NavigationMeasurementTolerance = 64.dp
 }

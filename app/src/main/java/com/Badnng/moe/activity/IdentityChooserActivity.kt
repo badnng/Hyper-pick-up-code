@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,14 +41,20 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.Badnng.moe.helper.EdgeToEdgeHelper
+import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.theme.澎湃记Theme
+import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.Text as MiuixText
+import top.yukonga.miuix.kmp.basic.TextButton as MiuixTextButton
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 class IdentityChooserActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
+        EdgeToEdgeHelper.applyQuickViewEdgeToEdge(this)
         setContent {
-            澎湃记Theme {
+            澎湃记Theme(transparentBackground = true) {
                 IdentityChooserScreen(
                     onTaobao = { openTaobaoIdentityEntry(); finish() },
                     onPdd = { openPddIdentityEntry(); finish() },
@@ -114,6 +121,7 @@ private fun IdentityChooserScreen(
     onPdd: () -> Unit,
     onClose: () -> Unit
 ) {
+    val isMiuix = rememberMiuixStyle()
     var animationPlayed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { animationPlayed = true }
     val scale by animateFloatAsState(
@@ -130,65 +138,122 @@ private fun IdentityChooserScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.6f))
+            .background(Color.Black.copy(alpha = 0.5f))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) { onClose() },
         contentAlignment = Alignment.Center
     ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth(0.86f)
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    alpha = alpha
+        val cardModifier = Modifier
+            .fillMaxWidth(0.82f)
+            .widthIn(max = 360.dp)
+            .graphicsLayer(
+                scaleX = scale,
+                scaleY = scale,
+                alpha = alpha
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {}
+
+        if (isMiuix) {
+            MiuixCard(modifier = cardModifier) {
+                IdentityChooserContent(
+                    isMiuix = true,
+                    onTaobao = onTaobao,
+                    onPdd = onPdd,
+                    onClose = onClose,
                 )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {},
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            }
+        } else {
+            Card(
+                modifier = cardModifier,
+                shape = RoundedCornerShape(15.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
-                Text("选择要打开的身份码", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(4.dp))
-                Button(
-                    onClick = onTaobao,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFF8A00),
-                        contentColor = Color.White
-                    )
-                ) {
-                    Text("淘宝身份码")
-                }
-                Button(
-                    onClick = onPdd,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE53935),
-                        contentColor = Color.White
-                    )
-                ) {
-                    Text("拼多多身份码")
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Button(
-                    onClick = onClose,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("关闭")
-                }
+                IdentityChooserContent(
+                    isMiuix = false,
+                    onTaobao = onTaobao,
+                    onPdd = onPdd,
+                    onClose = onClose,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IdentityChooserContent(
+    isMiuix: Boolean,
+    onTaobao: () -> Unit,
+    onPdd: () -> Unit,
+    onClose: () -> Unit,
+) {
+    if (isMiuix) {
+        Column {
+            MiuixText(
+                text = "选择要打开的身份码",
+                modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 8.dp),
+                style = MiuixTheme.textStyles.headline1,
+                color = MiuixTheme.colorScheme.onSurface,
+            )
+            ArrowPreference(
+                title = "淘宝身份码",
+                summary = "打开菜鸟身份码",
+                onClick = onTaobao,
+            )
+            ArrowPreference(
+                title = "拼多多身份码",
+                summary = "打开拼多多身份码",
+                onClick = onPdd,
+            )
+            MiuixTextButton(
+                text = "关闭",
+                onClick = onClose,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, top = 6.dp, end = 16.dp, bottom = 14.dp),
+            )
+        }
+    } else {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("选择要打开的身份码", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            Button(
+                onClick = onTaobao,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(15.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF8A00),
+                    contentColor = Color.White
+                )
+            ) {
+                Text("淘宝身份码")
+            }
+            Button(
+                onClick = onPdd,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(15.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFE53935),
+                    contentColor = Color.White
+                )
+            ) {
+                Text("拼多多身份码")
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Button(
+                onClick = onClose,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(15.dp)
+            ) {
+                Text("关闭")
             }
         }
     }

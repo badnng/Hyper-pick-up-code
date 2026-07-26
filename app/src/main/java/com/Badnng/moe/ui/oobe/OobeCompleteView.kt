@@ -252,14 +252,19 @@ internal class OobeCompleteView(
     }
 
     private fun updateBackendVisuals() {
-        if (backend == OobeVisualBackend.HyperOsEnhanced || darkTheme) {
+        val mixesLogoColor = backend == OobeVisualBackend.HyperOsEnhanced ||
+            backend == OobeVisualBackend.HyperOsIconMixing
+        if (mixesLogoColor || darkTheme) {
             logoView.setBaseColor(Color.WHITE)
             wordmarkView.imageTintList = ColorStateList.valueOf(Color.WHITE)
-            stateTextView.setTextColor(0xBFFFFFFF.toInt())
-            uiStyleHintView.setTextColor(0x99FFFFFF.toInt())
         } else {
             logoView.setBaseColor(Color.BLACK)
             wordmarkView.imageTintList = ColorStateList.valueOf(Color.BLACK)
+        }
+        if (backend == OobeVisualBackend.HyperOsEnhanced || darkTheme) {
+            stateTextView.setTextColor(0xBFFFFFFF.toInt())
+            uiStyleHintView.setTextColor(0x99FFFFFF.toInt())
+        } else {
             stateTextView.setTextColor(0xBF000000.toInt())
             uiStyleHintView.setTextColor(0x8A000000.toInt())
         }
@@ -286,7 +291,11 @@ internal class OobeCompleteView(
     }
 
     private fun applyBlurIfNeeded() {
-        if (backend != OobeVisualBackend.HyperOsEnhanced || blurApplied) return
+        if (
+            backend != OobeVisualBackend.HyperOsEnhanced &&
+            backend != OobeVisualBackend.HyperOsIconMixing
+        ) return
+        if (blurApplied) return
         val logoPalette = if (darkTheme) {
             OobeBlurPalettes.MiuixDarkLogo
         } else {
@@ -302,32 +311,45 @@ internal class OobeCompleteView(
         } else {
             OobeBlurPalettes.HyperCeilerLightStateText
         }
-        val success = HyperOsBlurBridge.apply(this) &&
-            HyperOsBlurBridge.applyViewBlur(
-                logoView,
-                logoPalette.colors,
-                logoPalette.modes,
-            ) &&
-            HyperOsBlurBridge.applyViewBlur(
-                wordmarkView,
-                logoPalette.colors,
-                logoPalette.modes,
-            ) &&
-            HyperOsBlurBridge.applyViewBlur(
-                buttonBackground,
-                buttonPalette.colors,
-                buttonPalette.modes,
-            ) &&
-            HyperOsBlurBridge.applyViewBlur(
-                stateTextView,
-                statePalette.colors,
-                statePalette.modes,
-            ) &&
-            HyperOsBlurBridge.applyViewBlur(
-                uiStyleHintView,
-                statePalette.colors,
-                statePalette.modes,
-            )
+        val success = when (backend) {
+            OobeVisualBackend.HyperOsEnhanced -> HyperOsBlurBridge.apply(this) &&
+                HyperOsBlurBridge.applyViewBlur(
+                    logoView,
+                    logoPalette.colors,
+                    logoPalette.modes,
+                ) &&
+                HyperOsBlurBridge.applyViewBlur(
+                    wordmarkView,
+                    logoPalette.colors,
+                    logoPalette.modes,
+                ) &&
+                HyperOsBlurBridge.applyViewBlur(
+                    buttonBackground,
+                    buttonPalette.colors,
+                    buttonPalette.modes,
+                ) &&
+                HyperOsBlurBridge.applyViewBlur(
+                    stateTextView,
+                    statePalette.colors,
+                    statePalette.modes,
+                ) &&
+                HyperOsBlurBridge.applyViewBlur(
+                    uiStyleHintView,
+                    statePalette.colors,
+                    statePalette.modes,
+                )
+            OobeVisualBackend.HyperOsIconMixing ->
+                HyperOsBlurBridge.applyViewBlur(
+                    logoView,
+                    logoPalette.colors,
+                    logoPalette.modes,
+                ) && HyperOsBlurBridge.applyViewBlur(
+                    wordmarkView,
+                    logoPalette.colors,
+                    logoPalette.modes,
+                )
+            else -> false
+        }
         if (success) {
             blurApplied = true
         } else {

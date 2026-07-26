@@ -111,6 +111,7 @@ object OnlineRecognitionCatalog {
 }
 
 object OnlineRecognitionPreferences {
+    const val PROMPT_ASSET_NAME = "online_recognition_prompt.txt"
     const val MODE_KEY = "recognition_mode"
     const val MODE_OFFLINE = "offline"
     const val MODE_ONLINE = "online"
@@ -118,6 +119,7 @@ object OnlineRecognitionPreferences {
     const val MIMO_BILLING_KEY = "mimo_billing_mode"
     const val CUSTOM_REQUEST_MODE_KEY = "custom_recognition_request_mode"
     const val CUSTOM_BASE_URL_KEY = "custom_recognition_base_url"
+    const val CUSTOM_PROMPT_KEY = "online_recognition_custom_prompt"
     private fun modelKey(provider: OnlineRecognitionProvider) =
         "online_recognition_model_${provider.key}"
 
@@ -141,6 +143,32 @@ object OnlineRecognitionPreferences {
 
     fun customBaseUrl(context: Context): String =
         settings(context).getString(CUSTOM_BASE_URL_KEY, "").orEmpty().trim()
+
+    fun defaultPrompt(context: Context): String =
+        context.applicationContext.assets.open(PROMPT_ASSET_NAME)
+            .bufferedReader(Charsets.UTF_8)
+            .use { it.readText() }
+            .trim()
+
+    fun customPrompt(context: Context): String? =
+        settings(context).getString(CUSTOM_PROMPT_KEY, null)?.takeIf { it.isNotBlank() }
+
+    fun effectivePrompt(context: Context, builtInPrompt: String = defaultPrompt(context)): String =
+        RecognitionPromptPolicy.resolve(builtInPrompt, customPrompt(context))
+
+    fun saveCustomPrompt(context: Context, prompt: String, defaultPrompt: String) {
+        settings(context).edit().apply {
+            if (RecognitionPromptPolicy.shouldPersist(prompt, defaultPrompt)) {
+                putString(CUSTOM_PROMPT_KEY, prompt)
+            } else {
+                remove(CUSTOM_PROMPT_KEY)
+            }
+        }.apply()
+    }
+
+    fun clearCustomPrompt(context: Context) {
+        settings(context).edit().remove(CUSTOM_PROMPT_KEY).apply()
+    }
 
     fun model(context: Context, provider: OnlineRecognitionProvider): OnlineRecognitionModel {
         val savedModelId = settings(context).getString(modelKey(provider), null)

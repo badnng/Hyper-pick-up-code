@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -19,6 +20,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,11 +28,13 @@ import androidx.compose.foundation.layout.Row
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -38,6 +42,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationAdd
 import androidx.compose.runtime.Composable
@@ -46,20 +52,26 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -72,10 +84,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.BrandIconResolver
+import com.Badnng.moe.ui.component.BlurState
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.screen.openTaobaoIdentityEntry
 import com.Badnng.moe.ui.screen.openPddIdentityEntry
 import com.Badnng.moe.viewmodel.OrderViewModel
+import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -112,6 +126,7 @@ import top.yukonga.miuix.kmp.basic.ToolbarPosition
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.window.WindowBottomSheet
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -125,6 +140,7 @@ fun MiuixCaptureScreen(
     onAddClick: () -> Unit = {},
     navAlignment: String = "center",
     useFloatingNavBar: Boolean = false,
+    onQrDialogVisibilityChange: (Boolean) -> Unit = {},
     onNavigateToOrderDetail: (String) -> Unit = {},
     onNavigateToGroupDetail: (Long) -> Unit = {}
 ) {
@@ -147,6 +163,14 @@ fun MiuixCaptureScreen(
 
     // Tab 状态: 0=待取, 1=已取
     var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedOrderForQr by remember { mutableStateOf<OrderEntity?>(null) }
+    val showQrCode: (OrderEntity) -> Unit = { order ->
+        onQrDialogVisibilityChange(true)
+        selectedOrderForQr = order
+    }
+    DisposableEffect(Unit) {
+        onDispose { onQrDialogVisibilityChange(false) }
+    }
 
     // 分类筛选（待取 tab 点击展开子 TabRow）
     var showCategoryTabs by remember { mutableStateOf(false) }
@@ -468,6 +492,7 @@ fun MiuixCaptureScreen(
                                     performHaptic()
                                     viewModel.deleteOrder(order)
                                 },
+                                onShowQr = { showQrCode(order) },
                                 isEditMode = isEditMode,
                                 modifier = Modifier.weight(1f)
                             )
@@ -584,6 +609,7 @@ fun MiuixCaptureScreen(
                                     performHaptic()
                                     viewModel.deleteOrder(order)
                                 },
+                                onShowQr = { showQrCode(order) },
                                 isCompleted = true,
                                 isEditMode = isEditMode
                             )
@@ -792,7 +818,7 @@ fun MiuixCaptureScreen(
     }
 
     AnimatedVisibility(
-        visible = !isEditMode && selectedTab == 0 && !isListScrolling,
+        visible = !isEditMode && selectedTab == 0 && !isListScrolling && selectedOrderForQr == null,
         enter = fadeIn(),
         exit = fadeOut(),
         modifier = Modifier
@@ -800,7 +826,7 @@ fun MiuixCaptureScreen(
             .padding(toolbarPadding)
     ) {
         FloatingToolbar(
-            color = MiuixTheme.colorScheme.primaryContainer,
+            color = MiuixTheme.colorScheme.surfaceContainer,
             cornerRadius = 16.dp,
         ) {
             if (isVertical) {
@@ -812,7 +838,7 @@ fun MiuixCaptureScreen(
                     Icon(
                         imageVector = MiuixIcons.Regular.Add,
                         contentDescription = "添加",
-                        tint = Color.White
+                        tint = MiuixTheme.colorScheme.onSurface
                     )
                 }
                 IconButton(onClick = { performHaptic(); openTaobaoIdentityEntry(context) }) {
@@ -820,7 +846,7 @@ fun MiuixCaptureScreen(
                         Icon(
                             imageVector = MiuixIcons.Regular.Scan,
                             contentDescription = "淘宝身份码",
-                            tint = Color.White
+                            tint = MiuixTheme.colorScheme.onSurface
                         )
                         Box(
                             modifier = Modifier
@@ -835,7 +861,7 @@ fun MiuixCaptureScreen(
                         Icon(
                             imageVector = MiuixIcons.Regular.Scan,
                             contentDescription = "拼多多身份码",
-                            tint = Color.White
+                            tint = MiuixTheme.colorScheme.onSurface
                         )
                         Box(
                             modifier = Modifier
@@ -855,7 +881,7 @@ fun MiuixCaptureScreen(
                         Icon(
                             imageVector = MiuixIcons.Regular.Add,
                             contentDescription = "添加",
-                            tint = Color.White
+                            tint = MiuixTheme.colorScheme.onSurface
                         )
                     }
                     IconButton(onClick = { performHaptic(); openTaobaoIdentityEntry(context) }) {
@@ -863,7 +889,7 @@ fun MiuixCaptureScreen(
                             Icon(
                                 imageVector = MiuixIcons.Regular.Scan,
                                 contentDescription = "淘宝身份码",
-                                tint = Color.White
+                                tint = MiuixTheme.colorScheme.onSurface
                             )
                             Box(
                                 modifier = Modifier
@@ -878,7 +904,7 @@ fun MiuixCaptureScreen(
                             Icon(
                                 imageVector = MiuixIcons.Regular.Scan,
                                 contentDescription = "拼多多身份码",
-                                tint = Color.White
+                                tint = MiuixTheme.colorScheme.onSurface
                             )
                             Box(
                                 modifier = Modifier
@@ -892,7 +918,226 @@ fun MiuixCaptureScreen(
             }
         }
     }
+
+    selectedOrderForQr?.let { order ->
+        MiuixQrCodeBottomSheet(
+            order = order,
+            performHaptic = performHaptic,
+            onMarkCompleted = { viewModel.markAsCompleted(order.id) },
+            onDismiss = {
+                selectedOrderForQr = null
+                onQrDialogVisibilityChange(false)
+            },
+        )
+    }
     } // Box
+}
+
+@Composable
+private fun MiuixQrCodeBottomSheet(
+    order: OrderEntity,
+    performHaptic: () -> Unit,
+    onMarkCompleted: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val qrBitmap = remember(order.qrCodeData) {
+        order.qrCodeData
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { data ->
+                runCatching {
+                    com.Badnng.moe.ui.screen.generateQrCode(data, 512)
+                }.getOrNull()
+            }
+    }
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+    var showSheet by remember(order.id) { mutableStateOf(true) }
+    var completeAfterDismiss by remember(order.id) { mutableStateOf(false) }
+    var dragProgress by remember { mutableFloatStateOf(-1f) }
+    val blurProgress = remember { Animatable(0f) }
+    val brandIconRes = remember(order.brandName, order.orderType) {
+        BrandIconResolver.resolveBuiltinFallbackResId(context, order.brandName, order.orderType)
+    }
+    var customBrandIcon by remember(order.brandName) {
+        mutableStateOf<android.graphics.Bitmap?>(null)
+    }
+
+    LaunchedEffect(order.brandName) {
+        customBrandIcon = withContext(Dispatchers.IO) {
+            BrandIconResolver.resolveCustomIconBitmap(context, order.brandName)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { blurProgress.value }
+            .collect { BlurState.updateProgress(it) }
+    }
+    DisposableEffect(Unit) {
+        onDispose { BlurState.hide() }
+    }
+    LaunchedEffect(Unit) {
+        BlurState.show()
+        dragProgress = -1f
+        blurProgress.snapTo(0f)
+        blurProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f),
+        )
+    }
+    LaunchedEffect(showSheet) {
+        if (!showSheet) {
+            blurProgress.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f),
+            )
+        }
+    }
+    LaunchedEffect(dragProgress) {
+        if (dragProgress in 0f..1f) {
+            blurProgress.snapTo(dragProgress)
+        }
+    }
+
+    WindowBottomSheet(
+        show = showSheet,
+        title = "取餐二维码",
+        enableWindowDim = false,
+        allowDismiss = true,
+        enableNestedScroll = true,
+        onDismissRequest = { showSheet = false },
+        onDismissFinished = {
+            BlurState.hide()
+            if (completeAfterDismiss && !order.isCompleted) {
+                onMarkCompleted()
+            }
+            onDismiss()
+        },
+    ) {
+        NonPredictiveBackInterceptor()
+        if (showSheet) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.dp)
+                    .onGloballyPositioned { coordinates ->
+                        val sheetTop = coordinates.positionInWindow().y
+                        dragProgress = 1f - (sheetTop / screenHeightPx).coerceIn(0f, 1f)
+                    },
+            )
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                if (customBrandIcon != null) {
+                    Image(
+                        bitmap = customBrandIcon!!.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.size(36.dp),
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(brandIconRes),
+                        contentDescription = null,
+                        modifier = Modifier.size(36.dp),
+                        tint = Color.Unspecified,
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = order.brandName ?: "取餐码",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = "取餐码",
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Text(
+                text = order.takeoutCode,
+                color = MiuixTheme.colorScheme.primary,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.76f)
+                    .widthIn(max = 320.dp)
+                    .aspectRatio(1f)
+                    .background(Color.White, RoundedCornerShape(15.dp))
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (qrBitmap != null) {
+                    Image(
+                        bitmap = qrBitmap.asImageBitmap(),
+                        contentDescription = "二维码",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                } else {
+                    Text(
+                        text = "二维码生成失败",
+                        color = MiuixTheme.colorScheme.error,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Button(
+                    onClick = {
+                        performHaptic()
+                        showSheet = false
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(),
+                ) {
+                    Text(
+                        text = "关闭",
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                Button(
+                    onClick = {
+                        performHaptic()
+                        completeAfterDismiss = true
+                        showSheet = false
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    enabled = !order.isCompleted,
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text(
+                        text = "已完成",
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1310,6 +1555,7 @@ private fun MiuixOrderCard(
     onClick: () -> Unit,
     onMarkCompleted: () -> Unit,
     onDelete: () -> Unit,
+    onShowQr: () -> Unit,
     isCompleted: Boolean = false,
     isEditMode: Boolean = false,
     modifier: Modifier = Modifier
@@ -1413,7 +1659,10 @@ private fun MiuixOrderCard(
                 }
                 // QR码按钮
                 if (!order.qrCodeData.isNullOrEmpty()) {
-                    IconButton(onClick = { /* TODO: 显示QR码 */ }) {
+                    IconButton(onClick = {
+                        performHaptic()
+                        onShowQr()
+                    }) {
                         Icon(
                             imageVector = MiuixIcons.Regular.Scan,
                             contentDescription = "二维码",

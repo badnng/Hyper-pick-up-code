@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     id("com.google.devtools.ksp")
 }
 
@@ -24,8 +25,8 @@ android {
         applicationId = "com.Badnng.moe"
         minSdk = 35
         targetSdk = 37
-        versionCode = 20260719_11
-        versionName = "26.7.19.C01-Dev"
+        versionCode = 20260726_01
+        versionName = "26.7.26.C01"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -112,6 +113,10 @@ android {
             useLegacyPackaging = false
         }
     }
+
+    androidResources {
+        noCompress += "onnx"
+    }
 }
 
 tasks.named("preBuild").configure {
@@ -150,8 +155,9 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-    // PaddleOCR (替换 ML Kit 文字识别)
-    implementation("com.github.equationl.paddleocr4android:ncnnandroidppocr:v1.3.0")
+    // PaddleOCR v6 Tiny 官方 Android 推理后端
+    implementation(libs.onnxruntime.android)
+    implementation(libs.opencv.android)
     // Miuix Blur (毛玻璃模糊效果)
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.3")
     // Miuix UI 组件库 (Card, Button, Switch, SmallTitle 等)

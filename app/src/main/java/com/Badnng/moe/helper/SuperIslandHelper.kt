@@ -12,7 +12,7 @@ import android.provider.Settings
 import com.Badnng.moe.R
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
-import java.lang.reflect.Method
+import org.json.JSONObject
 
 object SuperIslandHelper {
 
@@ -51,14 +51,16 @@ object SuperIslandHelper {
     }
 
     // ==================== 图片 Key 常量 ====================
-    private const val PIC_MAIN = "miui.focus.pic_icon_main"
-    private const val PIC_LAND = "miui.focus.pic_icon_main"
+    private const val PIC_PROFILE = "miui.focus.pic_profile"
+    private const val PIC_ISLAND = "miui.focus.pic_island"
     private const val PIC_TICKER = "miui.focus.pic_ticker"
     private const val PIC_AOD = "miui.focus.pic_aod"
 
     // ==================== 动作 Key 常量 ====================
     private const val ACT_COMPLETE = "miui.focus.action_complete"
     private const val ACT_IDENTITY = "miui.focus.action_identity"
+    private const val ACT_VIEW = "miui.focus.action_view"
+    private const val ACT_QR = "miui.focus.action_qr"
 
     // ==================== 图标映射 ====================
     private fun brandIconRes(context: Context, brandName: String?, orderType: String?): Int {
@@ -75,8 +77,8 @@ object SuperIslandHelper {
         val mainIcon = customIcon ?: Icon.createWithResource(context, iconRes)
         val picsBundle = Bundle().apply {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                putParcelable(PIC_MAIN, mainIcon)
-                putParcelable(PIC_LAND, mainIcon)
+                putParcelable(PIC_PROFILE, mainIcon)
+                putParcelable(PIC_ISLAND, mainIcon)
                 putParcelable(PIC_TICKER, Icon.createWithResource(context, R.mipmap.ic_launcher))
                 putParcelable(PIC_AOD, Icon.createWithResource(context, R.mipmap.ic_launcher))
             }
@@ -86,15 +88,18 @@ object SuperIslandHelper {
 
     // ==================== miui.focus.actions Bundle ====================
     private fun buildActionsBundle(
-        context: Context,
-        iconRes: Int,
-        completePI: PendingIntent,
+        actionKey: String,
+        actionTitle: String,
+        actionPendingIntent: PendingIntent,
         identityPI: PendingIntent?,
         hasIdentity: Boolean
     ): Bundle {
         val actionsBundle = Bundle().apply {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                putParcelable(ACT_COMPLETE, Notification.Action.Builder(null, "已完成", completePI).build())
+                putParcelable(
+                    actionKey,
+                    Notification.Action.Builder(null, actionTitle, actionPendingIntent).build(),
+                )
                 if (hasIdentity && identityPI != null) {
                     putParcelable(ACT_IDENTITY, Notification.Action.Builder(null, "身份码", identityPI).build())
                 }
@@ -103,26 +108,26 @@ object SuperIslandHelper {
         return Bundle().apply { putBundle("miui.focus.actions", actionsBundle) }
     }
 
-    private const val PICKUP_TEMPLATE = """
+    // 官方模板 8：IM 图文组件 + 识别图形组件 1 + 按钮组件 3。
+    private const val TEMPLATE_EIGHT = """
 {
     "param_v2": {
         "protocol": 3,
-        "business": "pickup",
+        "business": {{business}},
         "updatable": true,
-        "ticker": "{{ticker}}",
-        "enableFloat": true,
+        "ticker": {{ticker}},
+        "enableFloat": {{enableFloat}},
         "isShowNotification": true,
         "islandFirstFloat": true,
-        "aodTitle": "{{contentText}}",
+        "aodTitle": {{aodTitle}},
         "picInfo": {
-            "type": 2,
-            "pic": "miui.focus.pic_icon_main",
+            "type": 1,
             "loop": false,
             "autoplay": false,
             "number": 0
         },
         "smallWindowInfo": {
-            "targetPage": "{{targetPage}}"
+            "targetPage": {{targetPage}}
         },
         "param_island": {
             "islandProperty": 2,
@@ -134,7 +139,7 @@ object SuperIslandHelper {
                     "type": 1,
                     "picInfo": {
                         "type": 1,
-                        "pic": "miui.focus.pic_icon_main",
+                        "pic": "miui.focus.pic_island",
                         "loop": false,
                         "autoplay": false,
                         "number": 0
@@ -142,7 +147,7 @@ object SuperIslandHelper {
                 },
                 "textInfo": {
                     "frontTitle": "",
-                    "title": "{{smallCode}}",
+                    "title": {{islandTitle}},
                     "content": "",
                     "showHighlightColor": false,
                     "narrowFont": false
@@ -152,20 +157,20 @@ object SuperIslandHelper {
                 "imageTextInfoRight": {
                     "type": 6,
                     "textInfo": {
-                        "title": "{{smallCode}}",
+                        "title": {{islandTitle}},
                         "showHighlightColor": false
                     },
                     "picInfo": {
                         "type": 1,
-                        "pic": "miui.focus.pic_icon_main"
+                        "pic": "miui.focus.pic_island"
                     }
                 }
             }
         },
         "chatInfo": {
-            "picProfile": "miui.focus.pic_icon_main",
-            "title": "{{smallCode}}",
-            "content": "{{brand}}",
+            "picProfile": "miui.focus.pic_profile",
+            "title": {{chatTitle}},
+            "content": {{chatContent}},
             "colorTitle": "#000000",
             "colorTitleDark": "#FFFFFF",
             "colorContent": "#666666",
@@ -173,14 +178,16 @@ object SuperIslandHelper {
         },
         "hintInfo": {
             "type": 1,
-            "title": "{{hintTitle}}",
+            "title": {{hintTitle}},
+            "colorTitle": "#333333",
             "colorTitleDark": "#FFFFFF",
-            "colorContentBg": "{{hintActionBgColor}}",
             "actionInfo": {
-                "action": "{{hintAction}}",
-                "actionTitle": "{{hintActionTitle}}",
+                "action": {{actionKey}},
+                "actionTitle": {{actionTitle}},
                 "actionTitleColor": "#FFFFFF",
-                "actionBgColor": "{{hintActionBgColor}}",
+                "actionTitleColorDark": "#FFFFFF",
+                "actionBgColor": "#3482FF",
+                "actionBgColorDark": "#3482FF",
                 "actionIntentType": 1
             }
         }
@@ -188,39 +195,32 @@ object SuperIslandHelper {
 }
 """
 
-    private fun buildPickupJson(
+    private fun buildTemplateEightJson(
         context: Context,
-        brand: String,
-        contentText: String,
-        smallCode: String,
-        isExpress: Boolean,
-        hasIdentity: Boolean,
-        pickupLocation: String? = null,
-        orderType: String? = null
+        business: String,
+        ticker: String,
+        enableFloat: Boolean,
+        aodTitle: String,
+        chatTitle: String,
+        chatContent: String,
+        hintTitle: String,
+        islandTitle: String,
+        actionKey: String,
+        actionTitle: String,
     ): String {
-        val hintAction = if (hasIdentity) ACT_IDENTITY else ACT_COMPLETE
-        val hintTitle = when {
-            !pickupLocation.isNullOrBlank() -> pickupLocation
-            isExpress -> "请仔细核对您的取件码"
-            orderType == "饮品" -> "请注意大堂/荧幕叫号"
-            else -> "请注意及时取餐"
-        }
-        val hintActionTitle = if (hasIdentity) "身份码" else "已完成"
-        val hintActionBgColor = if (hasIdentity) "#007AFF" else "#34C759"
-        val hintContent = if (isExpress) "快递" else "外卖"
-        val targetPage = "${context.packageName}.MainActivity"
-
-        return PICKUP_TEMPLATE
-            .replace("{{ticker}}", contentText)
-            .replace("{{brand}}", brand)
-            .replace("{{contentText}}", contentText)
-            .replace("{{hintTitle}}", hintTitle)
-            .replace("{{hintContent}}", hintContent)
-            .replace("{{hintAction}}", hintAction)
-            .replace("{{hintActionTitle}}", hintActionTitle)
-            .replace("{{hintActionBgColor}}", hintActionBgColor)
-            .replace("{{targetPage}}", targetPage)
-            .replace("{{smallCode}}", smallCode)
+        val targetPage = com.Badnng.moe.activity.MainActivity::class.java.name
+        return TEMPLATE_EIGHT
+            .replace("{{business}}", JSONObject.quote(business))
+            .replace("{{ticker}}", JSONObject.quote(ticker))
+            .replace("{{enableFloat}}", enableFloat.toString())
+            .replace("{{aodTitle}}", JSONObject.quote(aodTitle))
+            .replace("{{chatTitle}}", JSONObject.quote(chatTitle))
+            .replace("{{chatContent}}", JSONObject.quote(chatContent))
+            .replace("{{hintTitle}}", JSONObject.quote(hintTitle))
+            .replace("{{islandTitle}}", JSONObject.quote(islandTitle))
+            .replace("{{actionKey}}", JSONObject.quote(actionKey))
+            .replace("{{actionTitle}}", JSONObject.quote(actionTitle))
+            .replace("{{targetPage}}", JSONObject.quote(targetPage))
     }
 
     // ==================== 发送测试通知 ====================
@@ -243,17 +243,27 @@ object SuperIslandHelper {
                 },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-
             val notification = if (isDeviceSupported(context)) {
                 val picsBundle = buildPicsBundle(context, R.drawable.ic_package)
-                val actionsBundle = buildActionsBundle(context, R.drawable.ic_package, dismissPI, null, false)
-                val paramsJson = buildPickupJson(
+                val actionsBundle = buildActionsBundle(
+                    actionKey = ACT_COMPLETE,
+                    actionTitle = "已完成",
+                    actionPendingIntent = dismissPI,
+                    identityPI = null,
+                    hasIdentity = false,
+                )
+                val paramsJson = buildTemplateEightJson(
                     context = context,
-                    brand = "测试",
-                    contentText = testContent,
-                    smallCode = "TEST123456",
-                    isExpress = true,
-                    hasIdentity = false
+                    business = "pickup",
+                    ticker = testContent,
+                    enableFloat = true,
+                    aodTitle = testContent,
+                    chatTitle = "待取件",
+                    chatContent = "取件码 TEST123456",
+                    hintTitle = "超级岛测试通知",
+                    islandTitle = "TEST123456",
+                    actionKey = ACT_COMPLETE,
+                    actionTitle = "已完成",
                 )
 
                 Notification.Builder(context, channelId)
@@ -302,26 +312,40 @@ object SuperIslandHelper {
         isExpress: Boolean,
         completePendingIntent: PendingIntent,
         viewPendingIntent: PendingIntent,
+        qrDetailPendingIntent: PendingIntent?,
         identityChooserPendingIntent: PendingIntent?
     ): Notification {
         val label = if (isExpress) "取件码" else "取餐码"
         val contentText = "$label: ${order.takeoutCode}"
         val iconRes = brandIconRes(context, brandName, order.orderType)
+        val hasQrCode = !order.qrCodeData.isNullOrBlank() && qrDetailPendingIntent != null
+        val actionKey = if (hasQrCode) ACT_QR else ACT_COMPLETE
+        val actionTitle = if (hasQrCode) "二维码" else "已完成"
+        val actionPendingIntent = if (hasQrCode) qrDetailPendingIntent else completePendingIntent
 
         val picsBundle = buildPicsBundle(context, iconRes, brandIcon(context, brandName))
         val actionsBundle = buildActionsBundle(
-            context, iconRes,
-            completePendingIntent, identityChooserPendingIntent, isExpress
+            actionKey = actionKey,
+            actionTitle = actionTitle,
+            actionPendingIntent = requireNotNull(actionPendingIntent),
+            identityPI = identityChooserPendingIntent,
+            hasIdentity = isExpress,
         )
-        val paramsJson = buildPickupJson(
+        val displayBrand = brandName ?: if (isExpress) "新包裹" else "新订单"
+        val statusTitle = if (isExpress) "待取件" else "待取餐"
+        val hintTitle = order.pickupLocation?.takeIf(String::isNotBlank) ?: displayBrand
+        val paramsJson = buildTemplateEightJson(
             context = context,
-            brand = brandName ?: if (isExpress) "新包裹" else "新订单",
-            contentText = contentText,
-            smallCode = order.takeoutCode,
-            isExpress = isExpress,
-            hasIdentity = isExpress && identityChooserPendingIntent != null,
-            pickupLocation = order.pickupLocation,
-            orderType = order.orderType
+            business = "pickup",
+            ticker = contentText,
+            enableFloat = true,
+            aodTitle = contentText,
+            chatTitle = statusTitle,
+            chatContent = contentText,
+            hintTitle = hintTitle,
+            islandTitle = order.takeoutCode,
+            actionKey = actionKey,
+            actionTitle = actionTitle,
         )
 
         val notification = Notification.Builder(context, channelId)
@@ -337,107 +361,7 @@ object SuperIslandHelper {
         return notification
     }
 
-    // ==================== 更新下载通知模板 ====================
-    // 展开态(模板20): IM图文组件(chatInfo) + 进度组件2(progressInfo)
-    // 摘要态(模板5): 图文组件1 + 进度文本组件(combinePicInfo)
-    // 进度颜色: 天蓝色过渡 (#4FC3F7 → #0288D1)
-    private const val DOWNLOAD_TEMPLATE = """
-{
-    "param_v2": {
-        "protocol": 3,
-        "business": "update",
-        "updatable": true,
-        "ticker": "{{ticker}}",
-        "enableFloat": false,
-        "isShowNotification": true,
-        "islandFirstFloat": true,
-        "aodTitle": "{{progressText}}",
-        "picInfo": {
-            "type": 2,
-            "loop": false,
-            "autoplay": false,
-            "number": 0
-        },
-        "smallWindowInfo": {
-            "targetPage": "{{targetPage}}"
-        },
-        "chatInfo": {
-            "picProfile": "miui.focus.pic_icon_main",
-            "title": "{{chatTitle}}",
-            "content": "{{chatContent}}",
-            "colorTitle": "#000000",
-            "colorTitleDark": "#FFFFFF",
-            "colorContent": "#666666",
-            "colorContentDark": "#AAAAAA"
-        },
-        "progressInfo": {
-            "progress": {{progressPercent}},
-            "colorProgress": "#4FC3F7",
-            "colorProgressEnd": "#0288D1"
-        },
-        "param_island": {
-            "islandProperty": 2,
-            "islandOrder": false,
-            "dismissIsland": false,
-            "needCloseAnimation": true,
-            "bigIslandArea": {
-                "imageTextInfoLeft": {
-                    "type": 1,
-                    "picInfo": {
-                        "type": 1,
-                        "pic": "miui.focus.pic_icon_main",
-                        "loop": false,
-                        "autoplay": false,
-                        "number": 0
-                    }
-                },
-                "textInfo": {
-                    "frontTitle": "{{frontTitle}}",
-                    "title": "{{title}}",
-                    "content": "{{content}}",
-                    "showHighlightColor": false,
-                    "narrowFont": false
-                },
-                "progressTextInfo": {
-                    "progressInfo": {
-                        "progress": "{{progressPercent}}",
-                        "colorReach": "	#1E90FF",
-                        "colorUnReach": "#333333",
-                        "isCCW": "True"
-                    }
-                }
-            },
-            "smallIslandArea": {
-                "combinePicInfo":{
-                    "picInfo": {
-                        "type": 1,
-                        "pic": "miui.focus.pic_icon_main"
-                    },
-                    "progressInfo":{
-                        "progress": "{{progressPercent}}",
-                        "colorReach": "	#1E90FF",
-                        "colorUnReach": "#333333",
-                        "isCCW": "True"
-                    }
-                }
-            }
-        },
-        "hintInfo": {
-            "type": 1,
-            "title": "{{hintTitle}}",
-            "colorTitleDark": "#FFFFFF",
-            "colorContentBg": "#4FC3F7",
-            "actionInfo": {
-                "action": "{{hintAction}}",
-                "actionTitle": "{{hintActionTitle}}",
-                "actionTitleColor": "#FFFFFF",
-                "actionBgColor": "#4FC3F7",
-                "actionIntentType": 1
-            }
-        }
-    }
-}
-"""
+    // ==================== 更新下载通知 ====================
 
     fun buildUpdateDownloadNotification(
         context: Context,
@@ -452,34 +376,30 @@ object SuperIslandHelper {
         val percent = (clampedProgress * 100).toInt()
         val progressText = "$percent%"
 
-        val targetPage = "${context.packageName}.MainActivity"
-
-        val hintAction = "pause_resume"
-        val hintActionTitle = if (isPaused) "继续下载" else "暂停"
         val frontTitle = if (isPaused) "更新下载已暂停" else "正在后台下载更新"
 
-        val paramsJson = DOWNLOAD_TEMPLATE
-            .replace("{{ticker}}", progressText)
-            .replace("{{progressText}}", progressText)
-            .replace("{{frontTitle}}", frontTitle)
-            .replace("{{title}}", progressText)
-            .replace("{{content}}", "v$versionName")
-            .replace("{{chatTitle}}", progressText)
-            .replace("{{chatContent}}", "v$versionName 更新")
-            .replace("{{hintTitle}}", frontTitle)
-            .replace("{{hintAction}}", hintAction)
-            .replace("{{hintActionTitle}}", hintActionTitle)
-            .replace("{{progressPercent}}", percent.toString())
-            .replace("{{targetPage}}", targetPage)
+        val paramsJson = buildTemplateEightJson(
+            context = context,
+            business = "update",
+            ticker = progressText,
+            enableFloat = false,
+            aodTitle = progressText,
+            chatTitle = frontTitle,
+            chatContent = "v$versionName · $progressText",
+            hintTitle = "澎湃记",
+            islandTitle = progressText,
+            actionKey = ACT_VIEW,
+            actionTitle = "查看",
+        )
 
-        val picsBundle = buildPicsBundle(context, android.R.drawable.stat_sys_download)
-
-        val actionsBundle = Bundle().apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && pauseResumeIntent != null) {
-                putParcelable("miui.focus.action_pause_resume",
-                    Notification.Action.Builder(null, hintActionTitle, pauseResumeIntent).build())
-            }
-        }
+        val picsBundle = buildPicsBundle(context, R.mipmap.ic_launcher)
+        val actionsBundle = buildActionsBundle(
+            actionKey = ACT_VIEW,
+            actionTitle = "查看",
+            actionPendingIntent = contentIntent,
+            identityPI = null,
+            hasIdentity = false,
+        )
 
         val notification = Notification.Builder(context, channelId)
             .setContentTitle(frontTitle)
@@ -505,6 +425,7 @@ object SuperIslandHelper {
         isExpress: Boolean,
         completeAllPendingIntent: PendingIntent,
         groupDetailPendingIntent: PendingIntent,
+        qrDetailPendingIntent: PendingIntent?,
         identityChooserPendingIntent: PendingIntent?
     ): Notification {
         val codes = orders.take(3).joinToString(", ") { it.takeoutCode }
@@ -512,21 +433,34 @@ object SuperIslandHelper {
         val label = if (isExpress) "取件码" else "取餐码"
         val contentText = "$label: $codes$more"
         val iconRes = brandIconRes(context, group.brandName, group.orderType)
+        val hasQrCode = orders.any { !it.qrCodeData.isNullOrBlank() } && qrDetailPendingIntent != null
+        val actionKey = if (hasQrCode) ACT_QR else ACT_COMPLETE
+        val actionTitle = if (hasQrCode) "二维码" else "已完成"
+        val actionPendingIntent = if (hasQrCode) qrDetailPendingIntent else completeAllPendingIntent
 
         val picsBundle = buildPicsBundle(context, iconRes, brandIcon(context, group.brandName))
         val actionsBundle = buildActionsBundle(
-            context, iconRes,
-            completeAllPendingIntent, identityChooserPendingIntent, isExpress
+            actionKey = actionKey,
+            actionTitle = actionTitle,
+            actionPendingIntent = requireNotNull(actionPendingIntent),
+            identityPI = identityChooserPendingIntent,
+            hasIdentity = isExpress,
         )
-        val paramsJson = buildPickupJson(
+        val displayBrand = group.brandName ?: if (isExpress) "新包裹" else "新订单"
+        val statusTitle = if (isExpress) "${orders.size}个包裹待取" else "${orders.size}个订单待取"
+        val hintTitle = group.name.ifBlank { displayBrand }
+        val paramsJson = buildTemplateEightJson(
             context = context,
-            brand = group.brandName ?: if (isExpress) "新包裹" else "新订单",
-            contentText = contentText,
-            smallCode = codes,
-            isExpress = isExpress,
-            hasIdentity = isExpress && identityChooserPendingIntent != null,
-            pickupLocation = orders.firstNotNullOfOrNull { it.pickupLocation },
-            orderType = group.orderType
+            business = "pickup",
+            ticker = contentText,
+            enableFloat = true,
+            aodTitle = contentText,
+            chatTitle = statusTitle,
+            chatContent = contentText,
+            hintTitle = hintTitle,
+            islandTitle = if (orders.size > 1) "${orders.size}件" else codes,
+            actionKey = actionKey,
+            actionTitle = actionTitle,
         )
 
         val notification = Notification.Builder(context, channelId)

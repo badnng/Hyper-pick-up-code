@@ -72,10 +72,8 @@ import com.Badnng.moe.ui.miuix.MiuixFloatingNavigationBarStyle
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.component.CaptureModeItem
-import com.Badnng.moe.ui.component.ChoiceChip
 import com.Badnng.moe.ui.component.GroupPosition
 import com.Badnng.moe.ui.component.PreferenceSection
-import com.Badnng.moe.ui.component.PreferenceSwitchItem
 import com.Badnng.moe.ui.component.PrivacyConsentBottomSheet
 import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
@@ -96,18 +94,12 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
     val context = LocalContext.current; val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     val configuration = LocalConfiguration.current
     val isLargeScreen = configuration.screenWidthDp >= 700
-    val isFoldableDevice = remember(context) {
-        context.packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_HINGE_ANGLE)
-    }
     val hasVibrator = remember(context) {
         context.getSystemService(VibratorManager::class.java)
             ?.defaultVibrator
             ?.hasVibrator() == true
     }
     var navAlignment by remember { mutableStateOf(prefs.getString("nav_alignment", "center") ?: "center") }
-    var largeScreenNavAdaptiveEnabled by remember {
-        mutableStateOf(prefs.getBoolean("large_screen_nav_adaptive_enabled", true))
-    }
     var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "system") ?: "system") }
     var md3eMonetEnabled by remember {
         mutableStateOf(prefs.getBoolean(MD3E_MONET_ENABLED_KEY, true))
@@ -320,46 +312,25 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
                 }
             }
         } else {
-            PreferenceSection(title = "底栏位置") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (isLargeScreen || isFoldableDevice) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-                        ) {
-                            PreferenceSwitchItem(
-                                title = "底栏自适应",
-                                description = "根据主页纵向滑动区域自动切换底栏到左/中/右（仅 大屏/折叠 设备生效）",
-                                checked = largeScreenNavAdaptiveEnabled,
-                                onCheckedChange = {
-                                    largeScreenNavAdaptiveEnabled = it
-                                    prefs.edit().putBoolean("large_screen_nav_adaptive_enabled", it).apply()
-                                    performHaptic()
-                                }
-                            )
-                        }
-                    }
-                    AnimatedVisibility(
-                        visible = !(isLargeScreen || isFoldableDevice) || !largeScreenNavAdaptiveEnabled,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
-                    ) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("left" to "靠左", "center" to "居中", "right" to "靠右").forEach { (key, label) ->
-                                ChoiceChip(
-                                    label = label,
-                                    selected = navAlignment == key,
-                                    onClick = {
-                                        performHaptic()
-                                        navAlignment = key
-                                        prefs.edit().putString("nav_alignment", key).apply()
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
+            PreferenceSection(title = "底栏设置") {
+                SettingsGroup {
+                    SettingsGroupSwitchItem(
+                        title = "悬浮底栏",
+                        description = if (isLargeScreen) {
+                            "仅手机与小窗底部导航生效；大屏继续使用侧边导航"
+                        } else if (useFloatingNavBar) {
+                            "当前使用悬浮样式底栏"
+                        } else {
+                            "当前使用普通样式底栏"
+                        },
+                        position = GroupPosition.Single,
+                        checked = useFloatingNavBar,
+                        onCheckedChange = {
+                            performHaptic()
+                            useFloatingNavBar = it
+                            prefs.edit().putBoolean("use_floating_nav_bar", it).apply()
+                        },
+                    )
                 }
             }
         }

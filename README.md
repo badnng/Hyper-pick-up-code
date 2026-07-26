@@ -27,7 +27,7 @@
 
 ## 📌 项目简介
 
-**澎湃记** 是一款面向 Android 15 及更高版本的本地识别工具，用于从截图、分享图片、通知和文本中提取并管理外卖取餐码、快递取件码等信息。应用使用 PaddleOCR ncnn 进行本地文字识别，并通过 ML Kit 处理条码内容。
+**澎湃记** 是一款面向 Android 15 及更高版本的本地识别工具，用于从截图、分享图片、通知和文本中提取并管理外卖取餐码、快递取件码等信息。应用使用 PP-OCRv6 Tiny 与 ONNX Runtime 进行本地文字识别，并通过 ML Kit 处理条码内容。
 
 相比依赖云端识别的方案，本应用**完全本地运行**，具备：
 
@@ -80,7 +80,7 @@ app/src/main/
 │   │   ├── UpdateHelper.kt                # 应用更新
 │   │   └── BackupHelper.kt                # 备份恢复
 │   ├── ocr/
-│   │   ├── PaddleOcrHelper.kt             # PaddleOCR ncnn 封装
+│   │   ├── PaddleOcrHelper.kt             # PP-OCRv6 Tiny 官方 Android SDK 封装
 │   │   └── TextRecognitionHelper.kt       # 核心识别逻辑
 │   ├── receiver/
 │   │   ├── SmsRecognitionReceiver.kt      # 短信广播接收
@@ -137,7 +137,7 @@ app/src/main/
 ## ✨ 核心特性
 
 ### 🔍 智能识别
-- PaddleOCR ncnn 本地中文文字识别
+- PP-OCRv6 Tiny 本地多语言文字识别
 - ML Kit 条码与二维码扫描
 - 自动提取取餐码、取件码和快递单号
 - 支持从单张图片中识别多个号码
@@ -194,7 +194,7 @@ app/src/main/
 - [Jetpack Compose](https://developer.android.com/jetpack/compose) - Android 声明式 UI 框架
 - [Miuix](https://github.com/compose-miuix-ui/miuix) - Miuix UI 组件、效果与设计实现
 - [HyperCeiler](https://github.com/ReChronoRain/HyperCeiler) - OOBE 视觉效果与动画实现参考，详细归属见 [NOTICE](./NOTICE)
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 与 [Paddle4Android](https://github.com/equationl/paddleocr4android) - 本地 OCR 能力
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) - PP-OCRv6 Tiny 模型与 Android 部署实现
 - [Google ML Kit](https://developers.google.com/ml-kit) - 设备端条码识别
 - [Shizuku](https://github.com/RikkaApps/Shizuku) - 系统 API 权限能力
 - [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) - 液态玻璃与模糊效果参考

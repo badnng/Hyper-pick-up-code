@@ -983,6 +983,7 @@ data class PickupLocationConfig(
     val storeNameBonus: Int = 800,
     val storeNameMaxLen: Int = 12,
     val locationPrefixMarkers: List<String> = listOf("学院", "小区", "大厦", "花园", "广场", "商场", "市场", "医院", "学校", "大学", "中学", "小学", "幼儿园", "酒店", "宾馆", "饭店", "餐厅", "超市", "便利店", "驿站", "服务站"),
+    val trailingLabels: List<String> = listOf("联系地址", "门店地址", "店铺地址", "取货地址", "自提地址"),
     val scoring: PickupLocationScoringConfig = PickupLocationScoringConfig()
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
@@ -995,6 +996,7 @@ data class PickupLocationConfig(
         put("store_name_bonus", storeNameBonus)
         put("store_name_max_len", storeNameMaxLen)
         put("location_prefix_markers", JSONArray(locationPrefixMarkers))
+        put("trailing_labels", JSONArray(trailingLabels))
         put("scoring", scoring.toJson())
     }
 
@@ -1009,6 +1011,7 @@ data class PickupLocationConfig(
             storeNameBonus = json.optInt("store_name_bonus", 800),
             storeNameMaxLen = json.optInt("store_name_max_len", 12),
             locationPrefixMarkers = json.optJSONArray("location_prefix_markers")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: listOf("学院", "小区", "大厦", "花园", "广场", "商场", "市场", "医院", "学校", "大学", "中学", "小学", "幼儿园", "酒店", "宾馆", "饭店", "餐厅", "超市", "便利店", "驿站", "服务站"),
+            trailingLabels = json.optJSONArray("trailing_labels")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: listOf("联系地址", "门店地址", "店铺地址", "取货地址", "自提地址"),
             scoring = json.optJSONObject("scoring")?.let { PickupLocationScoringConfig.fromJson(it) } ?: PickupLocationScoringConfig()
         )
     }

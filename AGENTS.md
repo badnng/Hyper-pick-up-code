@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## 项目简介
 
-**澎湃记（Hyper Note）** — 一款 Android 应用，使用本地 OCR（PaddleOCR ncnn）和 ML Kit 条码扫描，从截图中自动识别餐饮外卖取餐码和快递单号。界面语言为中文。
+**澎湃记（Hyper Note）** — 一款 Android 应用，使用本地 OCR（PP-OCRv6 Tiny + ONNX Runtime）和 ML Kit 条码扫描，从截图中自动识别餐饮外卖取餐码和快递单号。界面语言为中文。
 
 ## 构建命令
 
@@ -28,7 +28,7 @@ Compose UI → StateFlow ← OrderViewModel → Repository → DAO → Room DB
 ```
 
 - **Room 数据库**（v5，含迁移路径 2→3→4→5）：`OrderEntity`（orders 表）和 `OrderGroup`（order_groups 表），外键设置级联删除
-- **PaddleOcrHelper**：单例（双重检查锁定），封装 PaddleOCR ncnn 用于中文文字识别
+- **PaddleOcrHelper**：单例，封装 PaddleOCR 官方 Android SDK 与 PP-OCRv6 Tiny ONNX 模型用于本地文字识别
 - **TextRecognitionHelper**：核心 OCR + 条码逻辑，`recognizeMultipleCodes()` 可从单张截图中返回多个取餐码
 - **前台服务**：`ScreenCaptureService`（MediaProjection）、`ShareRecognitionService`（共享图片）、`ProcessTextRecognitionService`（文本选择）
 - **Shizuku 集成**：通过 `ShizukuScreenshotHelper` 进行特权截图操作，并提供 `RootHelper` 作为 root 备用方案
@@ -76,7 +76,7 @@ Compose UI → StateFlow ← OrderViewModel → Repository → DAO → Room DB
 
 ## ProGuard
 
-Keep 规则对运行时至关重要 — ML Kit（`com.google.mlkit.**`）、PaddleOCR ncnn（`com.equationl.ncnnandroidppocr.**`）以及 ncnn 原生库（`org.ncnn.**`）不得被混淆。
+Keep 规则对运行时至关重要 — ML Kit（`com.google.mlkit.**`）、PaddleOCR SDK（`com.paddle.ocr.**`）以及 ONNX Runtime（`ai.onnxruntime.**`）不得被混淆。
 
 ## CI
 

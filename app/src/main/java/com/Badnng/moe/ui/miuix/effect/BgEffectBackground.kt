@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -37,12 +38,15 @@ fun BgEffectBackground(
     val runtimeShaderSupported = remember { isRuntimeShaderSupported() }
     val shaderSupported = visualEffectsAllowed && runtimeShaderSupported
     if (!shaderSupported) {
-        Box(modifier = modifier, content = content)
+        Box(
+            modifier = modifier.background(MiuixTheme.colorScheme.surface),
+            content = content,
+        )
         return
     }
 
-    Box(modifier = modifier) {
-        val surface = MiuixTheme.colorScheme.surface
+    val surface = MiuixTheme.colorScheme.surface
+    Box(modifier = modifier.background(surface)) {
         val configuration = LocalConfiguration.current
         val deviceType = if (configuration.screenWidthDp >= 600) DeviceType.PAD else DeviceType.PHONE
         val context = LocalContext.current
