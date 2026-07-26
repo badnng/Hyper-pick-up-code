@@ -24,7 +24,10 @@ object BrandIconResolver {
         "顺丰" to R.drawable.ic_sf_express, "菜鸟" to R.drawable.ic_cainiao,
         "丰巢" to R.drawable.ic_hive_box, "中国邮政" to R.drawable.ic_china_post,
         "沪上阿姨" to R.drawable.ic_hushang_ayi, "CoCo" to R.drawable.ic_coco,
-        "华莱士" to R.drawable.ic_wallace, "老乡鸡" to R.drawable.ic_lao_xiang_ji
+        "华莱士" to R.drawable.ic_wallace, "老乡鸡" to R.drawable.ic_lao_xiang_ji,
+        "一点点" to R.drawable.ic_yidiandian,
+        "申通" to R.drawable.ic_sto, "中通" to R.drawable.ic_zto,
+        "圆通" to R.drawable.ic_yto, "韵达" to R.drawable.ic_yunda
     )
 
     private val bitmapCache = android.util.LruCache<String, Bitmap>(50)

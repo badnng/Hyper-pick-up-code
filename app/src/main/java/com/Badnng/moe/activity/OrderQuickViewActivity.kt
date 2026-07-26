@@ -207,6 +207,11 @@ fun QuickViewDialogContent(order: OrderEntity, onDismiss: () -> Unit) {
             "CoCo" -> "ic_coco"
             "华莱士" -> "ic_wallace"
             "老乡鸡" -> "ic_lao_xiang_ji"
+            "一点点" -> "ic_yidiandian"
+            "申通" -> "ic_sto"
+            "中通" -> "ic_zto"
+            "圆通" -> "ic_yto"
+            "韵达" -> "ic_yunda"
             else -> null
         }
         val resId = if (resName != null) context.resources.getIdentifier(resName, "drawable", context.packageName) else 0
