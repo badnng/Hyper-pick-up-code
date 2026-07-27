@@ -397,9 +397,9 @@
         },
         "fallback_pattern": {
           "id": "food_fallback",
-          "regex": "(?<![a-zA-Z0-9])([A-Z0-9]{3,10})(?![a-zA-Z0-9])",
+          "regex": "(?<![a-zA-Z0-9])(?<![Nn][Oo][.．:：\\s])(?<![Nn][Oo][.．:：]\\s)([A-Z0-9]{3,10})(?![a-zA-Z0-9])",
           "priority": 5,
-          "description": "全文兜底",
+          "description": "全文兜底（排除 NO. 门店编号）",
           "weight_multiplier": 1
         }
       },

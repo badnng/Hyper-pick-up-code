@@ -10,9 +10,17 @@ import com.paddle.ocr.PaddleOCR
 import com.paddle.ocr.PaddleOCRConfig
 import com.paddle.ocr.model.OCRRunResult
 import com.paddle.ocr.util.OpenCVUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -25,6 +33,9 @@ class PaddleOcrHelper private constructor(private val context: Context) {
     private var ocr: PaddleOCR? = null
     private val initializationMutex = Mutex()
     private val recognitionMutex = Mutex()
+    private val releaseScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val idleReleaseLock = Any()
+    private var idleReleaseJob: Job? = null
 
     @Volatile
     private var initialized = false
@@ -86,7 +97,11 @@ class PaddleOcrHelper private constructor(private val context: Context) {
             Log.w(TAG, "检测到模拟器，跳过 PP-OCRv6 Tiny 初始化")
             return false
         }
-        if (initialized) return true
+        cancelIdleRelease()
+        if (initialized) {
+            scheduleIdleRelease()
+            return true
+        }
 
         return initializationMutex.withLock {
             if (initialized) return@withLock true
@@ -121,6 +136,7 @@ class PaddleOcrHelper private constructor(private val context: Context) {
                     "PP-OCRv6 Tiny 初始化成功, coldLoad=${newOcr.coldLoadTimeMs}ms, " +
                         "recThreshold=$OCR_MIN_CONFIDENCE",
                 )
+                scheduleIdleRelease()
                 true
             } catch (error: Throwable) {
                 ocr = null
@@ -134,10 +150,11 @@ class PaddleOcrHelper private constructor(private val context: Context) {
     fun init(): Boolean = runBlocking { initAsync() }
 
     suspend fun recognizeAsync(bitmap: Bitmap): RecognizeResult? {
-        if (!initialized && !initAsync()) return null
+        cancelIdleRelease()
         return recognitionMutex.withLock {
-            val currentOcr = ocr ?: return@withLock null
             try {
+                if (!initialized && !initAsync()) return@withLock null
+                val currentOcr = ocr ?: return@withLock null
                 val result = currentOcr.recognize(bitmap)
                 lastInferenceTimeMs = result.totalTimeMs
                 logRawResults(result)
@@ -145,6 +162,8 @@ class PaddleOcrHelper private constructor(private val context: Context) {
             } catch (error: Throwable) {
                 Log.e(TAG, "PP-OCRv6 Tiny 识别失败: ${error.message}", error)
                 null
+            } finally {
+                scheduleIdleRelease()
             }
         }
     }
@@ -154,10 +173,11 @@ class PaddleOcrHelper private constructor(private val context: Context) {
     }
 
     suspend fun recognizeDiagnosticAsync(bitmap: Bitmap): DiagnosticResult? {
-        if (!initialized && !initAsync()) return null
+        cancelIdleRelease()
         return recognitionMutex.withLock {
-            val currentOcr = ocr ?: return@withLock null
             try {
+                if (!initialized && !initAsync()) return@withLock null
+                val currentOcr = ocr ?: return@withLock null
                 val result = currentOcr.recognize(bitmap)
                 lastInferenceTimeMs = result.totalTimeMs
                 logRawResults(result)
@@ -181,6 +201,8 @@ class PaddleOcrHelper private constructor(private val context: Context) {
             } catch (error: Throwable) {
                 Log.e(TAG, "PP-OCRv6 Tiny 诊断识别失败: ${error.message}", error)
                 null
+            } finally {
+                scheduleIdleRelease()
             }
         }
     }
@@ -258,16 +280,58 @@ class PaddleOcrHelper private constructor(private val context: Context) {
         )
     }
 
-    fun close() {
-        runBlocking {
-            recognitionMutex.withLock {
-                initializationMutex.withLock {
-                    val current = ocr
-                    ocr = null
-                    initialized = false
-                    lastInferenceTimeMs = -1L
-                    current?.release()
+    fun close(reason: String = "explicit"): Boolean = runBlocking {
+        releaseResources(reason, cancelScheduledRelease = true)
+    }
+
+    private fun cancelIdleRelease() {
+        synchronized(idleReleaseLock) {
+            idleReleaseJob?.cancel()
+            idleReleaseJob = null
+        }
+    }
+
+    private fun scheduleIdleRelease() {
+        synchronized(idleReleaseLock) {
+            idleReleaseJob?.cancel()
+            idleReleaseJob = releaseScope.launch {
+                delay(IDLE_RELEASE_DELAY_MS)
+                releaseResources(
+                    reason = "idle-${IDLE_RELEASE_DELAY_MS}ms",
+                    cancelScheduledRelease = false,
+                )
+            }
+        }
+    }
+
+    private suspend fun releaseResources(
+        reason: String,
+        cancelScheduledRelease: Boolean,
+    ): Boolean {
+        if (cancelScheduledRelease) cancelIdleRelease()
+        return recognitionMutex.withLock {
+            initializationMutex.withLock initializationLock@{
+                if (cancelScheduledRelease) cancelIdleRelease()
+                val current = ocr ?: return@initializationLock false
+                ocr = null
+                initialized = false
+                lastInferenceTimeMs = -1L
+                val startedAt = android.os.SystemClock.elapsedRealtime()
+                runCatching {
+                    // 一旦开始释放就必须完成，避免新识别取消空闲任务后泄漏旧模型。
+                    withContext(NonCancellable) { current.release() }
                 }
+                    .onSuccess {
+                        Log.i(
+                            TAG,
+                            "PP-OCRv6 Tiny 资源释放完成, reason=$reason, " +
+                                "elapsed=${android.os.SystemClock.elapsedRealtime() - startedAt}ms",
+                        )
+                    }
+                    .onFailure { error ->
+                        Log.e(TAG, "PP-OCRv6 Tiny 资源释放失败, reason=$reason", error)
+                    }
+                    .isSuccess
             }
         }
     }
@@ -280,6 +344,7 @@ class PaddleOcrHelper private constructor(private val context: Context) {
         private const val DET_MODEL_ASSET = "models/ppocrv6_tiny/det/inference.onnx"
         private const val REC_MODEL_ASSET = "models/ppocrv6_tiny/rec/inference.onnx"
         private const val REC_CONFIG_ASSET = "models/ppocrv6_tiny/rec/inference.yml"
+        private const val IDLE_RELEASE_DELAY_MS = 60_000L
 
         @Volatile
         private var instance: PaddleOcrHelper? = null
@@ -294,5 +359,7 @@ class PaddleOcrHelper private constructor(private val context: Context) {
                 runBlocking { getInstance(context).initAsync() }
             }.start()
         }
+
+        fun releaseIfCreated(reason: String): Boolean = instance?.close(reason) ?: false
     }
 }

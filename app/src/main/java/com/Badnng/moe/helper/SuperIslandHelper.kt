@@ -53,8 +53,6 @@ object SuperIslandHelper {
     // ==================== 图片 Key 常量 ====================
     private const val PIC_PROFILE = "miui.focus.pic_profile"
     private const val PIC_ISLAND = "miui.focus.pic_island"
-    private const val PIC_TICKER = "miui.focus.pic_ticker"
-    private const val PIC_AOD = "miui.focus.pic_aod"
 
     // ==================== 动作 Key 常量 ====================
     private const val ACT_COMPLETE = "miui.focus.action_complete"
@@ -79,8 +77,6 @@ object SuperIslandHelper {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 putParcelable(PIC_PROFILE, mainIcon)
                 putParcelable(PIC_ISLAND, mainIcon)
-                putParcelable(PIC_TICKER, Icon.createWithResource(context, R.mipmap.ic_launcher))
-                putParcelable(PIC_AOD, Icon.createWithResource(context, R.mipmap.ic_launcher))
             }
         }
         return Bundle().apply { putBundle("miui.focus.pics", picsBundle) }
@@ -117,6 +113,7 @@ object SuperIslandHelper {
         "updatable": true,
         "ticker": {{ticker}},
         "enableFloat": {{enableFloat}},
+        {{showSmallIconEntry}}
         "isShowNotification": true,
         "islandFirstFloat": true,
         "aodTitle": {{aodTitle}},
@@ -169,6 +166,7 @@ object SuperIslandHelper {
         },
         "chatInfo": {
             "picProfile": "miui.focus.pic_profile",
+            "picProfileDark": "miui.focus.pic_profile",
             "title": {{chatTitle}},
             "content": {{chatContent}},
             "colorTitle": "#000000",
@@ -200,6 +198,7 @@ object SuperIslandHelper {
         business: String,
         ticker: String,
         enableFloat: Boolean,
+        showSmallIcon: Boolean?,
         aodTitle: String,
         chatTitle: String,
         chatContent: String,
@@ -209,10 +208,12 @@ object SuperIslandHelper {
         actionTitle: String,
     ): String {
         val targetPage = com.Badnng.moe.activity.MainActivity::class.java.name
+        val showSmallIconEntry = showSmallIcon?.let { "\"showSmallIcon\": $it," }.orEmpty()
         return TEMPLATE_EIGHT
             .replace("{{business}}", JSONObject.quote(business))
             .replace("{{ticker}}", JSONObject.quote(ticker))
             .replace("{{enableFloat}}", enableFloat.toString())
+            .replace("{{showSmallIconEntry}}", showSmallIconEntry)
             .replace("{{aodTitle}}", JSONObject.quote(aodTitle))
             .replace("{{chatTitle}}", JSONObject.quote(chatTitle))
             .replace("{{chatContent}}", JSONObject.quote(chatContent))
@@ -221,6 +222,17 @@ object SuperIslandHelper {
             .replace("{{actionKey}}", JSONObject.quote(actionKey))
             .replace("{{actionTitle}}", JSONObject.quote(actionTitle))
             .replace("{{targetPage}}", JSONObject.quote(targetPage))
+    }
+
+    private fun pickupHintTitle(
+        pickupLocation: String?,
+        isExpress: Boolean,
+        orderType: String?,
+    ): String = when {
+        !pickupLocation.isNullOrBlank() -> pickupLocation
+        isExpress -> "请仔细核对您的取件码"
+        orderType == "饮品" -> "请注意大堂/荧幕叫号"
+        else -> "请注意及时取餐"
     }
 
     // ==================== 发送测试通知 ====================
@@ -257,10 +269,11 @@ object SuperIslandHelper {
                     business = "pickup",
                     ticker = testContent,
                     enableFloat = true,
+                    showSmallIcon = false,
                     aodTitle = testContent,
-                    chatTitle = "待取件",
-                    chatContent = "取件码 TEST123456",
-                    hintTitle = "超级岛测试通知",
+                    chatTitle = "TEST123456",
+                    chatContent = "测试",
+                    hintTitle = pickupHintTitle(null, isExpress = true, orderType = "快递"),
                     islandTitle = "TEST123456",
                     actionKey = ACT_COMPLETE,
                     actionTitle = "已完成",
@@ -319,9 +332,22 @@ object SuperIslandHelper {
         val contentText = "$label: ${order.takeoutCode}"
         val iconRes = brandIconRes(context, brandName, order.orderType)
         val hasQrCode = !order.qrCodeData.isNullOrBlank() && qrDetailPendingIntent != null
-        val actionKey = if (hasQrCode) ACT_QR else ACT_COMPLETE
-        val actionTitle = if (hasQrCode) "二维码" else "已完成"
-        val actionPendingIntent = if (hasQrCode) qrDetailPendingIntent else completePendingIntent
+        val hasIdentityAction = isExpress && identityChooserPendingIntent != null
+        val actionKey = when {
+            hasQrCode -> ACT_QR
+            hasIdentityAction -> ACT_IDENTITY
+            else -> ACT_COMPLETE
+        }
+        val actionTitle = when {
+            hasQrCode -> "二维码"
+            hasIdentityAction -> "身份码"
+            else -> "已完成"
+        }
+        val actionPendingIntent = when {
+            hasQrCode -> qrDetailPendingIntent
+            hasIdentityAction -> identityChooserPendingIntent
+            else -> completePendingIntent
+        }
 
         val picsBundle = buildPicsBundle(context, iconRes, brandIcon(context, brandName))
         val actionsBundle = buildActionsBundle(
@@ -329,19 +355,19 @@ object SuperIslandHelper {
             actionTitle = actionTitle,
             actionPendingIntent = requireNotNull(actionPendingIntent),
             identityPI = identityChooserPendingIntent,
-            hasIdentity = isExpress,
+            hasIdentity = isExpress && actionKey != ACT_IDENTITY,
         )
         val displayBrand = brandName ?: if (isExpress) "新包裹" else "新订单"
-        val statusTitle = if (isExpress) "待取件" else "待取餐"
-        val hintTitle = order.pickupLocation?.takeIf(String::isNotBlank) ?: displayBrand
+        val hintTitle = pickupHintTitle(order.pickupLocation, isExpress, order.orderType)
         val paramsJson = buildTemplateEightJson(
             context = context,
             business = "pickup",
             ticker = contentText,
             enableFloat = true,
+            showSmallIcon = false,
             aodTitle = contentText,
-            chatTitle = statusTitle,
-            chatContent = contentText,
+            chatTitle = order.takeoutCode,
+            chatContent = displayBrand,
             hintTitle = hintTitle,
             islandTitle = order.takeoutCode,
             actionKey = actionKey,
@@ -383,6 +409,7 @@ object SuperIslandHelper {
             business = "update",
             ticker = progressText,
             enableFloat = false,
+            showSmallIcon = null,
             aodTitle = progressText,
             chatTitle = frontTitle,
             chatContent = "v$versionName · $progressText",
@@ -434,9 +461,22 @@ object SuperIslandHelper {
         val contentText = "$label: $codes$more"
         val iconRes = brandIconRes(context, group.brandName, group.orderType)
         val hasQrCode = orders.any { !it.qrCodeData.isNullOrBlank() } && qrDetailPendingIntent != null
-        val actionKey = if (hasQrCode) ACT_QR else ACT_COMPLETE
-        val actionTitle = if (hasQrCode) "二维码" else "已完成"
-        val actionPendingIntent = if (hasQrCode) qrDetailPendingIntent else completeAllPendingIntent
+        val hasIdentityAction = isExpress && identityChooserPendingIntent != null
+        val actionKey = when {
+            hasQrCode -> ACT_QR
+            hasIdentityAction -> ACT_IDENTITY
+            else -> ACT_COMPLETE
+        }
+        val actionTitle = when {
+            hasQrCode -> "二维码"
+            hasIdentityAction -> "身份码"
+            else -> "已完成"
+        }
+        val actionPendingIntent = when {
+            hasQrCode -> qrDetailPendingIntent
+            hasIdentityAction -> identityChooserPendingIntent
+            else -> completeAllPendingIntent
+        }
 
         val picsBundle = buildPicsBundle(context, iconRes, brandIcon(context, group.brandName))
         val actionsBundle = buildActionsBundle(
@@ -444,19 +484,22 @@ object SuperIslandHelper {
             actionTitle = actionTitle,
             actionPendingIntent = requireNotNull(actionPendingIntent),
             identityPI = identityChooserPendingIntent,
-            hasIdentity = isExpress,
+            hasIdentity = isExpress && actionKey != ACT_IDENTITY,
         )
         val displayBrand = group.brandName ?: if (isExpress) "新包裹" else "新订单"
-        val statusTitle = if (isExpress) "${orders.size}个包裹待取" else "${orders.size}个订单待取"
-        val hintTitle = group.name.ifBlank { displayBrand }
+        val pickupLocation = orders.firstNotNullOfOrNull { order ->
+            order.pickupLocation?.takeIf(String::isNotBlank)
+        }
+        val hintTitle = pickupHintTitle(pickupLocation, isExpress, group.orderType)
         val paramsJson = buildTemplateEightJson(
             context = context,
             business = "pickup",
             ticker = contentText,
             enableFloat = true,
+            showSmallIcon = false,
             aodTitle = contentText,
-            chatTitle = statusTitle,
-            chatContent = contentText,
+            chatTitle = codes,
+            chatContent = displayBrand,
             hintTitle = hintTitle,
             islandTitle = if (orders.size > 1) "${orders.size}件" else codes,
             actionKey = actionKey,

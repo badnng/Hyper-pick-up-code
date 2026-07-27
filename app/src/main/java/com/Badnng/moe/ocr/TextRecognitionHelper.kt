@@ -28,9 +28,7 @@ class TextRecognitionHelper(private val context: Context) {
     private val expressBrandKeywords get() = engine.getAllExpressKeywords()
     private val homePageKeywords get() = engine.getHomepageKeywords()
 
-    /**
-     * 初始化 OCR 引擎（需要在应用启动时调用）
-     */
+    /** 可选的 OCR 预热；正常识别会按需自动初始化。 */
     suspend fun initOcr(): Boolean = paddleOcr.initAsync()
 
     /**
@@ -46,17 +44,6 @@ class TextRecognitionHelper(private val context: Context) {
 
     suspend fun recognizeAll(bitmap: Bitmap, sourceApp: String? = null, sourcePkg: String? = null, existingOcr: OcrResult? = null): Pair<RecognitionResult, OcrResult> {
         Log.d("RecognitionMonitor", "=== recognizeAll 开始 ===")
-
-        // 确保 OCR 已初始化（最多等待 3 秒）
-        var waitCount = 0
-        while (!paddleOcr.isInitialized && waitCount < 30) {
-            kotlinx.coroutines.delay(100)
-            waitCount++
-        }
-        if (!paddleOcr.isInitialized) {
-            Log.e("RecognitionMonitor", "OCR 未初始化，尝试同步初始化")
-            paddleOcr.initAsync()
-        }
 
         // 使用已有的 OCR 结果或重新识别
         val ocrResult: OcrResult
@@ -427,7 +414,7 @@ class TextRecognitionHelper(private val context: Context) {
         val forwardCompiled = keywordPatternConfig?.let { engine.getCompiledPattern("${it.id}_forward") }
         val reverseCompiled = keywordPatternConfig?.let { engine.getCompiledPattern("${it.id}_reverse") }
 
-        var targetKeywordRect: android.graphics.Rect? = null
+        val targetKeywordRects = mutableListOf<android.graphics.Rect>()
 
         // 第一步：精确从关键词后截取
         for (block in blocks) {
@@ -451,7 +438,7 @@ class TextRecognitionHelper(private val context: Context) {
                 }
             }
             val matchedKeyword = foodKeywords.firstOrNull { text.contains(it) } ?: continue
-            targetKeywordRect = block.boundingBox
+            block.boundingBox?.let(targetKeywordRects::add)
             val afterKeyword = text.substringAfter(matchedKeyword).trimStart(':', '：', ' ')
             // 口令型取餐码（如 M707.你的脚步有力量）优先提取完整文本
             if (sloganCompiled != null) {
@@ -473,13 +460,16 @@ class TextRecognitionHelper(private val context: Context) {
         }
 
         // 第二步：在关键词附近 block 中搜索
-        if (targetKeywordRect != null) {
+        if (targetKeywordRects.isNotEmpty()) {
             val standalonePattern = Regex(foodConfig.standaloneCodePattern)
             val candidates = blocks.mapNotNull { block ->
                 val box = block.boundingBox ?: return@mapNotNull null
                 val text = applyCorrections(block.text).replace(" ", "").replace("\n", "")
                 if (standalonePattern.matches(text) && !isInvalidFoodCode(text, text, detectedBrand)) {
-                    val dist = Math.abs((box.top + box.bottom) / 2 - (targetKeywordRect!!.top + targetKeywordRect!!.bottom) / 2)
+                    val blockCenterY = (box.top + box.bottom) / 2
+                    val dist = targetKeywordRects.minOf { keywordRect ->
+                        Math.abs(blockCenterY - (keywordRect.top + keywordRect.bottom) / 2)
+                    }
                     if (dist < foodConfig.nearbyBlockDistance) text to dist else null
                 } else null
             }.sortedBy { it.second }
@@ -499,7 +489,12 @@ class TextRecognitionHelper(private val context: Context) {
                     val aroundStart = (match.range.first - foodConfig.keywordContextRange).coerceAtLeast(0)
                     val aroundEnd = (match.range.last + foodConfig.keywordContextRange).coerceAtMost(text.lastIndex)
                     val around = text.substring(aroundStart, aroundEnd + 1)
-                    val nearKeyword = foodKeywords.any { around.contains(it) }
+                    val blockCenterY = block.boundingBox?.let { (it.top + it.bottom) / 2 }
+                    val nearKeywordBlock = blockCenterY != null && targetKeywordRects.any { keywordRect ->
+                        Math.abs(blockCenterY - (keywordRect.top + keywordRect.bottom) / 2) <
+                            foodConfig.nearbyBlockDistance
+                    }
+                    val nearKeyword = nearKeywordBlock || foodKeywords.any { around.contains(it) }
                     if (!nearKeyword) return@mapNotNull null
                 }
                 if (isInvalidFoodCode(value, text, detectedBrand)) return@mapNotNull null
@@ -1129,17 +1124,7 @@ class TextRecognitionHelper(private val context: Context) {
     suspend fun recognizeMultipleCodes(bitmap: Bitmap, sourceApp: String? = null, sourcePkg: String? = null): MultiRecognitionResult {
         Log.d("RecognitionMonitor", "=== recognizeMultipleCodes 开始 ===")
 
-        // 确保 OCR 已初始化
-        var waitCount = 0
-        while (!paddleOcr.isInitialized && waitCount < 30) {
-            kotlinx.coroutines.delay(100)
-            waitCount++
-        }
-        if (!paddleOcr.isInitialized) {
-            paddleOcr.initAsync()
-        }
-
-        // 使用 PaddleOCR 进行文字识别
+        // PaddleOCR 会按需初始化，并在空闲后自动释放。
         val ocrResult = paddleOcr.recognizeAsync(bitmap)
         val rawFullText = ocrResult?.fullText ?: ""
         val textBlocks = ocrResult?.textBlocks ?: emptyList()
@@ -1301,7 +1286,7 @@ class TextRecognitionHelper(private val context: Context) {
     
     fun close() {
         barcodeScanner?.close()
-        // 不要关闭 paddleOcr，因为它是单例，应该保持初始化状态
+        // PaddleOCR 为进程级单例，由 PaddleOcrHelper 统一执行并发安全的空闲释放。
     }
 }
 

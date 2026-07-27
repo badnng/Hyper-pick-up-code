@@ -14,6 +14,7 @@ import android.os.IBinder
 import android.os.Parcel
 import android.os.SystemClock
 import android.util.Log
+import com.Badnng.moe.ocr.PaddleOcrHelper
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Handles HyperOS fair-memory warnings without blocking the main thread. */
@@ -210,6 +211,13 @@ object FairMemoryManager {
         val startedAt = SystemClock.elapsedRealtime()
         val before = memorySnapshot()
         val clearedIcons = BrandIconResolver.clearMemoryCache()
+        val ocrReleased = if (disableVisualEffects) {
+            PaddleOcrHelper.releaseIfCreated(
+                reason = "memory-${event.operation}-${event.notifyId}",
+            )
+        } else {
+            false
+        }
         if (disableVisualEffects) {
             AppMemoryPressureState.enterPressureMode(
                 allowRecovery = event.operation != "kill",
@@ -232,7 +240,8 @@ object FairMemoryManager {
                 "reportedPssLimitKb=${event.reported.pssLimitKb}, " +
                 "reportedHeapKb=${event.reported.heapAllocKb}, " +
                 "reportedHeapLimitKb=${event.reported.heapCapacityKb}, " +
-                "clearedIcons=$clearedIcons, visualEffectsDisabled=$disableVisualEffects, " +
+                "clearedIcons=$clearedIcons, ocrReleased=$ocrReleased, " +
+                "visualEffectsDisabled=$disableVisualEffects, " +
                 "elapsedMs=${SystemClock.elapsedRealtime() - startedAt}",
         )
     }

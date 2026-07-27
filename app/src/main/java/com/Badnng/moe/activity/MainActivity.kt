@@ -35,7 +35,6 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.EdgeToEdgeHelper
 import com.Badnng.moe.helper.StorageCleanupHelper
-import com.Badnng.moe.ocr.PaddleOcrHelper
 import com.Badnng.moe.rules.RecognitionRuleEngine
 import com.Badnng.moe.service.ScreenCaptureService
 import com.Badnng.moe.ui.screen.HomeScreen
@@ -160,11 +159,6 @@ class MainActivity : ComponentActivity() {
 
         // 检查是否从通知进入
         isFromNotification = intent?.getBooleanExtra("from_notification", false) == true
-
-        // 异步初始化 PaddleOCR（只需一次）
-        lifecycleScope.launch {
-            PaddleOcrHelper.getInstance(applicationContext).initAsync()
-        }
 
         // 启动保活服务（仅在开启时）
         val keepAlivePrefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
