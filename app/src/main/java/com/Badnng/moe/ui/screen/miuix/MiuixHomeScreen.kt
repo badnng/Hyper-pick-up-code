@@ -1,5 +1,6 @@
 package com.Badnng.moe.ui.screen.miuix
 
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -95,21 +96,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation3.runtime.NavKey
-import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.runtime.entryProvider
-import androidx.navigation3.runtime.rememberDecoratedNavEntries
-import androidx.navigation3.runtime.rememberNavBackStack
-import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
-import androidx.navigation3.scene.Scene
-import androidx.navigation3.scene.SceneStrategy
-import androidx.navigation3.scene.SceneStrategyScope
-import androidx.navigation3.ui.NavDisplay
-import androidx.navigation3.ui.NavDisplayTransitionEffects
-import androidx.navigation3.ui.defaultPopTransitionSpec
-import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
-import androidx.navigation3.ui.defaultTransitionSpec
+import top.yukonga.miuix.kmp.nav.core.NavDisplay
+import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
+import top.yukonga.miuix.kmp.nav.core.NavKey
+import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
+import top.yukonga.miuix.kmp.nav.transition.NavTransitions
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.data.db.OrderDatabase
@@ -121,6 +114,8 @@ import com.Badnng.moe.ui.miuix.liquid.IosLiquidGlassNavigationBar
 import com.Badnng.moe.ui.screen.rememberSaveablePagerState
 import com.Badnng.moe.ui.screen.settings.AboutSettingsContent
 import com.Badnng.moe.ui.screen.settings.SettingsPage
+import com.Badnng.moe.rules.SimpleRuleCategory
+import com.Badnng.moe.ui.component.SimpleRuleCenterPage
 import com.Badnng.moe.viewmodel.OrderViewModel
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
@@ -133,7 +128,6 @@ import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import kotlin.math.roundToInt
-import androidx.savedstate.serialization.SavedStateConfiguration
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
@@ -166,6 +160,17 @@ import top.yukonga.miuix.kmp.basic.FloatingToolbarDefaults
 
 // 顶层路由
 @Serializable
+enum class RuleSubPageKind {
+    Category,
+    CreateBrand,
+    Brand,
+    CreateTemplate,
+    Template,
+    BlockedWords,
+    CustomIcons,
+}
+
+@Serializable
 sealed interface HomeRoute : NavKey {
     @Serializable
     data object Main : HomeRoute
@@ -174,10 +179,58 @@ sealed interface HomeRoute : NavKey {
     data class SettingsSubPage(val page: SettingsPage) : HomeRoute
 
     @Serializable
+    data class RuleSubPage(
+        val kind: RuleSubPageKind,
+        val category: String = "",
+        val brandId: String = "",
+        val templateId: String = "",
+    ) : HomeRoute
+
+    @Serializable
+    data class RecognitionCorrectionEditor(val orderId: String) : HomeRoute
+
+    @Serializable
     data class OrderDetail(val orderId: String) : HomeRoute
 
     @Serializable
     data class GroupDetail(val groupId: Long) : HomeRoute
+}
+
+private fun SimpleRuleCenterPage.toHomeRoute(): HomeRoute.RuleSubPage = when (this) {
+    SimpleRuleCenterPage.Root -> error("规则主页不能作为二级路由")
+    is SimpleRuleCenterPage.Category -> HomeRoute.RuleSubPage(
+        kind = RuleSubPageKind.Category,
+        category = category.name,
+    )
+    is SimpleRuleCenterPage.CreateBrand -> HomeRoute.RuleSubPage(
+        kind = RuleSubPageKind.CreateBrand,
+        category = category.name,
+    )
+    is SimpleRuleCenterPage.Brand -> HomeRoute.RuleSubPage(
+        kind = RuleSubPageKind.Brand,
+        brandId = brandId,
+    )
+    is SimpleRuleCenterPage.CreateTemplate -> HomeRoute.RuleSubPage(
+        kind = RuleSubPageKind.CreateTemplate,
+        brandId = brandId,
+    )
+    is SimpleRuleCenterPage.Template -> HomeRoute.RuleSubPage(
+        kind = RuleSubPageKind.Template,
+        brandId = brandId,
+        templateId = templateId,
+    )
+    SimpleRuleCenterPage.BlockedWords -> HomeRoute.RuleSubPage(kind = RuleSubPageKind.BlockedWords)
+    SimpleRuleCenterPage.CustomIcons -> HomeRoute.RuleSubPage(kind = RuleSubPageKind.CustomIcons)
+}
+
+private fun HomeRoute.RuleSubPage.toRulePage(): SimpleRuleCenterPage = when (kind) {
+    RuleSubPageKind.Category -> SimpleRuleCenterPage.Category(SimpleRuleCategory.valueOf(category))
+    RuleSubPageKind.CreateBrand -> SimpleRuleCenterPage.CreateBrand(SimpleRuleCategory.valueOf(category))
+    RuleSubPageKind.Brand -> SimpleRuleCenterPage.Brand(brandId)
+    RuleSubPageKind.CreateTemplate -> SimpleRuleCenterPage.CreateTemplate(brandId)
+    RuleSubPageKind.Template -> SimpleRuleCenterPage.Template(brandId, templateId)
+    RuleSubPageKind.BlockedWords -> SimpleRuleCenterPage.BlockedWords
+    RuleSubPageKind.CustomIcons -> SimpleRuleCenterPage.CustomIcons
 }
 
 @Composable
@@ -250,9 +303,9 @@ fun MiuixHomeScreen(
         isLargeScreenWindow && !useFloatingNavBar
     val compactNavigationRail = supportsNavigationRail &&
         configuration.screenWidthDp < MIUIX_FIXED_NAVIGATION_RAIL_MIN_WIDTH_DP
-    // 二级页在所有大屏侧栏模式下都与主内容并排。固定侧栏占一列形成三段式；
-    // 紧凑窗口的侧栏覆盖在主内容上，不占列宽，因此底层保持主内容/二级页两段式。
-    val supportsSupportingPane = supportsNavigationRail
+    // miuix-nav 0.9.4-rc01 不再暴露 Navigation3 的 SceneStrategy 扩展点；
+    // 二级页统一使用完整页面呈现，避免把旧 SceneStrategy API 残留到新导航运行时。
+    val supportsSupportingPane = false
     val navigationRailState = rememberNavigationRailState(
         initialValue = if (compactNavigationRail) {
             NavigationRailValue.Collapsed
@@ -268,25 +321,7 @@ fun MiuixHomeScreen(
         }
     }
 
-    val serializersModule = remember {
-        SerializersModule {
-            polymorphic(NavKey::class) {
-                subclass(HomeRoute.Main::class)
-                subclass(HomeRoute.SettingsSubPage::class)
-                subclass(HomeRoute.OrderDetail::class)
-                subclass(HomeRoute.GroupDetail::class)
-            }
-        }
-    }
-    val savedStateConfig = remember(serializersModule) {
-        SavedStateConfiguration {
-            this.serializersModule = serializersModule
-        }
-    }
-    val backStack = rememberNavBackStack(
-        configuration = savedStateConfig,
-        HomeRoute.Main,
-    )
+    val backStack = rememberNavBackStack<HomeRoute>(HomeRoute.Main)
     val closeDetailPane = {
         while (backStack.size > 1) backStack.removeLastOrNull()
     }
@@ -303,14 +338,17 @@ fun MiuixHomeScreen(
     val latestPagerState by rememberUpdatedState(pagerState)
     val latestIsFolded by rememberUpdatedState(isFolded)
 
-    val homeEntryProvider = remember(
-        backStack,
-        navigationRailState,
+    NavDisplay(
+        backStack = backStack,
+        onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+        transition = NavTransitions.MiuixDefault,
+        effects = NavDisplayEffects(
+            enableCornerClip = true,
+            dimAmount = 0.5f,
+            blockInputDuringTransition = false,
+        ),
     ) {
-        entryProvider<NavKey> {
-            entry<HomeRoute.Main>(
-                metadata = mapOf(MIUIX_PANE_ROLE_METADATA to MiuixHomePaneRole.Main),
-            ) {
+            entry<HomeRoute.Main> {
                 MiuixMainContent(
                     modifier = latestModifier,
                     intentToProcess = latestIntentToProcess,
@@ -330,6 +368,9 @@ fun MiuixHomeScreen(
                     onNavigateToSettingsSubPage = { page ->
                         backStack.add(HomeRoute.SettingsSubPage(page))
                     },
+                    onNavigateToRuleSubPage = { page ->
+                        backStack.add(page.toHomeRoute())
+                    },
                     onNavigateToOrderDetail = { orderId ->
                         backStack.add(HomeRoute.OrderDetail(orderId))
                     },
@@ -338,21 +379,40 @@ fun MiuixHomeScreen(
                     }
                 )
             }
-            entry<HomeRoute.SettingsSubPage>(
-                metadata = mapOf(MIUIX_PANE_ROLE_METADATA to MiuixHomePaneRole.Detail),
-            ) { route ->
+            entry<HomeRoute.RuleSubPage> { route ->
+                com.Badnng.moe.ui.screen.miuix.MiuixRuleSubPageScreen(
+                    page = route.toRulePage(),
+                    supportingPane = latestSupportsSupportingPane,
+                    onBack = { backStack.removeLastOrNull() },
+                    onNavigate = { page -> backStack.add(page.toHomeRoute()) },
+                    onReplace = { page ->
+                        backStack.removeLastOrNull()
+                        backStack.add(page.toHomeRoute())
+                    },
+                )
+            }
+            entry<HomeRoute.SettingsSubPage> { route ->
                 MiuixSettingsSubPageDirect(
                     page = route.page,
                     supportingPane = latestSupportsSupportingPane,
                     onBack = { backStack.removeLastOrNull() },
                     onNavigate = { page ->
                         backStack.add(HomeRoute.SettingsSubPage(page))
-                    }
+                    },
+                    onOpenCorrectionDraft = { orderId ->
+                        backStack.add(HomeRoute.RecognitionCorrectionEditor(orderId))
+                    },
                 )
             }
-            entry<HomeRoute.OrderDetail>(
-                metadata = mapOf(MIUIX_PANE_ROLE_METADATA to MiuixHomePaneRole.Detail),
-            ) { route ->
+            entry<HomeRoute.RecognitionCorrectionEditor> { route ->
+                MiuixSettingsSubPageDirect(
+                    page = SettingsPage.RecognitionCorrection,
+                    correctionOrderId = route.orderId,
+                    supportingPane = latestSupportsSupportingPane,
+                    onBack = { backStack.removeLastOrNull() },
+                )
+            }
+            entry<HomeRoute.OrderDetail> { route ->
                 val context = LocalContext.current
                 val order = remember(route.orderId) {
                     runBlocking { OrderDatabase.getDatabase(context).orderDao().getOrderById(route.orderId) }
@@ -365,9 +425,7 @@ fun MiuixHomeScreen(
                     )
                 }
             }
-            entry<HomeRoute.GroupDetail>(
-                metadata = mapOf(MIUIX_PANE_ROLE_METADATA to MiuixHomePaneRole.Detail),
-            ) { route ->
+            entry<HomeRoute.GroupDetail> { route ->
                 val context = LocalContext.current
                 val db = remember { OrderDatabase.getDatabase(context) }
                 val group = remember(route.groupId) {
@@ -405,78 +463,6 @@ fun MiuixHomeScreen(
                     )
                 }
             }
-        }
-    }
-
-    val entries = rememberDecoratedNavEntries(
-        backStack = backStack,
-        entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
-        entryProvider = homeEntryProvider,
-    )
-    val displayedEntries = if (predictiveBackEnabled || supportsNavigationRail) {
-        entries
-    } else {
-        entries.takeLast(1)
-    }
-    val supportingPaneSceneStrategy = remember(supportsSupportingPane) {
-        MiuixSupportingPaneSceneStrategy(
-            enabled = supportsSupportingPane,
-        )
-    }
-    val navDisplayTransitionEffects = remember {
-        NavDisplayTransitionEffects(
-            enableCornerClip = true,
-            dimAmount = 0.5f,
-            blockInputDuringTransition = false,
-            popDirectionFollowsSwipeEdge = false,
-        )
-    }
-    val standardTransitionSpec = remember { defaultTransitionSpec<NavKey>() }
-    val standardPopTransitionSpec = remember { defaultPopTransitionSpec<NavKey>() }
-    val standardPredictivePopTransitionSpec = remember {
-        defaultPredictivePopTransitionSpec<NavKey>()
-    }
-    // 始终保留同一个 NavDisplay。若按窗口形态切换两个 NavDisplay，旧场景退场与
-    // 新场景首帧会同时持有 Main/二级页，从而重复注册 SaveableState key。
-    NavDisplay(
-        entries = displayedEntries,
-        onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
-        sceneStrategies = listOf(supportingPaneSceneStrategy),
-        transitionSpec = {
-            val windowLayoutChanged =
-                initialState is MiuixSupportingPaneScene ||
-                    targetState is MiuixSupportingPaneScene
-            if (supportsSupportingPane || windowLayoutChanged) {
-                EnterTransition.None togetherWith ExitTransition.None
-            } else {
-                standardTransitionSpec.invoke(this)
-            }
-        },
-        popTransitionSpec = {
-            val windowLayoutChanged =
-                initialState is MiuixSupportingPaneScene ||
-                    targetState is MiuixSupportingPaneScene
-            if (supportsSupportingPane || windowLayoutChanged) {
-                EnterTransition.None togetherWith ExitTransition.None
-            } else {
-                standardPopTransitionSpec.invoke(this)
-            }
-        },
-        predictivePopTransitionSpec = { progress ->
-            val windowLayoutChanged =
-                initialState is MiuixSupportingPaneScene ||
-                    targetState is MiuixSupportingPaneScene
-            if (supportsSupportingPane || windowLayoutChanged) {
-                EnterTransition.None togetherWith ExitTransition.None
-            } else {
-                standardPredictivePopTransitionSpec.invoke(this, progress)
-            }
-        },
-        transitionEffects = navDisplayTransitionEffects,
-    )
-
-    BackHandler(enabled = !predictiveBackEnabled && backStack.size > 1) {
-        backStack.removeLastOrNull()
     }
 }
 
@@ -496,6 +482,7 @@ private fun MiuixMainContent(
     isFolded: Boolean,
     onTopLevelPageChanged: (Int) -> Unit = {},
     onNavigateToSettingsSubPage: (SettingsPage) -> Unit,
+    onNavigateToRuleSubPage: (SimpleRuleCenterPage) -> Unit,
     onNavigateToOrderDetail: (String) -> Unit = {},
     onNavigateToGroupDetail: (Long) -> Unit = {}
 ) {
@@ -535,7 +522,12 @@ private fun MiuixMainContent(
         }
     }
     val haptic = LocalHapticFeedback.current
-    val viewModel: OrderViewModel = viewModel()
+    val orderViewModelFactory = remember(context) {
+        ViewModelProvider.AndroidViewModelFactory.getInstance(
+            context.applicationContext as Application,
+        )
+    }
+    val viewModel: OrderViewModel = viewModel(factory = orderViewModelFactory)
 
     // 大屏自适应底栏
     var largeScreenNavAdaptiveEnabled by remember {
@@ -923,12 +915,16 @@ private fun MiuixMainContent(
                                 navAlignment = effectiveNavAlignment,
                                 useFloatingNavBar = useFloatingNavBar,
                                 onQrDialogVisibilityChange = { isQrDialogVisible = it },
+                                onNavigateToRecognitionCorrection = {
+                                    onNavigateToSettingsSubPage(SettingsPage.RecognitionCorrection)
+                                },
                                 onNavigateToOrderDetail = onNavigateToOrderDetail,
                                 onNavigateToGroupDetail = onNavigateToGroupDetail
                             )
                             1 -> MiuixRulesScreen(
                                 bottomLayoutInfo = bottomLayoutInfo,
                                 onExpandNavigationRail = onExpandNavigationRail,
+                                onNavigateToSubPage = onNavigateToRuleSubPage,
                                 onShowMenu = { position, rename, delete, export ->
                                     rulesMenuPosition = position
                                     rulesMenuRename = rename
@@ -1160,7 +1156,7 @@ private fun MiuixMainContent(
         }
 
         // 添加记录底部弹窗
-        val addOrderViewModel: OrderViewModel = viewModel()
+        val addOrderViewModel: OrderViewModel = viewModel(factory = orderViewModelFactory)
         com.Badnng.moe.ui.component.AddOrderBottomSheet(
             show = showBottomSheet,
             viewModel = addOrderViewModel,
@@ -1349,160 +1345,6 @@ private data class MiuixBottomBarMeasurement(
     val rootWidthPx: Int,
 )
 
-private enum class MiuixHomePaneRole {
-    Main,
-    Detail,
-}
-
-private data class MiuixSupportingPaneSceneKey(
-    val mainContentKey: Any,
-)
-
-private data class MiuixDetailPaneTarget(
-    val entry: NavEntry<NavKey>,
-    val depth: Int,
-)
-
-/**
- * Miuix 大屏主内容/二级页场景。左侧 NavigationRail 仍由主入口负责，这里只把
- * 主入口和最后一个二级入口排列为中、右两栏。
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private class MiuixSupportingPaneScene(
-    private val mainEntry: NavEntry<NavKey>,
-    private val detailEntry: NavEntry<NavKey>?,
-    private val detailDepth: Int,
-    override val previousEntries: List<NavEntry<NavKey>>,
-) : Scene<NavKey> {
-    override val key: Any = MiuixSupportingPaneSceneKey(
-        mainContentKey = mainEntry.contentKey,
-    )
-    override val entries: List<NavEntry<NavKey>> = listOfNotNull(mainEntry, detailEntry)
-    override val content: @Composable () -> Unit = {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val motionScheme = MaterialTheme.motionScheme
-            // 与 Miuix NavigationRail 内部 RailExpandSpring 完全相同的阻尼和响应参数。
-            val navigationRailPaneSpatialSpec = remember {
-                folmeSpring(
-                    damping = 1f,
-                    response = 0.35f,
-                    visibilityThreshold = IntSize(1, 1),
-                )
-            }
-            // 右侧详情略宽于中间列表，同时给设置列表保留更舒展的可用宽度。
-            val detailPaneWidth = (maxWidth * 0.42f).coerceIn(360.dp, 600.dp)
-            val currentDetailTarget = detailEntry?.let {
-                MiuixDetailPaneTarget(entry = it, depth = detailDepth)
-            }
-            var retainedDetailTarget by remember { mutableStateOf(currentDetailTarget) }
-            if (currentDetailTarget != null) {
-                SideEffect { retainedDetailTarget = currentDetailTarget }
-            }
-            val renderedDetailTarget = currentDetailTarget ?: retainedDetailTarget
-            Row(modifier = Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                ) {
-                    mainEntry.Content()
-                }
-                AnimatedVisibility(
-                    visible = currentDetailTarget != null,
-                    enter = expandHorizontally(
-                        animationSpec = navigationRailPaneSpatialSpec,
-                        expandFrom = Alignment.End,
-                    ),
-                    exit = shrinkHorizontally(
-                        animationSpec = navigationRailPaneSpatialSpec,
-                        shrinkTowards = Alignment.End,
-                    ),
-                ) {
-                    Row(modifier = Modifier.fillMaxHeight()) {
-                        Spacer(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .fillMaxHeight()
-                                .background(MiuixTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                        )
-                        Box(
-                            modifier = Modifier
-                                .width(detailPaneWidth)
-                                .fillMaxHeight()
-                                .background(MiuixTheme.colorScheme.surface),
-                        ) {
-                            renderedDetailTarget?.let { target ->
-                                AnimatedContent(
-                                    targetState = target,
-                                    contentKey = { it.entry.contentKey },
-                                    transitionSpec = {
-                                        val spatialSpec = motionScheme.defaultSpatialSpec<IntOffset>()
-                                        val effectsSpec = motionScheme.defaultEffectsSpec<Float>()
-                                        when {
-                                            targetState.depth > initialState.depth -> {
-                                                (slideInHorizontally(
-                                                    animationSpec = spatialSpec,
-                                                    initialOffsetX = { it },
-                                                ) + fadeIn(animationSpec = effectsSpec)) togetherWith
-                                                    (slideOutHorizontally(
-                                                        animationSpec = spatialSpec,
-                                                        targetOffsetX = { -it / 4 },
-                                                    ) + fadeOut(animationSpec = effectsSpec))
-                                            }
-                                            targetState.depth < initialState.depth -> {
-                                                (slideInHorizontally(
-                                                    animationSpec = spatialSpec,
-                                                    initialOffsetX = { -it / 4 },
-                                                ) + fadeIn(animationSpec = effectsSpec)) togetherWith
-                                                    (slideOutHorizontally(
-                                                        animationSpec = spatialSpec,
-                                                        targetOffsetX = { it },
-                                                    ) + fadeOut(animationSpec = effectsSpec))
-                                            }
-                                            else -> {
-                                                fadeIn(animationSpec = effectsSpec) togetherWith
-                                                    fadeOut(animationSpec = effectsSpec)
-                                            }
-                                        }
-                                    },
-                                    label = "miuixThirdPaneNavigation",
-                                ) { detailTarget ->
-                                    detailTarget.entry.Content()
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private class MiuixSupportingPaneSceneStrategy(
-    private val enabled: Boolean,
-) : SceneStrategy<NavKey> {
-    override fun SceneStrategyScope<NavKey>.calculateScene(
-        entries: List<NavEntry<NavKey>>,
-    ): Scene<NavKey>? {
-        if (!enabled || entries.isEmpty()) return null
-        val mainEntry = entries.firstOrNull {
-            it.metadata[MIUIX_PANE_ROLE_METADATA] == MiuixHomePaneRole.Main
-        } ?: return null
-        val detailEntry = entries.lastOrNull {
-            it.metadata[MIUIX_PANE_ROLE_METADATA] == MiuixHomePaneRole.Detail
-        }
-        val detailDepth = entries.indexOfLast {
-            it.metadata[MIUIX_PANE_ROLE_METADATA] == MiuixHomePaneRole.Detail
-        }.coerceAtLeast(0)
-        return MiuixSupportingPaneScene(
-            mainEntry = mainEntry,
-            detailEntry = detailEntry,
-            detailDepth = detailDepth,
-            previousEntries = if (detailEntry != null) entries.dropLast(1) else emptyList(),
-        )
-    }
-}
-
 @Composable
 private fun MiuixHomeNavigationRail(
     state: NavigationRailState,
@@ -1582,6 +1424,8 @@ private fun MiuixSettingsSubPageDirect(
     page: SettingsPage,
     onBack: () -> Unit,
     onNavigate: (SettingsPage) -> Unit = {},
+    onOpenCorrectionDraft: (String) -> Unit = {},
+    correctionOrderId: String? = null,
     supportingPane: Boolean = false,
 ) {
     val title = when (page) {
@@ -1590,7 +1434,9 @@ private fun MiuixSettingsSubPageDirect(
         SettingsPage.Screenshot -> "截图方式"
         SettingsPage.Recognition -> "识别方式"
         SettingsPage.CustomPrompt -> "自定义 Prompt"
+        SettingsPage.RecognitionCorrection -> if (correctionOrderId == null) "纠正识别" else "创建纠正规则"
         SettingsPage.KeepAlive -> "保活设置"
+        SettingsPage.WearableSync -> "手表同步"
         SettingsPage.Storage -> "清理空间"
         SettingsPage.About -> "关于"
         SettingsPage.Backup -> "备份与恢复"
@@ -1704,6 +1550,21 @@ private fun MiuixSettingsSubPageDirect(
                                     performHaptic,
                                     topBarHeight,
                                 )
+                                SettingsPage.RecognitionCorrection -> if (correctionOrderId == null) {
+                                    com.Badnng.moe.ui.component.RecognitionCorrectionRouteContent(
+                                        isMiuix = true,
+                                        onBack = onBack,
+                                        modifier = Modifier.fillMaxSize().padding(top = topBarHeight),
+                                        onOpenDraft = onOpenCorrectionDraft,
+                                    )
+                                } else {
+                                    com.Badnng.moe.ui.component.RecognitionCorrectionEditorRouteContent(
+                                        orderId = correctionOrderId,
+                                        isMiuix = true,
+                                        onBack = onBack,
+                                        modifier = Modifier.fillMaxSize().padding(top = topBarHeight),
+                                    )
+                                }
                                 SettingsPage.Permission -> com.Badnng.moe.ui.screen.settings.PermissionSettingsContent(performHaptic, topBarHeight, scrollState)
                                 SettingsPage.Preference -> com.Badnng.moe.ui.screen.settings.PreferenceSettingsContent(performHaptic, onNavigate, topBarHeight, scrollState)
                                 SettingsPage.KeepAlive -> com.Badnng.moe.ui.screen.settings.KeepAliveSettingsContent(performHaptic, topBarHeight, scrollState)
@@ -1717,6 +1578,7 @@ private fun MiuixSettingsSubPageDirect(
                                 )
                                 SettingsPage.Credits -> com.Badnng.moe.ui.screen.settings.CreditsSettingsContent(performHaptic, topBarHeight, scrollState)
                                 SettingsPage.Developer -> com.Badnng.moe.ui.screen.settings.DeveloperSettingsContent(performHaptic, topBarHeight, scrollState)
+                                SettingsPage.WearableSync -> com.Badnng.moe.ui.screen.settings.WearableSyncSettingsContent(performHaptic, topBarHeight, scrollState)
                                 SettingsPage.Main -> {}
                                 else -> {}
                             }

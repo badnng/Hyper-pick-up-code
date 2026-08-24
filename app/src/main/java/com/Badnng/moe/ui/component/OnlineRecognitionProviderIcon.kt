@@ -23,6 +23,7 @@ internal fun OnlineRecognitionProviderIcon(
 ) {
     val backgroundColor = when (provider) {
         OnlineRecognitionProvider.OPENAI -> Color(0xFF111111)
+        OnlineRecognitionProvider.OPENCODE_ZEN -> Color(0xFFDCF3DC)
         OnlineRecognitionProvider.CUSTOM -> Color(0xFF455A64)
         else -> Color.Transparent
     }
@@ -40,6 +41,7 @@ internal fun OnlineRecognitionProviderIcon(
                 .fillMaxSize()
                 .padding(
                     if (provider == OnlineRecognitionProvider.OPENAI ||
+                        provider == OnlineRecognitionProvider.OPENCODE_ZEN ||
                         provider == OnlineRecognitionProvider.CUSTOM
                     ) 4.dp else 0.dp,
                 ),

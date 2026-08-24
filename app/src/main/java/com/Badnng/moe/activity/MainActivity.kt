@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.widget.Toast
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,7 +26,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityOptionsCompat
@@ -35,8 +38,12 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.EdgeToEdgeHelper
 import com.Badnng.moe.helper.StorageCleanupHelper
+import com.Badnng.moe.privacy.PrivacyConsent
+import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.rules.RecognitionRuleEngine
 import com.Badnng.moe.service.ScreenCaptureService
+import com.Badnng.moe.ui.component.PrivacyConsentBottomSheet
+import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.screen.HomeScreen
 import com.Badnng.moe.ui.screen.OnboardingScreen
 import com.Badnng.moe.ui.miuix.MiuixVisualEffectsPolicy
@@ -162,9 +169,11 @@ class MainActivity : ComponentActivity() {
 
         // 启动保活服务（仅在开启时）
         val keepAlivePrefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-        if (keepAlivePrefs.getBoolean("persistent_notification_enabled", false)) {
-            com.Badnng.moe.service.KeepAliveService.start(this)
-        }
+        // 只读取开关偏好，避免在 setContent 前构造 XMS SDK。
+        val wearableSyncEnabled = getSharedPreferences("wearable_sync", Context.MODE_PRIVATE)
+            .getBoolean("wearable_sync_enabled", false)
+        val shouldStartKeepAlive = keepAlivePrefs
+            .getBoolean("persistent_notification_enabled", false) || wearableSyncEnabled
 
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         intentToProcess = intent
@@ -192,6 +201,25 @@ class MainActivity : ComponentActivity() {
             val homeAlpha = remember { Animatable(1f) }
             var startedRevealGeneration by remember { mutableIntStateOf(0) }
             var homeLaidOut by remember { mutableStateOf(false) }
+
+            val isMiuixStyle = rememberMiuixStyle()
+            val hapticFeedback = LocalHapticFeedback.current
+            val performHaptic: () -> Unit = {
+                if (settingsPrefs.getBoolean("haptic_enabled", true)) {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
+            }
+            var showPolicyConsent by remember { mutableStateOf(false) }
+            var policyUpdateChecked by remember { mutableStateOf(false) }
+
+            LaunchedEffect(showOnboarding) {
+                if (!showOnboarding && !policyUpdateChecked) {
+                    policyUpdateChecked = true
+                    if (PrivacyConsent.hasPolicyUpdate(settingsPrefs)) {
+                        showPolicyConsent = true
+                    }
+                }
+            }
 
             LaunchedEffect(homeLaidOut) {
                 if (!homeLaidOut) return@LaunchedEffect
@@ -257,6 +285,40 @@ class MainActivity : ComponentActivity() {
                     ) {
                         HomeScreen(intentToProcess = intentToProcess)
                     }
+
+                    PrivacyConsentBottomSheet(
+                        show = showPolicyConsent,
+                        isMiuix = isMiuixStyle,
+                        title = "隐私政策已更新",
+                        confirmLabel = "同意并继续",
+                        onDismiss = {
+                            performHaptic()
+                            showPolicyConsent = false
+                            // 未重新同意 → 撤销同意并关闭在线识别与联网更新
+                            PrivacyConsent.revoke(settingsPrefs)
+                            settingsPrefs.edit()
+                                .putString(
+                                    OnlineRecognitionPreferences.MODE_KEY,
+                                    OnlineRecognitionPreferences.MODE_OFFLINE,
+                                )
+                                .apply()
+                            Toast.makeText(
+                                applicationContext,
+                                "已撤销同意，在线识别与联网更新已关闭",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                        onConfirm = {
+                            performHaptic()
+                            showPolicyConsent = false
+                            PrivacyConsent.accept(settingsPrefs)
+                            Toast.makeText(
+                                applicationContext,
+                                "已重新同意《澎湃记用户协议与隐私说明》",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                    )
                 }
 
                 AnimatedContent(
@@ -289,6 +351,15 @@ class MainActivity : ComponentActivity() {
                     } else {
                         Box(Modifier.fillMaxSize())
                     }
+                }
+            }
+        }
+
+        // 让主页先完成首帧，再启动前台保活服务；服务内的 XMS 恢复逻辑本身也在后台执行。
+        if (shouldStartKeepAlive) {
+            window.decorView.postOnAnimation {
+                if (!isFinishing && !isDestroyed) {
+                    com.Badnng.moe.service.KeepAliveService.start(this)
                 }
             }
         }

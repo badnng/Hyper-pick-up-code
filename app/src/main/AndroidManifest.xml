@@ -32,6 +32,8 @@
         <package android:name="com.samsung.android.messaging" />
         <package android:name="com.coloros.mms" />
         <package android:name="com.oneplus.mms" />
+        <package android:name="com.mi.health" />
+        <package android:name="com.xiaomi.wearable" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
         </intent>

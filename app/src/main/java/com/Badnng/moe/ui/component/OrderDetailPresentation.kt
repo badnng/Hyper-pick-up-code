@@ -17,6 +17,8 @@ import java.util.Locale
 const val LEGACY_DIAGNOSTIC_VALUE = "旧版数据未记录"
 const val UNRECORDED_VALUE = "未记录"
 
+fun displayablePickupLocation(value: String?): String? = value?.trim()?.takeIf { it.isNotBlank() && it.any(Char::isLetterOrDigit) }
+
 data class OrderDetailUiState(
     val order: OrderEntity,
     val fullTextExpanded: Boolean,
@@ -157,7 +159,7 @@ object OrderDiagnosticReportFormatter {
             appendLine("类型: ${order.orderType}")
             appendLine("品牌: ${order.brandName.orUnrecordedValue()}")
             appendLine("取餐码/取件码: ${order.takeoutCode}")
-            appendLine("取件位置: ${order.pickupLocation.orUnrecordedValue()}")
+            appendLine("取件位置: ${displayablePickupLocation(order.pickupLocation).orUnrecordedValue()}")
             appendLine()
             appendLine("[来源]")
             appendLine("来源应用: ${order.sourceApp.orUnrecordedValue()}")

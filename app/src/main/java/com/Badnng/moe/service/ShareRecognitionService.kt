@@ -26,8 +26,9 @@ import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.ImageSourceMetadataResolver
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.ScreenshotStorage
-import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.recognition.RecognizedOrderFactory
+import com.Badnng.moe.recognition.RecognitionCorrectionDetector
+import com.Badnng.moe.recognition.RecognitionCorrectionStore
 import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.recognition.RecognitionTrigger
 
@@ -80,8 +81,6 @@ class ShareRecognitionService : Service() {
             return
         }
 
-        val onlineRecognition = OnlineRecognitionPreferences.isOnline(applicationContext)
-        val croppedBitmap = if (onlineRecognition) bitmap else cropStatusBar(bitmap)
         try {
             val routedResult = RecognitionRouter(applicationContext).recognizeImage(
                 bitmap,
@@ -93,22 +92,31 @@ class ShareRecognitionService : Service() {
             routedResult.onlineError?.let {
                 Log.w("ShareRecognition", "Online recognition fallback: $it")
             }
-            val hasExpressKeyword = recognizedOrders.any { result ->
-                result.type == "快递" ||
-                    result.fullText.contains("取件") ||
-                    result.fullText.contains("取货") ||
-                    result.fullText.contains("快递") ||
-                    result.fullText.contains("驿站") ||
-                    result.fullText.contains("菜鸟")
-            }
-            val bitmapToUse = if (onlineRecognition || hasExpressKeyword) bitmap else croppedBitmap
-
-            if (recognizedOrders.isEmpty()) {
-                AppLogger.recognition("ShareRecognition: no codes found")
+            val successfulResults = recognizedOrders
+                .filter { it.code != null }
+                .distinctBy { it.code }
+            val unrecognizedExplicitCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
+                fullText = recognizedOrders.firstOrNull()?.fullText.orEmpty(),
+                recognizedCodes = successfulResults.mapNotNull { it.code },
+            )
+            if (successfulResults.isEmpty()) {
+                val draftSaved = recognizedOrders.firstOrNull()?.let { result ->
+                    RecognitionCorrectionStore.saveImageDraft(
+                        context = applicationContext,
+                        bitmap = bitmap,
+                        result = result,
+                        metadata = routedResult.metadata,
+                        recognizedText = "分享识别（待纠正）",
+                        sourceApp = resolvedSourceApp ?: "分享识别",
+                        sourcePackage = imageSource.packageName,
+                        screenshotPrefix = "分享待纠正",
+                    )
+                } == true
+                AppLogger.recognition("ShareRecognition: no codes found, correctionDraftSaved=$draftSaved")
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         applicationContext,
-                        "\u672a\u8bc6\u522b\u5230\u53d6\u4ef6\u7801",
+                        if (draftSaved) "识别失败，已加入纠正识别" else "未识别到取件码",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -117,15 +125,36 @@ class ShareRecognitionService : Service() {
 
             val screenshotPath = ScreenshotStorage.saveBitmap(
                 applicationContext,
-                bitmapToUse,
+                bitmap,
                 namePrefix = "分享识别",
             )
+
+            val partialDraftSaved = if (unrecognizedExplicitCodes.isNotEmpty()) {
+                recognizedOrders.firstOrNull()?.let { result ->
+                    RecognitionCorrectionStore.saveImageDraft(
+                        context = applicationContext,
+                        bitmap = bitmap,
+                        result = result.copy(code = null, brand = null, pickupLocation = null),
+                        metadata = routedResult.metadata,
+                        recognizedText = "分享识别（部分待纠正）",
+                        sourceApp = resolvedSourceApp ?: "分享识别",
+                        sourcePackage = imageSource.packageName,
+                        screenshotPrefix = "分享待纠正",
+                        existingScreenshotPath = screenshotPath,
+                    )
+                } == true
+            } else {
+                false
+            }
+            if (partialDraftSaved) {
+                AppLogger.recognition("ShareRecognition: partial correction saved, missing=$unrecognizedExplicitCodes")
+            }
 
             val database = OrderDatabase.getDatabase(applicationContext)
             val orderDao = database.orderDao()
             val orderGroupDao = database.orderGroupDao()
             val insertedOrders = mutableListOf<OrderEntity>()
-            for (result in recognizedOrders) {
+            for (result in successfulResults) {
                 val code = result.code ?: continue
                 AppLogger.recognition("ShareRecognition code=$code, type=${result.type}, brand=${result.brand}, pickup=${result.pickupLocation}")
                 val order = RecognizedOrderFactory.fromRecognition(
@@ -193,21 +222,6 @@ class ShareRecognitionService : Service() {
             LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(refreshIntent)
         } finally {
             bitmap.recycle()
-            if (croppedBitmap != bitmap) {
-                croppedBitmap.recycle()
-            }
-        }
-    }
-
-    private fun cropStatusBar(src: Bitmap): Bitmap {
-        val statusBarHeight = 150
-        val sideMargin = (src.width * 0.02).toInt()
-        val targetWidth = (src.width * 0.92).toInt()
-        val targetHeight = (src.height * 0.81).toInt()
-        return if (src.height > statusBarHeight + targetHeight && src.width > sideMargin + targetWidth) {
-            Bitmap.createBitmap(src, sideMargin, statusBarHeight, targetWidth, targetHeight)
-        } else {
-            src
         }
     }
 

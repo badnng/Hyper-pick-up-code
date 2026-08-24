@@ -4,6 +4,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import com.Badnng.moe.rules.RecognitionRuleEngine
+import com.Badnng.moe.rules.SimpleRuleMatch
+import com.Badnng.moe.rules.SimpleRuleRuntime
+import com.Badnng.moe.rules.SimpleRuleSource
+import com.Badnng.moe.rules.LuckinQrRule
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.tasks.await
@@ -40,6 +44,7 @@ class TextRecognitionHelper(private val context: Context) {
         val mergedText: String,
         val correctedBlocks: List<PaddleOcrHelper.TextBlock>,
         val diagnosticResult: PaddleOcrHelper.DiagnosticResult?,
+        val simpleRuleMatches: List<SimpleRuleMatch>? = null,
     )
 
     suspend fun recognizeAll(bitmap: Bitmap, sourceApp: String? = null, sourcePkg: String? = null, existingOcr: OcrResult? = null): Pair<RecognitionResult, OcrResult> {
@@ -99,10 +104,34 @@ class TextRecognitionHelper(private val context: Context) {
             qrCode = null
         }
 
+        val simplePack = SimpleRuleRuntime.ensureLoaded(context)
+        if (simplePack.schemaVersion == com.Badnng.moe.rules.SimpleRulePack.SCHEMA_VERSION) {
+            val matches = SimpleRuleRuntime.recognizeCurrent(
+                rawText = rawFullText,
+                source = SimpleRuleSource.IMAGE,
+                sourcePackage = sourcePkg,
+                qrData = qrCode,
+            )
+            val first = matches.firstOrNull()
+            val builtInLuckinQrHit = LuckinQrRule.matches(qrCode)
+            Log.d("RecognitionMonitor", "SimpleRule match: brand=${first?.brand}, brandRuleId=${first?.brandRuleId}, template=${first?.templateRuleName}, templateId=${first?.templateRuleId}, code=${first?.code}, location=${first?.location}")
+            return RecognitionResult(
+                code = first?.code,
+                qr = qrCode,
+                type = if (builtInLuckinQrHit) LuckinQrRule.CATEGORY else first?.category?.resultType ?: "餐食",
+                brand = if (builtInLuckinQrHit) LuckinQrRule.BRAND_NAME else first?.brand,
+                fullText = rawFullText,
+                pickupLocation = first?.location,
+            ) to ocrResult.copy(simpleRuleMatches = matches)
+        }
         var takeoutCode: String? = null
         var pickupLocation: String? = null
 
-        var detectedBrand: String? = sourcePkg?.let { engine.getBrandByPackage(it) }
+        var detectedBrand: String? = if (LuckinQrRule.matches(qrCode)) {
+            LuckinQrRule.BRAND_NAME
+        } else {
+            sourcePkg?.let { engine.getBrandByPackage(it) }
+        }
 
         // QR 码模式匹配品牌（如瑞幸的 Base64 短码）
         if (detectedBrand == null && qrCode != null) {
@@ -766,8 +795,21 @@ class TextRecognitionHelper(private val context: Context) {
     }
 
     // ─────────── 纯文字识别（用于划选文字处理） ───────────
-    fun recognizeFromText(text: String): List<RecognitionResult> {
+    fun recognizeFromText(text: String, source: SimpleRuleSource = SimpleRuleSource.TEXT): List<RecognitionResult> {
         val mergedText = cleanChineseText(text)
+        val simplePack = SimpleRuleRuntime.current()
+        if (simplePack.schemaVersion == com.Badnng.moe.rules.SimpleRulePack.SCHEMA_VERSION) {
+            return SimpleRuleRuntime.recognizeCurrent(text, source).map { match ->
+                RecognitionResult(
+                    code = match.code,
+                    qr = null,
+                    type = match.category.resultType,
+                    brand = match.brand,
+                    fullText = text,
+                    pickupLocation = match.location,
+                )
+            }
+        }
         val codeMatchingText = cleanCodeMatchingText(text)
         Log.d("ExpressExtract", "recognizeFromText: engine patterns=${engine.getExpressPatterns().size}, sourceId=${engine.currentSourceId}")
 
@@ -1140,6 +1182,17 @@ class TextRecognitionHelper(private val context: Context) {
         }
 
         val mergedText = cleanChineseText(rawFullText)
+        val simplePack = SimpleRuleRuntime.current()
+        if (simplePack.schemaVersion == com.Badnng.moe.rules.SimpleRulePack.SCHEMA_VERSION) {
+            val qr = barcodeResult?.firstOrNull()?.rawValue?.takeIf {
+                !it.startsWith("http://", ignoreCase = true) && !it.startsWith("https://", ignoreCase = true)
+            }
+            val matches = SimpleRuleRuntime.recognizeCurrent(rawFullText, SimpleRuleSource.IMAGE, sourcePkg, qr)
+            val orders = matches.map {
+                RecognitionResult(it.code, qr, it.category.resultType, it.brand, rawFullText, it.location)
+            }
+            return MultiRecognitionResult(orders, orders.size > 1)
+        }
 
         return recognizeMultipleCodesFromResult(rawFullText, textBlocks, mergedText, sourceApp, sourcePkg)
     }
@@ -1152,10 +1205,34 @@ class TextRecognitionHelper(private val context: Context) {
         textBlocks: List<PaddleOcrHelper.TextBlock>,
         mergedText: String,
         sourceApp: String? = null,
-        sourcePkg: String? = null
+        sourcePkg: String? = null,
+        qrData: String? = null,
+        simpleRuleMatches: List<SimpleRuleMatch>? = null,
     ): MultiRecognitionResult {
         Log.d("RecognitionMonitor", "=== recognizeMultipleCodesFromResult 开始 ===")
         Log.d("RecognitionMonitor", "多取件码识别 - 全文: ${mergedText.take(500)}")
+
+        val simplePack = SimpleRuleRuntime.current()
+        if (simplePack.schemaVersion == com.Badnng.moe.rules.SimpleRulePack.SCHEMA_VERSION) {
+            val matches = simpleRuleMatches ?: SimpleRuleRuntime.recognizeCurrent(
+                rawText = rawFullText,
+                source = SimpleRuleSource.IMAGE,
+                sourcePackage = sourcePkg,
+                qrData = qrData,
+            )
+            val orders = matches.map { match ->
+                RecognitionResult(
+                    code = match.code,
+                    qr = qrData,
+                    type = match.category.resultType,
+                    brand = match.brand,
+                    fullText = rawFullText,
+                    pickupLocation = match.location,
+                )
+            }.distinctBy { it.code }
+            Log.d("RecognitionMonitor", "简化规则多取件码识别完成，共识别到 ${orders.size} 个取件码")
+            return MultiRecognitionResult(orders, orders.size > 1)
+        }
 
         // 查找所有取件码和对应的快递品牌
         val orders = mutableListOf<RecognitionResult>()
@@ -1217,23 +1294,23 @@ class TextRecognitionHelper(private val context: Context) {
                 )
                 for (pattern in enginePatterns) {
                     val compiled = engine.getCompiledPattern(pattern.id) ?: continue
-                    val codeMatch = compiled.find(nearbyText) ?: continue
-                    val code = codeMatch.groupValues.getOrElse(1) { codeMatch.value }
-                    if (!isInvalidExpressCode(code, nearbyText) && !isLikelyPhoneTail(code, mergedText)) {
-                        val pickupLocation = findPickupLocation(mergedText, textBlocks)
-                        orders.add(RecognitionResult(
-                            code = code, qr = null, type = "快递",
-                            brand = brandDef.name, fullText = rawFullText, pickupLocation = pickupLocation
-                        ))
-                        Log.d("RecognitionMonitor", "基于品牌找到取件码: $code, 品牌: ${brandDef.name}")
-                        break
+                    for (codeMatch in compiled.findAll(nearbyText)) {
+                        val code = codeMatch.groupValues.getOrElse(1) { codeMatch.value }
+                        if (!isInvalidExpressCode(code, nearbyText) && !isLikelyPhoneTail(code, mergedText)) {
+                            val pickupLocation = findPickupLocation(mergedText, textBlocks)
+                            orders.add(RecognitionResult(
+                                code = code, qr = null, type = "快递",
+                                brand = brandDef.name, fullText = rawFullText, pickupLocation = pickupLocation
+                            ))
+                            Log.d("RecognitionMonitor", "基于品牌找到取件码: $code, 品牌: ${brandDef.name}")
+                        }
                     }
                 }
             }
         }
 
         // 方法3：无触发关键词时，基于快递品牌上下文提取兜底码
-        if (orders.isEmpty() && expressBrandKeywords.any { mergedText.contains(it) }) {
+        if (expressBrandKeywords.any { mergedText.contains(it) }) {
             val pickupLocation = findPickupLocation(mergedText, textBlocks)
             val fallbackPattern = engine.getCompiledPattern("express_fallback")
             if (fallbackPattern != null) {

@@ -38,9 +38,11 @@ import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.shader.isRenderEffectSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -89,29 +91,49 @@ private fun rememberAllowedMiuixBackdrop(allowed: Boolean): LayerBackdrop? {
 fun MiuixBlurredBar(
     backdrop: LayerBackdrop?,
     blurEnabled: Boolean,
+    blurRadius: Float = 20f,
+    blendAlpha: Float = 0.8f,
+    progressive: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    Box(
-        modifier = if (blurEnabled && backdrop != null) {
+    val blurModifier = if (blurEnabled && backdrop != null) {
+        if (progressive) {
+            Modifier
+                .fillMaxWidth()
+                .progressiveTextureBlur(
+                    backdrop = backdrop,
+                    shape = RectangleShape,
+                    blurRadius = blurRadius,
+                    gradient = ProgressiveBlur.Top,
+                    colors = BlurDefaults.blurColors(
+                        blendColors = listOf(
+                            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(blendAlpha)),
+                        ),
+                    ),
+                )
+        } else {
             Modifier
                 .fillMaxWidth()
                 .textureBlur(
                     backdrop = backdrop,
                     shape = RectangleShape,
-                    blurRadius = 25f,
+                    blurRadius = blurRadius,
                     colors = BlurDefaults.blurColors(
                         blendColors = listOf(
-                            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
+                            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(blendAlpha)),
                         ),
                     ),
                 )
-        } else {
-            // 无模糊时顶栏仍应是一块完整的不透明表面，不能只给 TopAppBar 本体上色，
-            // 否则其下方的 TabRow 区域会直接露出内容背景形成留白。
-            Modifier
-                .fillMaxWidth()
-                .background(MiuixTheme.colorScheme.surface)
-        },
+        }
+    } else {
+        // 无模糊时顶栏仍应是一块完整的不透明表面，不能只给 TopAppBar 本体上色，
+        // 否则其下方的 TabRow 区域会直接露出内容背景形成留白。
+        Modifier
+            .fillMaxWidth()
+            .background(MiuixTheme.colorScheme.surface)
+    }
+    Box(
+        modifier = blurModifier,
     ) {
         content()
     }

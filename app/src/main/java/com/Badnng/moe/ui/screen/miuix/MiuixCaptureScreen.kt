@@ -1,5 +1,6 @@
 package com.Badnng.moe.ui.screen.miuix
 
+import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -46,6 +47,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationAdd
+import androidx.compose.material.icons.filled.Rule
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -80,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
@@ -141,16 +144,23 @@ fun MiuixCaptureScreen(
     navAlignment: String = "center",
     useFloatingNavBar: Boolean = false,
     onQrDialogVisibilityChange: (Boolean) -> Unit = {},
+    onNavigateToRecognitionCorrection: () -> Unit = {},
     onNavigateToOrderDetail: (String) -> Unit = {},
     onNavigateToGroupDetail: (Long) -> Unit = {}
 ) {
-    val viewModel: OrderViewModel = viewModel()
+    val context = LocalContext.current
+    val orderViewModelFactory = remember(context) {
+        ViewModelProvider.AndroidViewModelFactory.getInstance(
+            context.applicationContext as Application,
+        )
+    }
+    val viewModel: OrderViewModel = viewModel(factory = orderViewModelFactory)
     val incompleteOrders by viewModel.incompleteOrders.collectAsStateWithLifecycle()
     val completedOrders by viewModel.completedOrders.collectAsStateWithLifecycle()
     val incompleteGroups by viewModel.incompleteGroups.collectAsStateWithLifecycle()
     val completedGroups by viewModel.completedGroups.collectAsStateWithLifecycle()
+    val ruleCorrectionDrafts by viewModel.ruleCorrectionDrafts.collectAsStateWithLifecycle()
 
-    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     val hapticEnabled = remember(prefs) { prefs.getBoolean("haptic_enabled", true) }
@@ -295,7 +305,7 @@ fun MiuixCaptureScreen(
     Scaffold(
         topBar = {
             val topBarColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface
-            com.Badnng.moe.ui.miuix.MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
+            com.Badnng.moe.ui.miuix.MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled, progressive = false) {
                 Column {
                     TopAppBar(
                         title = "澎湃记",
@@ -307,7 +317,16 @@ fun MiuixCaptureScreen(
                             }
                         },
                         actions = {
-                            // 多选模式切换按钮
+                            IconButton(onClick = {
+                                performHaptic()
+                                onNavigateToRecognitionCorrection()
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Rule,
+                                    contentDescription = if (ruleCorrectionDrafts.isEmpty()) "纠正识别" else "纠正识别，${ruleCorrectionDrafts.size} 条待处理",
+                                    tint = if (ruleCorrectionDrafts.isEmpty()) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.primary,
+                                )
+                            }                            // 多选模式切换按钮
                             IconButton(onClick = {
                                 performHaptic()
                                 isEditMode = !isEditMode

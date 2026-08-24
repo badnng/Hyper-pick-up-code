@@ -16,6 +16,7 @@ import com.Badnng.moe.ui.oobe.OobeHomeReadiness
 import com.Badnng.moe.ui.screen.OnboardingScreen
 import com.Badnng.moe.ui.theme.ColorGenerator
 import com.Badnng.moe.ui.theme.MD3E_MONET_ENABLED_KEY
+import com.Badnng.moe.ui.theme.MiuixNavigationEventHost
 
 class OnboardingCompleteActivity : ComponentActivity() {
     private var flowFinished = false
@@ -24,11 +25,13 @@ class OnboardingCompleteActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
         setContent {
-            OnboardingScreen(
-                showWelcome = false,
-                startAtComplete = true,
-                onComplete = ::finishFlow,
-            )
+            MiuixNavigationEventHost {
+                OnboardingScreen(
+                    showWelcome = false,
+                    startAtComplete = true,
+                    onComplete = ::finishFlow,
+                )
+            }
         }
     }
 

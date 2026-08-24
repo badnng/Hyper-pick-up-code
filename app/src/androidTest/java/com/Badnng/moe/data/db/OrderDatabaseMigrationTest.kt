@@ -127,6 +127,22 @@ class OrderDatabaseMigrationTest {
         assertTrue(columns.contains("ocrDiagnosticData"))
     }
 
+    @Test
+    fun migrationEightToNineAddsRuleCorrectionFlag() {
+        val database = openHelper.writableDatabase
+
+        OrderDatabase.MIGRATION_6_7.migrate(database)
+        OrderDatabase.MIGRATION_7_8.migrate(database)
+        OrderDatabase.MIGRATION_8_9.migrate(database)
+
+        val columns = database.query("PRAGMA table_info(`orders`)").use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            buildSet {
+                while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+            }
+        }
+        assertTrue(columns.contains("needsRuleCorrection"))
+    }
     private companion object {
         const val DATABASE_NAME = "migration-v6-v7-test.db"
     }

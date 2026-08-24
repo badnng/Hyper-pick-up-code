@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.Badnng.moe.ui.component.Md3eNavigationRailExpandButton
+import com.Badnng.moe.ui.screen.settings.SettingsPage
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -109,6 +110,7 @@ fun CaptureScreen(
     val completedOrders by viewModel.completedOrders.collectAsStateWithLifecycle()
     val incompleteGroups by viewModel.incompleteGroups.collectAsStateWithLifecycle()
     val completedGroups by viewModel.completedGroups.collectAsStateWithLifecycle()
+    val ruleCorrectionDrafts by viewModel.ruleCorrectionDrafts.collectAsStateWithLifecycle()
 
     // 🚀 监听分享识别完成的广播，刷新数据
     val context = LocalContext.current
@@ -132,6 +134,7 @@ fun CaptureScreen(
         completedOrders = completedOrders,
         incompleteOrderGroups = incompleteGroups,
         completedOrderGroups = completedGroups,
+        ruleCorrectionDrafts = ruleCorrectionDrafts,
         onMarkCompleted = { viewModel.markAsCompleted(it) },
         onMarkMultipleCompleted = { ids ->
             ids.forEach { viewModel.markAsCompleted(it) }
@@ -170,6 +173,7 @@ fun CaptureScreenContent(
     completedOrders: List<OrderEntity>,
     incompleteOrderGroups: List<OrderGroup>,
     completedOrderGroups: List<OrderGroup>,
+    ruleCorrectionDrafts: List<OrderEntity>,
     onMarkCompleted: (String) -> Unit,
     onMarkMultipleCompleted: (Set<String>) -> Unit,
     onDeleteOrder: (OrderEntity) -> Unit,
@@ -356,6 +360,20 @@ fun CaptureScreenContent(
                             fontWeight = FontWeight.ExtraBold,
                         )
                         Spacer(modifier = Modifier.weight(1f))
+                        IconButton(onClick = {
+                            performHaptic()
+                            onNavigateToDetail(SettingsPage.RecognitionCorrection)
+                        }) {
+                            BadgedBox(
+                                badge = {
+                                    if (ruleCorrectionDrafts.isNotEmpty()) {
+                                        Badge { Text(ruleCorrectionDrafts.size.toString()) }
+                                    }
+                                },
+                            ) {
+                                Icon(Icons.Default.Rule, contentDescription = "纠正识别", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
                         IconButton(onClick = {
                             performHaptic()
                             isEditMode = !isEditMode

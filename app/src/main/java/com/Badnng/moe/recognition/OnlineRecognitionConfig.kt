@@ -14,6 +14,9 @@ enum class OnlineRecognitionProvider(
     OPENAI("openai", "OpenAI", R.drawable.provider_openai),
     MOONSHOT("moonshot", "月之暗面", R.drawable.provider_kimi_hd),
     MINIMAX("minimax", "MiniMax", R.drawable.provider_minimax_hd),
+    OPENCODE_GO("opencode_go", "OpenCode Go", R.drawable.provider_opencode),
+    OPENCODE_ZEN("opencode_zen", "OpenCode Zen（免费）", R.drawable.provider_opencode),
+    DEEPSEEK("deepseek", "DeepSeek", R.drawable.provider_deepseek),
     CUSTOM("custom", "自定义", R.drawable.provider_custom);
 
     companion object {
@@ -47,6 +50,8 @@ enum class ReasoningControl {
     THINKING_DISABLED,
     OPENAI_EFFORT_NONE,
     MINIMAX_EFFORT_NONE,
+    OPENCODE_COMBINED,
+    ANTHROPIC_DISABLED,
 }
 
 data class OnlineRecognitionModel(
@@ -95,6 +100,22 @@ object OnlineRecognitionCatalog {
         OnlineRecognitionProvider.MINIMAX to listOf(
             OnlineRecognitionModel("MiniMax-M3", "MiniMax M3", ReasoningControl.MINIMAX_EFFORT_NONE),
         ),
+        OnlineRecognitionProvider.OPENCODE_GO to listOf(
+            OnlineRecognitionModel("deepseek-v4-flash-vision-exp", "DeepSeek V4 Flash Vision Exp", ReasoningControl.OPENCODE_COMBINED),
+            OnlineRecognitionModel("gpt-5.6-luna", "GPT 5.6 Luna", ReasoningControl.OPENAI_EFFORT_NONE),
+            OnlineRecognitionModel("kimi-k2.6", "Kimi K2.6", ReasoningControl.OPENCODE_COMBINED),
+            OnlineRecognitionModel("mimo-v2.5", "MiMo-V2.5", ReasoningControl.OPENCODE_COMBINED),
+            OnlineRecognitionModel("minimax-m3", "MiniMax M3", ReasoningControl.ANTHROPIC_DISABLED),
+            OnlineRecognitionModel("qwen3.8-max", "Qwen3.8 Max", ReasoningControl.ANTHROPIC_DISABLED),
+            OnlineRecognitionModel("qwen3.7-plus", "Qwen3.7 Plus", ReasoningControl.ANTHROPIC_DISABLED),
+            OnlineRecognitionModel("qwen3.6-plus", "Qwen3.6 Plus", ReasoningControl.ANTHROPIC_DISABLED),
+        ),
+        OnlineRecognitionProvider.OPENCODE_ZEN to listOf(
+            OnlineRecognitionModel("mimo-v2.5-free", "MiMo-V2.5 Free", ReasoningControl.OPENCODE_COMBINED),
+        ),
+        OnlineRecognitionProvider.DEEPSEEK to listOf(
+            OnlineRecognitionModel("deepseek-v4-flash-vision-exp", "DeepSeek V4 Flash Vision Exp", ReasoningControl.THINKING_DISABLED),
+        ),
         OnlineRecognitionProvider.CUSTOM to listOf(
             OnlineRecognitionModel("", "等待获取模型", ReasoningControl.NONE),
         ),
@@ -125,7 +146,7 @@ object OnlineRecognitionPreferences {
 
     fun isOnline(context: Context): Boolean {
         val preferences = settings(context)
-        return PrivacyConsent.isAccepted(preferences) &&
+        return PrivacyConsent.isCurrentPolicyAccepted(preferences) &&
             preferences.getString(MODE_KEY, MODE_OFFLINE) == MODE_ONLINE
     }
 

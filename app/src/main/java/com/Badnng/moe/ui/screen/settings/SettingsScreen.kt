@@ -58,7 +58,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class SettingsPage {
-    Main, Preference, Permission, Screenshot, Recognition, CustomPrompt, KeepAlive, Storage, About, Backup, Sponsor, NotificationApps, Credits, Developer
+    Main, Preference, Permission, Screenshot, Recognition, CustomPrompt, RecognitionCorrection, KeepAlive, WearableSync, Storage, About, Backup, Sponsor, NotificationApps, Credits, Developer
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -246,6 +246,7 @@ fun SettingsScreen(
                         SettingsPage.Recognition -> "识别方式"
                         SettingsPage.CustomPrompt -> "自定义 Prompt"
                         SettingsPage.KeepAlive -> "保活设置"
+                        SettingsPage.WearableSync -> "手表同步"
                         SettingsPage.Storage -> "清理空间"
                         SettingsPage.About -> "关于"
                         SettingsPage.Backup -> "备份与恢复"
@@ -302,6 +303,7 @@ fun MainSettingsList(
                     SettingsGroupItem(title = "权限与保活", description = "管理权限和防止系统清理后台", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.Permission) })
                     SettingsGroupItem(title = "截图方式", description = "管理App截图的方式", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.Screenshot) })
                     SettingsGroupItem(title = "识别方式", description = "选择离线或在线多模态识别", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.Recognition) })
+                    SettingsGroupItem(title = "手表同步", description = "未完成取餐码同步到小米手表", position = GroupPosition.Middle, onClick = { onNavigate(SettingsPage.WearableSync) })
                     SettingsGroupItem(title = "添加到控制中心", description = "将「截图识别」磁贴添加到控制中心快捷栏", position = GroupPosition.Last, onClick = { performHaptic(); requestAddTile(context) })
                 }
             }
@@ -322,6 +324,7 @@ fun MainSettingsList(
                         Md3eSettingsEntry("权限与保活", "检查必要权限与后台运行状态", Icons.Default.Security, SettingsPage.Permission),
                         Md3eSettingsEntry("截图方式", "选择截图来源与授权方式", Icons.Default.Screenshot, SettingsPage.Screenshot),
                         Md3eSettingsEntry("识别方式", "选择离线或在线多模态识别", Icons.Default.AutoAwesome, SettingsPage.Recognition),
+                        Md3eSettingsEntry("手表同步", "未完成取餐码同步到小米手表", Icons.Default.Watch, SettingsPage.WearableSync),
                     ),
                 ),
                 Md3eSettingsSection(
@@ -561,6 +564,11 @@ fun SubPage(
                         onNavigateToPromptEditor = { onNavigate(SettingsPage.CustomPrompt) },
                     )
                     SettingsPage.CustomPrompt -> PromptEditorContent(performHaptic, 0.dp)
+                    SettingsPage.RecognitionCorrection -> com.Badnng.moe.ui.component.RecognitionCorrectionRouteContent(
+                        isMiuix = true,
+                        onBack = onBack,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                     SettingsPage.Permission -> PermissionSettingsContent(performHaptic, 0.dp, scrollState)
                     SettingsPage.Preference -> PreferenceSettingsContent(performHaptic, onNavigate, 0.dp, scrollState)
                     SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic, 0.dp, scrollState)
@@ -583,6 +591,7 @@ fun SubPage(
                     )
                     SettingsPage.Credits -> CreditsSettingsContent(performHaptic, 0.dp, scrollState)
                     SettingsPage.Developer -> DeveloperSettingsContent(performHaptic, 0.dp, scrollState)
+                    SettingsPage.WearableSync -> WearableSyncSettingsContent(performHaptic, 0.dp, scrollState)
                     SettingsPage.Main -> {}
                 }
             }
@@ -640,6 +649,11 @@ fun SubPage(
                     onNavigateToPromptEditor = { onNavigate(SettingsPage.CustomPrompt) },
                 )
                 SettingsPage.CustomPrompt -> PromptEditorContent(performHaptic, topContentPadding)
+                SettingsPage.RecognitionCorrection -> com.Badnng.moe.ui.component.RecognitionCorrectionRouteContent(
+                    isMiuix = false,
+                    onBack = onBack,
+                    modifier = Modifier.fillMaxSize().padding(top = topContentPadding),
+                )
                 SettingsPage.Permission -> PermissionSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Preference -> PreferenceSettingsContent(performHaptic, onNavigate, topContentPadding, scrollState)
                 SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic, topContentPadding, scrollState)
@@ -661,6 +675,7 @@ fun SubPage(
                 )
                 SettingsPage.Credits -> CreditsSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Developer -> DeveloperSettingsContent(performHaptic, topContentPadding, scrollState)
+                SettingsPage.WearableSync -> WearableSyncSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Main -> {}
             }
             }

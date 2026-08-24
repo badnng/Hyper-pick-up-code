@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import com.Badnng.moe.helper.EdgeToEdgeHelper
 import com.Badnng.moe.ui.oobe.OobeHomeReadiness
 import com.Badnng.moe.ui.screen.OnboardingScreen
+import com.Badnng.moe.ui.theme.MiuixNavigationEventHost
 
 class OnboardingContentActivity : ComponentActivity() {
     private var flowFinished = false
@@ -15,12 +16,14 @@ class OnboardingContentActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
         setContent {
-            OnboardingScreen(
-                showWelcome = false,
-                onComplete = ::handoffToCompletion,
-                onFinalStepRequested = ::handoffToCompletion,
-                onExit = ::cancelFlow,
-            )
+            MiuixNavigationEventHost {
+                OnboardingScreen(
+                    showWelcome = false,
+                    onComplete = ::handoffToCompletion,
+                    onFinalStepRequested = ::handoffToCompletion,
+                    onExit = ::cancelFlow,
+                )
+            }
         }
     }
 

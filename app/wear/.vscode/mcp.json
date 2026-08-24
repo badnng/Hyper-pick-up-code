@@ -1,0 +1,45 @@
+{
+  "mcpServers": {
+    "velajs": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "velajs-mcp"
+      ],
+      "autoApprove": [
+        "list_devices",
+        "select_devices",
+        "get_debug_status",
+        "start_debug_cli",
+        "start_debug_ide",
+        "stop_debug",
+        "close_all_emulators",
+        "take_screenshot",
+        "list_emulators",
+        "get_snapshot",
+        "get_element",
+        "get_console_logs",
+        "clear_console_logs",
+        "execute_script",
+        "get_network_requests",
+        "clear_network_requests",
+        "tap",
+        "double_tap",
+        "scroll",
+        "swipe",
+        "long_press",
+        "send_key",
+        "input_text",
+        "get_storage",
+        "get_project_info",
+        "build_project",
+        "get_build_settings",
+        "select_build_setting",
+        "get_output_logs",
+        "get_emulator_logs",
+        "get_device_log",
+        "navigate"
+      ]
+    }
+  }
+}

@@ -892,7 +892,10 @@ private fun OobeOnlineRecognitionSetup(
             if (provider == OnlineRecognitionProvider.MIMO ||
                 provider == OnlineRecognitionProvider.ZHIPU ||
                 provider == OnlineRecognitionProvider.MINIMAX ||
-                provider == OnlineRecognitionProvider.MOONSHOT
+                provider == OnlineRecognitionProvider.MOONSHOT ||
+                provider == OnlineRecognitionProvider.OPENCODE_GO ||
+                provider == OnlineRecognitionProvider.OPENCODE_ZEN ||
+                provider == OnlineRecognitionProvider.DEEPSEEK
             ) {
                 ProviderUsageGuide(
                     provider = provider,

@@ -639,6 +639,7 @@ object BackupManager {
                     )
                     putNullable("recognitionDurationMs", order.recognitionDurationMs)
                     putNullable("ocrDiagnosticData", order.ocrDiagnosticData)
+                    put("needsRuleCorrection", order.needsRuleCorrection)
                 })
             }
         }
@@ -684,6 +685,7 @@ object BackupManager {
                     recognitionErrorDetail = json.optNullableString("recognitionErrorDetail"),
                     recognitionDurationMs = json.optNullableLong("recognitionDurationMs"),
                     ocrDiagnosticData = json.optNullableString("ocrDiagnosticData"),
+                    needsRuleCorrection = json.optBoolean("needsRuleCorrection", false),
                 ),
                 screenshotEntry = json.optNullableString("screenshotAsset"),
             ))

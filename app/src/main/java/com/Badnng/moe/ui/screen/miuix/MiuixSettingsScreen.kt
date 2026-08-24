@@ -42,7 +42,7 @@ fun MiuixSettingsScreen(
 
     Scaffold(
         topBar = {
-            MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
+            MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled, progressive = false) {
                 TopAppBar(
                     title = "设置",
                     color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
@@ -92,6 +92,11 @@ fun MiuixSettingsScreen(
                         title = "识别方式",
                         summary = "选择离线或在线多模态识别",
                         onClick = { onNavigateToSubPage(SettingsPage.Recognition) }
+                    )
+                    ArrowPreference(
+                        title = "手表同步",
+                        summary = "未完成取餐码同步到小米手表",
+                        onClick = { onNavigateToSubPage(SettingsPage.WearableSync) }
                     )
                     ArrowPreference(
                         title = "清理空间",

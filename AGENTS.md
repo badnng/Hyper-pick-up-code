@@ -52,6 +52,9 @@ Compose UI → StateFlow ← OrderViewModel → Repository → DAO → Room DB
 - 模糊需要 `isRenderEffectSupported()` / `isRuntimeShaderSupported()` 检查
 - `BlurState` 全局单例管理 BottomSheet 模糊进度，通过 `snapshotFlow { blurProgress.value }.collect` 同步
 
+## Miuix UI 规范
+- **修改Miuix UI相关代码前**，请先阅读 [docs/Miuix-ui-guidelines.md](docs/Miuix-ui-guidelines.md)，以符合Miux的规范，其中十余条属于「不读就会写错、写错了编译器不报错」的情况，**如无特殊说明，不要动大屏适配**
+
 ## 关键约定
 
 - **100% Compose UI** — 无 XML 布局文件
@@ -67,6 +70,7 @@ Compose UI → StateFlow ← OrderViewModel → Repository → DAO → Room DB
 - **震动反馈**: 可以交互的都需要震动模块
 - **最新改动**: 每次改动之前都以目前的代码进行修改，对功能修改不要连带其他功能，改什么就是什么
 - **编译**: 如无特殊说明，不自动编译，需要编译时会明确说明
+- **构建缓存与临时目录**: Gradle 缓存统一使用环境变量 `GRADLE_USER_HOME`（固定为 `D:\GradleCache`）；npm 等依赖缓存使用系统默认目录。**严禁在工作区（仓库）内创建任何缓存目录**（如 `.gradle-home`、`.tmpgradle`、`.gradle-isolated*`、`.gradle-user`、`.npm-cache` 等），也禁止在工作区存放临时克隆/脚本（如 `.tmp-*`、`.search-*`），用完立即删除；确需缓存时直接使用 `GRADLE_USER_HOME` 指向的目录
 - **触发方式**: 如果更改规则识别相关代码时，请确保所有触发方式全部覆盖，而不只是识屏相关代码兼容
 - **中文**: 请使用中文回答
 - **正则**: 请使用里面的 `default_rules.json` 来修改正则以便匹配相关关键词，请在有必要的时候动代码，因为这是个有自定义正则的app，用户可以自行修改json来写自己的规则
@@ -81,6 +85,70 @@ Keep 规则对运行时至关重要 — ML Kit（`com.google.mlkit.**`）、Padd
 ## CI
 
 GitHub Actions（`.github/workflows/Build and Release.yml`）：仅在推送 tag（`v*`）时触发构建，使用 JDK 17，通过 `KEYSTORE_BASE64` secret 解码签名。分支推送不触发任何 workflow。
+
+## 手表端 Vela 快应用（app\wear）
+
+**澎湃记手表端工程位于 `app\wear` 目录**，用于开发小米手表 S5（VelaOS 5.0）上的取餐码同步快应用，与手机端通过「设备通信 interconnect」双向通信（包名 + 签名必须与澎湃记一致）。
+
+- **⚠️ 开发手表端代码前必须先读 `app/wear/doc/.claude/CLAUDE.md`**，其中包含 VelaOS 平台硬约束（组件/API 白名单、禁止第三方库、布局规范等），不读就会写出编译不通过或运行崩溃的代码
+- **知识库位置**（由 `npx create-vela-workflow` 生成）：
+  - 核心开发指南：`app/wear/doc/.claude/knowledge/vela-js-app.md`（1072 行，含项目结构/manifest/UX/组件/API 全量知识）
+  - 平台规则：`app/wear/doc/.claude/rules/`（vela-platform / vela-quality / vela-layout / vela-css / vela-format / vela-coding-convention / vela-design-driven / vela-figma-mcp / project-init）
+  - 组件/API 参考：`app/wear/doc/.claude/prompts/`（vela-components / vela-apis / vela-best-practices / vela-dev-guide）
+  - 工作流：`app/wear/doc/.workflow/`（S1 PRD → S2 技术方案 → S3 代码，`workflow_starter.md` 入口）、`app/wear/doc/.github/agents/`（Copilot 方式）、`app/wear/doc/.kiro/`（Kiro 方式）
+- **Vela 关键约束速查**：组件白名单（div/list/text/image/scroll/swiper/switch/slider/progress/picker/stack/span/marquee/barcode/qrcode/chart/image-animator/a）；API 白名单（router/app/fetch/storage/device/audio/prompt/sensor/vibrator/network/brightness/volume/battery/geolocation/record/file/crypto/configuration/interconnect/messagecenter，用前须在 manifest.json features 声明）；禁第三方库（axios/lodash/echarts/Vue/React 等）；构建仅用 aiot-toolkit；`.ux` 文件 template 仅一个根节点；onDestroy 必须清理定时器
+- **模拟器**：AIoT-IDE 内置，镜像 `vela-miwear-watch-5.0`（对应 S5 的 VelaOS 5.0，466×466 圆形）；真机调试官方仅支持 S4，S5 用社区工具（AstroBox/表盘自定义工具）安装 rpk 验证
+
+## MCP 服务器（exa 搜索）
+
+本仓库开发环境通过 DSH（DeepSeek Harness）接入 **exa MCP 服务器** 进行网络搜索，配置位于 `C:\Users\wsj31\.dsh\profiles\web\cordis.patch.yml`：
+
+```yaml
+- id: mcp-exa
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: exa
+    transport: streamable-http
+    url: https://mcp.exa.ai/mcp
+    headers:
+      x-api-key: <EXA_API_KEY>   # 实际 key 见 DSH 配置，勿提交到仓库
+```
+
+- **提供工具**：`web_search_exa`（语义化搜索，返回结构化结果）、`web_fetch_exa`（抓取网页全文为 Markdown）
+- **使用提示**：搜索时使用「描述理想页面」的自然语言而非关键词堆砌；`web_search_exa` 结果摘要不足时用 `web_fetch_exa` 跟进抓取具体 URL
+- **注意**：内置 `web_search` 工具依赖 DeepSeek 原生搜索，若报 `Authentication Fails` 属正常（该 key 仅用于 exa MCP），请改用 exa MCP 的搜索工具
+- **⚠️ 工具未挂载时的兜底方案（Node 直连 exa MCP）**：若当前会话工具列表里没有 `web_search_exa`/`web_fetch_exa`（MCP 客户端插件未加载），可直接用 Node 走 streamable-http JSON-RPC 调用。已验证：`pwsh` 的 `Invoke-RestMethod`/`Invoke-WebRequest` 和 `curl.exe` 会因 schannel 凭据问题失败（`SEC_E_NO_CREDENTIALS`/`SSL connection could not be established`），**必须用 Node 内置 `https` 模块**。在 `D:\Hypernotesuper` 下运行：
+
+  ```bash
+  node -e "
+  const https = require('https');
+  const KEY = '<EXA_API_KEY>'; // 从 C:\Users\wsj31\.dsh\profiles\web\cordis.patch.yml 读取，勿提交仓库
+  let sessionId = null;
+  function call(method, params, sid) {
+    return new Promise((resolve, reject) => {
+      const body = JSON.stringify({jsonrpc:'2.0',id:1,method,params});
+      const headers = {'Content-Type':'application/json','Accept':'application/json, text/event-stream','x-api-key':KEY,'Content-Length':Buffer.byteLength(body)};
+      if (sid) headers['Mcp-Session-Id'] = sid;
+      const req = https.request('https://mcp.exa.ai/mcp', {method:'POST', headers}, (res) => {
+        let data=''; res.on('data',c=>data+=c); res.on('end',()=>{ resolve({status:res.statusCode, sid:res.headers['mcp-session-id']||null, body:data}); });
+      });
+      req.on('error', reject);
+      req.write(body); req.end();
+    });
+  }
+  (async () => {
+    const init = await call('initialize', {protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'dsh-search',version:'1.0'}});
+    sessionId = init.sid;
+    await call('notifications/initialized', {}, sessionId);
+    const r = await call('tools/call', {name:'web_search_exa', arguments:{query:'<自然语言描述理想页面>', numResults:10}}, sessionId);
+    console.log(r.body);
+  })().catch(e => console.log('ERR', e.message));
+  "
+  ```
+
+  - **协议要点**：先 `initialize` 拿到响应头 `Mcp-Session-Id`，再发 `notifications/initialized`，之后每次 `tools/call` 都带 `Mcp-Session-Id` 头；响应是 SSE 流（`event: message\ndata: {...}`），`data:` 行内是 JSON。
+  - **参数名坑**：`web_fetch_exa` 的参数是 `urls`（字符串数组，如 `urls:['https://…']`）**不是** `url`；`web_search_exa` 用 `query`（自然语言）+ 可选 `numResults`；`web_fetch_exa` 可选 `maxCharacters` 截断。
+  - **结果解析**：正文在 `result.content[0].text` 里，可用 `console.log(JSON.parse(r.body.split('\ndata: ')[1]).result.content[0].text)` 或直接截取 `r.body.slice(0, N)` 查看。
 
 ## 常见问题
 

@@ -1,0 +1,511 @@
+<template>
+  <!-- 466 档多取件码二级页（AIoT 模拟器 466×466）：主页组卡片点击进入（params.groupId），
+       展示该组全部取件码（主页组卡片只预览前 3 个）；
+       designWidth: "device-width" 下 CSS px 与屏幕物理像素 1:1（无引擎等比缩放）；
+       本档字号 = 原基础字号（见 style 字号说明）；
+       页面动画与返回手势：同 detail/completed 二级页（page-in/page-out + onBackPress 拦截） -->
+  <div class="page{{leaving ? ' page-leaving' : ''}}">
+    <!-- 顶部时钟：置顶忽略安全区（clock-bar y∈[0,48]），HH:mm 每 10 秒刷新 -->
+    <div class="clock-bar"><text class="top-time">{{clockText}}</text></div>
+    <!-- 返回键条：返回箭头 + 组标题（品牌名，如「圆通」；无品牌名时用 取件码/取餐码）整体水平居中 -->
+    <div class="back-bar">
+      <text class="back-btn" onclick="onBack">‹</text>
+      <text class="page-title" onclick="onBack" if="{{pageTitle}}">{{pageTitle}}</text>
+    </div>
+    <!-- 计数条：共 N 个取件码（与主页组卡片 meta 语义一致；空状态时不显示） -->
+    <div if="{{items.length > 0}}" class="count-bar"><text class="count-text">{{countText}}</text></div>
+
+    <!-- 空状态：组内订单全部完成后显示（快照为唯一数据源，组内无订单即空） -->
+    <div if="{{items.length === 0}}" class="empty">
+      <text class="empty-main">暂无取件码</text>
+      <text class="empty-sub">已完成的取件码可在「已取」页查看</text>
+    </div>
+
+    <!-- 组取件码列表：每条一张卡片（码 + 类型·时间）；
+         无二维码行右侧「完成」按钮（与 .code-main 互为兄弟节点，点击不冒泡进行点击逻辑），
+         有二维码行点击 .code-main 进单码详情页（detail 展示二维码） -->
+    <list if="{{items.length > 0}}" class="code-list">
+      <list-item type="code" for="{{items}}" tid="itemId" class="code-item">
+        <div class="code-card">
+          <div class="code-row">
+            <div class="code-main" onclick="onRowClick($idx)">
+              <text class="code-text">{{$item.code}}</text>
+              <text class="code-meta">{{$item.metaText}}</text>
+            </div>
+            <text if="{{!$item.hasQr}}" class="done-btn" onclick="onMarkOne($idx)">完成</text>
+          </div>
+        </div>
+      </list-item>
+    </list>
+
+    <!-- 全部完成：悬浮固定底部中间（同 detail「已完成」按钮风格；点击后本组全部标记完成并返回） -->
+    <div if="{{items.length > 0}}" class="btn-wrap">
+      <div class="all-done-btn" onclick="onMarkAll">
+        <text class="all-done-text">全部完成</text>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style>
+.page {
+  position: relative; /* 作为 .btn-wrap 绝对定位层的包含块（底部悬浮按钮） */
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  padding: 0px 36px;
+  /* 进入动画页面渲染即播（page-in 右滑 48px + 淡入 0.25s ease-out）；
+     退出动画（.page-leaving）重播 page-out（反向 0.22s ease-in） */
+  animation-name: page-in;
+  animation-duration: 0.25s;
+  animation-timing-function: ease-out;
+}
+
+/* 退出动画：onBack 置 leaving=true 时叠加本类，切换 animation-name 重播退出动画
+   （与 onBack 中 220ms 延迟返回的定时器时长对应）；静态 opacity: 1 防首帧闪黑 */
+.page-leaving {
+  opacity: 1;
+  animation-name: page-out;
+  animation-duration: 0.22s;
+  animation-timing-function: ease-in;
+}
+
+/* 466 档字号说明（本页为 466x466 档，= AIoT 模拟器档）：
+   designWidth: "device-width" 下 CSS px 与屏幕物理像素 1:1（无引擎等比缩放）；
+   本档各字号即原基础字号（top-time 24、back-btn 38、page-title 32、count-text 18、
+   empty-main 28、empty-sub 22、code-text 34、code-meta 20、done-btn 24、all-done-text 24），
+   行高容器（line-height/height）保持原基础兼容关系：
+   .top-time 24px < line-height 48 ✓、箭头 38px 字在 line-height 44 ✓、
+   标题 32px 字在 line-height 44 ✓、.code-text 34px < line-height 44 ✓、
+   .code-meta 20px < line-height 26 ✓、.done-btn 24px < line-height 28 ✓、
+   .all-done-text 24px < line-height 44 ✓ 均不溢出；
+   480 档（S5 真机）对应原大屏档字号 26/40/34/19/30/24/36/22/26/26，见 pages/480x480/group.ux */
+
+/* 顶部时钟条：y∈[0,48] 置顶，忽略安全区；时钟文字水平垂直居中 */
+.clock-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 48px;
+}
+.top-time {
+  line-height: 48px;
+  font-size: 24px;
+  color: #ffffff;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+/* 返回键条：y∈[48,92]，留在安全区内；返回箭头 + 组标题整体水平居中；
+   与 detail 返回键条同款（等高盒 + align-items: center 垂直对齐） */
+.back-bar {
+  position: relative;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 44px;
+}
+.back-btn {
+  font-size: 38px;
+  color: #ffffff;
+  line-height: 44px;
+  height: 44px;
+}
+.page-title {
+  margin-left: 8px;
+  margin-top: 4px;
+  max-width: 200px;
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: bold;
+  line-height: 44px;
+  height: 44px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+/* 计数条：共 N 个取件码（小号灰字，同 completed status-bar 规格） */
+.count-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 40px;
+}
+.count-text {
+  font-size: 18px;
+  color: #888888;
+  lines: 1;
+}
+
+/* 空状态 */
+.empty {
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.empty-main {
+  font-size: 28px;
+  color: #ffffff;
+  font-weight: bold;
+}
+.empty-sub {
+  font-size: 22px;
+  color: #999999;
+  margin-top: 16px;
+}
+
+/* 滚动容器：Vela 官方 list 列表组件（原生滚动）。
+   垂直滚动必须固定高度：334px = 屏高 466px − 时钟行 48px − 标题行 44px − 计数行 40px；
+   基础 padding-bottom 93px 为底部悬浮「全部完成」按钮保留占位空间
+   （滚到底内容底 = 466 − 93 = 373 < 按钮顶 380，间隙 7px，卡片不被按钮遮挡）；
+   circle 下另加底部安全区 padding（126，见 circle 块） */
+.code-list {
+  height: 334px;
+  padding-bottom: 93px;
+}
+/* 列表项容器：卡片 420px 在内容区 456px（466−2×5）水平居中，左右各余 18px；
+   list-item 为行向 flex，justify-content: center 居中卡片 */
+.code-item {
+  flex-direction: row;
+  justify-content: center;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+/* 单条取件码卡片：深灰圆角矩形（圆角 30px，与主页单卡/组卡同款），420×102
+   （宽 420px × 高 102px，flex-shrink: 0 防止 Vela flex 把固定高度卡片压缩）：
+   左侧主区（可点击行）+（无二维码时）右侧完成按钮；
+   高度核算（内容区 = 102 − 15×2 = 72px，padding 上下 15px）：
+   - 码字行：line-height 44px；
+   - 元信息行：line-height 26px + margin-top 2px；
+   - 主区合计 44 + 2 + 26 = 72px ≤ 72px ✓、完成按钮（line-height 28 + padding 8×2）= 44px ≤ 72px ✓；
+   - 合计 15 + 72 + 15 = 102px，不溢出、不裁字 */
+.code-card {
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 420px;
+  height: 102px;
+  padding: 15px 22px;
+  margin-bottom: 5px;
+  border-radius: 30px;
+  background-color: #1f1f1f;
+}
+
+/* 卡片行：主区（可点击）与完成按钮并排；按钮为兄弟节点，点击不冒泡进主区点击逻辑 */
+.code-row {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+}
+.code-main {
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+/* 大号取餐码数字：单行；字号 34px = 原基础值（480 档为 36px） */
+.code-text {
+  font-size: 34px;
+  line-height: 44px;
+  color: #ffffff;
+  font-weight: bold;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+/* 元信息：类型·时间（如「取餐码 · 2024-07-21 14:30」）；字号 20px = 原基础值（480 档为 22px） */
+.code-meta {
+  font-size: 20px;
+  line-height: 26px;
+  color: #888888;
+  margin-top: 2px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+/* 完成按钮：无二维码取件码行右侧按钮（蓝色圆角 16px，与主页 .done-btn 同款，
+   字号 24px = 原基础值，480 档为 26px） */
+.done-btn {
+  font-size: 24px;
+  line-height: 28px;
+  color: #ffffff;
+  background-color: #0a84ff;
+  border-radius: 16px;
+  padding: 8px 14px;
+  margin-left: 8px;
+  text-align: center;
+  lines: 1;
+}
+
+/* 「全部完成」按钮：悬浮固定页面底部中间（absolute 定位于 .page 底部 23px，
+   不随 list 内容滚动；同 detail「已完成」按钮规格，字号 24px = 原基础值） */
+.btn-wrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 23px;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+}
+.all-done-btn {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 63px;
+  padding: 0 39px;
+  background-color: #0a84ff;
+  border-radius: 39px;
+}
+.all-done-text {
+  font-size: 24px;
+  color: #ffffff;
+  line-height: 44px;
+  lines: 1;
+}
+
+/* 圆屏(shape:circle)：页面无需顶部安全区 padding（时钟条置顶）；底部安全区
+   padding-bottom 126px 直接放在 list 组件 .code-list 上：
+   内容底 = 466 − 126 = 340，该处弦宽 414px < 卡片 420px，最外侧各约 3px 落在弦外
+   （30px 圆角区本就透明，视觉无感，与主页列表同口径、用户知情）；
+   滚到底最后一张卡片完整显示、且不与悬浮按钮重叠（按钮顶 380 > 内容底 340，间隙 40px） */
+@media (shape: circle) {
+  .page {
+    padding: 0px 36px;
+  }
+  .code-list {
+    height: 334px;
+    padding-bottom: 126px;
+  }
+}
+
+/* 方屏/矩形屏(shape:rect)：显式写回默认，保持基础样式（padding-bottom 93px 已含按钮占位） */
+@media (shape: rect) {
+  .page {
+    padding: 0px 36px;
+  }
+}
+
+/* 页面跳转动画关键帧（同 detail/completed 二级页）：
+   page-in：进入动画，右侧滑入 48px + 透明度 0→1（0.25s ease-out）
+   page-out：退出动画，反向滑出（透明度 1→0 + 右移 48px，0.22s ease-in） */
+@keyframes page-in {
+  from { opacity: 0; transform: translateX(48px); }
+  to { opacity: 1; transform: translateX(0px); }
+}
+
+@keyframes page-out {
+  from { opacity: 1; transform: translateX(0px); }
+  to { opacity: 0; transform: translateX(48px); }
+}
+</style>
+
+<script>
+import router from '@system.router'
+
+export default {
+  private: {
+    groupId: '',
+    pageTitle: '',
+    countText: '',
+    items: [],
+    clockText: '',
+    clockTimerId: null,
+    watcherId: null,
+    lastVersion: -1,
+    backTimerId: null,
+    leaving: false,
+    bypassBack: false,
+    allDoneClicked: false
+  },
+
+  onInit() {
+    const params = router.getParams()
+    this.groupId = (params && params.groupId !== undefined && params.groupId !== null)
+      ? String(params.groupId)
+      : ''
+  },
+
+  onShow() {
+    this.loadGroup()
+    this.startClock()
+    this.startWatcher()
+  },
+
+  onHide() {
+    this.stopClock()
+    this.stopWatcher()
+  },
+
+  onDestroy() {
+    this.stopClock()
+    this.stopWatcher()
+    // 清理退出动画延迟返回定时器，防止页面销毁后定时器仍触发 router.back()
+    if (this.backTimerId) {
+      clearTimeout(this.backTimerId)
+      this.backTimerId = null
+    }
+  },
+
+  // ═══ 数据：从共享快照加载本组取件码（快照为唯一数据源）═══
+
+  loadGroup() {
+    const s = this.$app.$def.syncState
+    const orders = (s && s.snapshot) ? (s.snapshot.payload || []) : []
+    const groupId = this.groupId
+    const items = []
+    let firstOrder = null
+    orders.forEach(function (order) {
+      if (!order || !groupId || String(order.groupId) !== groupId) return
+      if (!firstOrder) firstOrder = order
+      const typeText = order.orderType === '快递' ? '取件码' : '取餐码'
+      const timeText = this.formatTime(order.createdAt)
+      items.push({
+        itemId: order.orderId || ('code-' + items.length),
+        orderId: order.orderId,
+        code: order.code || '',
+        hasQr: !!order.qrCodeData,
+        metaText: timeText ? (typeText + ' · ' + timeText) : typeText
+      })
+    }, this)
+    this.items = items
+    const firstTypeText = firstOrder
+      ? (firstOrder.orderType === '快递' ? '取件码' : '取餐码')
+      : '取件码'
+    this.pageTitle = firstOrder
+      ? (firstOrder.brandName || firstTypeText)
+      : ''
+    this.countText = '共 ' + items.length + ' 个' + firstTypeText
+    this.lastVersion = s ? s.syncVersion : this.lastVersion
+  },
+
+  // 毫秒时间戳 → YYYY-MM-DD HH:mm（手动补零；环境 Date 不可用或解析失败时降级显示时间戳前 10 位）
+  formatTime(ts) {
+    if (!ts) return ''
+    try {
+      if (typeof Date !== 'undefined' && typeof Date.prototype.getFullYear === 'function') {
+        const d = new Date(ts)
+        if (!isNaN(d.getTime())) {
+          const pad = function (n) { return (n < 10 ? '0' : '') + n }
+          return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+            ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+        }
+      }
+    } catch (e) {
+      // 忽略，走降级
+    }
+    return String(ts).slice(0, 10)
+  },
+
+  // ═══ 顶部时钟（HH:mm，10s 刷新；onShow 启动 / onHide、onDestroy 清理）═══
+
+  startClock() {
+    this.updateClock()
+    if (this.clockTimerId) return
+    let self = this
+    this.clockTimerId = setInterval(function () {
+      self.updateClock()
+    }, 10000)
+  },
+
+  stopClock() {
+    if (this.clockTimerId) {
+      clearInterval(this.clockTimerId)
+      this.clockTimerId = null
+    }
+  },
+
+  updateClock() {
+    try {
+      const d = new Date()
+      if (typeof d.getHours !== 'function' || isNaN(d.getTime())) {
+        this.clockText = ''
+        return
+      }
+      const pad = function (n) {
+        return (n < 10 ? '0' : '') + n
+      }
+      this.clockText = pad(d.getHours()) + ':' + pad(d.getMinutes())
+    } catch (e) {
+      this.clockText = ''
+    }
+  },
+
+  // ═══ 实时刷新（同步期间快照被 app 更新时）═══
+
+  startWatcher() {
+    if (this.watcherId) return
+    let self = this
+    this.watcherId = setInterval(function () {
+      const s = self.$app.$def.syncState
+      if (s && s.syncVersion !== self.lastVersion) {
+        self.loadGroup()
+      }
+    }, 600)
+  },
+
+  stopWatcher() {
+    if (this.watcherId) {
+      clearInterval(this.watcherId)
+      this.watcherId = null
+    }
+  },
+
+  // ═══ 交互 ═══
+
+  // 行点击：有二维码 → 进该取件码详情页（展示二维码）；无二维码 → 兜底（右侧完成按钮就地完成）
+  onRowClick(idx) {
+    const item = this.items[idx]
+    if (!item || !item.hasQr) return
+    router.push({
+      uri: this.$app.$def.getDeviceRoute('detail'),
+      params: { orderId: item.orderId }
+    })
+  },
+
+  // 单条完成：就地标记该取件码完成并刷新（快照更新后该条移除）
+  onMarkOne(idx) {
+    const item = this.items[idx]
+    if (!item || !item.orderId) return
+    this.$app.$def.markDone(item.orderId)
+    this.loadGroup()
+  },
+
+  // 全部完成：本组全部标记完成并返回列表（标志位防重复点击）
+  onMarkAll() {
+    if (this.allDoneClicked) return
+    this.allDoneClicked = true
+    this.items.forEach(function (item) {
+      if (item && item.orderId) {
+        this.$app.$def.markDone(item.orderId)
+      }
+    }, this)
+    this.loadGroup()
+    router.back()
+  },
+
+  // 返回：先播退出动画（0.22s），动画播完后由定时器（220ms，与动画时长对应）调 router.back()；
+  // leaving 标志防重复点击；页面返回按钮与系统返回手势/按键均走退出动画（onBackPress 拦截后复用）
+  onBack() {
+    if (this.leaving) return
+    this.leaving = true
+    let self = this
+    this.backTimerId = setTimeout(function () {
+      self.backTimerId = null
+      self.bypassBack = true
+      router.back()
+    }, 220)
+  },
+
+  // 系统返回键/返回手势拦截：统一走退出动画链路（onBack 含防重复）；
+  // return true 阻止引擎默认立即返回；程序化 router.back() 前已置 bypassBack 放行（return false）
+  onBackPress() {
+    if (this.bypassBack) return false
+    this.onBack()
+    return true
+  }
+}
+</script>

@@ -38,7 +38,12 @@ fun MiuixOrderDetailScreen(
 
     Scaffold(
         topBar = {
-            MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
+            MiuixBlurredBar(
+                backdrop = backdrop,
+                blurEnabled = blurEnabled,
+                blurRadius = 42f,
+                blendAlpha = 0.62f,
+            ) {
                 TopAppBar(
                     title = "识别详情",
                     color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,

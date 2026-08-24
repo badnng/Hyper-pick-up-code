@@ -1,0 +1,925 @@
+<script>
+import interconnect from '@system.interconnect'
+import storage from '@system.storage'
+import prompt from '@system.prompt'
+
+const SNAPSHOT_KEY = 'wearable_snapshot_v1'
+const REQ_WINDOW = 3000 // 「打开即同步」防重窗口(ms)
+const ONLINE_GRACE_MS = 30000 // 连续 30s 无任何「已连接信号」才判定未连接（降级超时制）
+const HEARTBEAT_INTERVAL_MS = 10000 // 心跳间隔：每 10s 发 ping，手机端回 pong（App 后台时手表感知手机在线的主要信号）
+const RECONNECT_INTERVAL_MS = 5000 // 每 5s 自动创建/校准一次互联连接（官方 demo 式保活检测）
+const DONE_RETRY_INTERVAL_MS = 1200 // 完成请求未确认时的重发间隔
+const DONE_MAX_ATTEMPTS = 4 // 首次发送 + 最多 3 次重发；手机端按 orderId 幂等处理
+const DONE_FINAL_ACK_WAIT_MS = 2500 // 最后一次发送后继续等待确认，超时才恢复卡片
+const HS_TAG = '__hs__'
+const BAND_VERSION_CODE = 2
+// 手表性能有限：只保留近期快照，避免旧版本手机或本地缓存把大量历史订单重新灌入页面。
+const MAX_ACTIVE_ORDERS = 20
+const MAX_COMPLETED_ORDERS = 30
+
+// 应用级同步状态与数据（通过 $app.$def 对页面共享）
+const syncState = {
+  // 连接状态: 'connecting' | 'connected' | 'disconnected' | 'error'
+  connection: 'disconnected',
+  // 同步阶段: 'idle' | 'syncing' | 'synced' | 'failed'
+  syncPhase: 'idle',
+  // 已收到的最新全量快照（snapshotVersion, payload 数组）
+  snapshot: {
+    snapshotVersion: 0,
+    payload: [],
+    completedPayload: []
+  },
+  // 已确认完成的订单 id；防止完成回执与旧快照乱序时重新显示
+  completedOrderIds: {},
+  // 等待手机确认的完成请求，失败或超时后恢复原卡片
+  pendingCompletions: {},
+  pendingCompletionTimers: {},
+  // 每次数据/状态变化 +1，供页面在 onShow/轮询时检测是否更新
+  syncVersion: 0,
+  lastError: '',
+  lastSyncAt: 0,
+  // 业务层握手：底层 interconnect ready 不等于手机监听/订单处理器已经准备好
+  businessReady: false
+}
+
+export default {
+  onCreate() {
+    this.syncState = syncState
+    // 多屏分组：默认 480 档（S5 真机，entry 默认档）；
+    // 466 屏（AIoT 模拟器）由入口页 device.getInfo 判定后经 setDeviceGroup 改写
+    this.deviceGroup = '480x480'
+    // 实测屏幕尺寸（默认 480 兜底）：welcome 开屏页 device.getInfo 后经 setViewport 写入，
+    // index 主页启动遮罩读取该值铺满（与开屏无缝衔接）
+    this.deviceWidth = 480
+    this.deviceHeight = 480
+    this.doneRequestSeq = 0
+    // 启动时读取本地缓存，让首屏能立即展示旧数据（UI 先行，再异步补全）
+    this.restoreSnapshot()
+    this.initInterconnect()
+    // 状态轮询：每 2s 通过官方 getReadyState 校准 interconnect 通道
+    this.startStatusPoll()
+    // 心跳：每 10s 发 ping，手机端回 pong（App 后台时手表感知手机在线的主要信号）
+    this.startHeartbeat()
+    // 每 5s 校准一次连接实例；官方 instance() 是单例，不反复销毁重建通道
+    this.startReconnectLoop()
+  },
+
+  onShow() {
+    // 回前台 / 息屏亮屏会触发 —— 触发一次打开即同步
+    this.requestSync()
+    // 同步校准一次连接状态并启动轮询（轮询幂等）
+    this.refreshConnection()
+    this.startStatusPoll()
+    // 心跳：每 10s 发 ping，手机端回 pong（App 后台时手表感知手机在线的主要信号）
+    this.startHeartbeat()
+    // 恢复每 5s 的连接校准
+    this.startReconnectLoop()
+  },
+
+  onHide() {
+    // 对齐参考项目 Snapnotes-band：app.ux 是通信宿主，进入后台不销毁
+    // interconnect 实例，也不停止心跳/重连。手机端后台仍可主动推送快照和回执；
+    // 真正销毁时统一在 onDestroy 清理定时器与回调。
+    console.log('[wear] app hidden, keep interconnect alive')
+  },
+
+  onDestroy() {
+    this.stopStatusPoll()
+    this.stopHeartbeat()
+    this.stopReconnectLoop()
+    this.releaseInterconnect()
+    for (let orderId in syncState.pendingCompletionTimers) {
+      if (syncState.pendingCompletionTimers[orderId]) {
+        clearTimeout(syncState.pendingCompletionTimers[orderId])
+      }
+    }
+    syncState.pendingCompletionTimers = {}
+    syncState.pendingCompletions = {}
+  },
+
+  // ═══ interconnect 连接管理 ═══
+
+  initInterconnect() {
+    let self = this
+    // connected 只代表「手机 App 已完成握手」，不要与 interconnect 通道状态混用
+    this.connected = false
+    this.transportConnected = false
+    syncState.businessReady = false
+    this.connectionCheckInFlight = false
+    // 启动宽限期只避免首帧状态闪断；真正的在线证明必须来自手机 pong/codes
+    this.lastAliveAt = Date.now()
+    // 分片 JSON 接收缓冲（官方 demo header/data/end 协议）
+    this.frameBuffer = null
+    try {
+      this.connect = interconnect.instance()
+      this.connect.onopen = function (data) {
+        console.log('[wear] onopen ' + self.describeEvent(data))
+        self.markTransportConnected()
+      }
+      this.connect.onclose = function (data) {
+        console.log('[wear] onclose ' + self.describeEvent(data))
+        // 事件不直接降级（可能误报，App 后台时会触发）：仅记录错误并持久化缓存；
+        // 真实降级由 refreshConnection 连续 30s 无已连接信号驱动
+        self.transportConnected = false
+        syncState.businessReady = false
+        syncState.lastError = data && data.code !== undefined ? ('连接关闭 ' + data.code) : '连接关闭'
+        syncState.syncVersion += 1
+        self.persistSnapshot(syncState.snapshot)
+      }
+      this.connect.onerror = function (data) {
+        console.log('[wear] onerror ' + self.describeEvent(data))
+        // 事件不直接降级（同上）：仅记录错误并持久化缓存
+        self.transportConnected = false
+        syncState.businessReady = false
+        syncState.lastError = data && data.code !== undefined ? ('连接错误 ' + data.code) : '连接错误'
+        syncState.syncVersion += 1
+        self.persistSnapshot(syncState.snapshot)
+      }
+      // ★ 核心：接收手机端推送的取餐码快照
+      this.connect.onmessage = function (data) {
+        self.handleIncoming(data)
+      }
+      // 底层 interconnect 建立不等于手机端监听器已就绪；在收到手机业务消息前
+      // 保持“未连接”，避免主页首次打开就误显示“已连接”。
+      syncState.connection = 'disconnected'
+      syncState.syncVersion += 1
+    } catch (e) {
+      syncState.connection = 'error'
+      syncState.lastError = 'interconnect 初始化失败'
+      syncState.syncVersion += 1
+    }
+    // 注册完回调后立即同步校准一次真实连接状态
+    // （修复「启动时底层通道已连接、onopen 不再触发」导致状态永远卡在 connecting/error 的问题）
+    console.log('[wear] interconnect init, connect=' + (!!this.connect))
+    this.refreshConnection()
+  },
+
+  releaseInterconnect() {
+    if (this.connect) {
+      // 解除引用，App 退出即随进程回收
+      this.connect.onopen = null
+      this.connect.onclose = null
+      this.connect.onerror = null
+      this.connect.onmessage = null
+      this.connect = null
+    }
+    this.frameBuffer = null
+    this.connected = false
+    this.transportConnected = false
+    syncState.businessReady = false
+    this.lastAliveAt = 0
+  },
+
+  // ═══ 连接校准 ═══
+
+  // 官方 demo 只创建一次 interconnect.instance()，后续通过 getReadyState 校准；
+  // 手机 App 暂时退出时保留实例，避免反复 release/init 让握手回调丢失。
+  reconnectNow() {
+    if (!this.connect) {
+      console.log('[wear] reconnectNow: 创建连接')
+      this.initInterconnect()
+    } else {
+      this.refreshConnection()
+    }
+  },
+
+  startReconnectLoop() {
+    if (this.reconnectTimerId) return
+    let self = this
+    this.reconnectTimerId = setInterval(function () {
+      self.reconnectNow()
+    }, RECONNECT_INTERVAL_MS)
+  },
+
+  stopReconnectLoop() {
+    if (this.reconnectTimerId) {
+      clearInterval(this.reconnectTimerId)
+      this.reconnectTimerId = null
+    }
+  },
+
+  // ═══ 打开即同步 ═══
+
+  requestSync() {
+    // 通道 ready 后即可发 hello；是否真的在线由手机返回 pong/codes 决定
+    if (!this.transportConnected || !this.connect) return
+    const now = Date.now()
+    if (now - syncState.lastSyncAt < REQ_WINDOW) return
+    syncState.lastSyncAt = now
+    syncState.syncPhase = 'syncing'
+    syncState.syncVersion += 1
+    this.send({
+      type: 'hello'
+    })
+  },
+
+  // 用户手动重试：绕过 3s 防重窗口（同步失败后立即重试，要求立刻发出 hello）
+  retrySync() {
+    if (!this.transportConnected || !this.connect) {
+      // 未连接时直接 return 会让页面「重试」按钮无效 —— 改为同步校准真实连接状态
+      this.refreshConnection()
+      return
+    }
+    syncState.lastSyncAt = 0 // 清空防重窗口，使下一次 requestSync 不被拦截
+    syncState.syncPhase = 'syncing'
+    syncState.syncVersion += 1
+    this.send({
+      type: 'hello'
+    })
+  },
+
+  send(payload) {
+    let self = this
+    if (!this.connect) {
+      console.log('[wear] send skipped no-connect ' + JSON.stringify(payload))
+      syncState.lastError = '未连接'
+      syncState.syncVersion += 1
+      return
+    }
+    // 严格按 Vela 官方接口：connect.send({ data: Object })。
+    console.log('[wear] send ' + JSON.stringify(payload) + ' encoding=object')
+    this.connect.send({
+      data: payload,
+      success: function () {
+            console.log('[wear] send ok type=' + (payload && payload.type ? payload.type : '?'))
+        // 发送成功只证明通道可投递，不能证明手机 App 进程仍在运行；
+        // 手机在线状态必须由收到 pong/codes 确认。
+        self.transportConnected = true
+      },
+      fail: function (e, code) {
+        console.log('[wear] send fail type=' + (payload && payload.type ? payload.type : '?')
+          + ' code=' + (code || '') + ' err=' + JSON.stringify(e || ''))
+        syncState.lastError = '发送失败 ' + (code || '')
+        syncState.syncVersion += 1
+      }
+    })
+  },
+
+  // ═══ 连接状态与手机 App 握手 ═══
+
+  // onopen/readyState 只证明底层 interconnect 可用；必须等手机端业务消息
+  // （pong、ready 或 codes）到达后，主页才显示「已连接」。
+  markTransportConnected() {
+    // getReadyState 每 2 秒会回调一次；只有真正从断开切到已连接时才请求快照，
+    // 避免连接轮询不断发送 hello，导致手机重复下发整份待取/已取列表。
+    const wasTransportReady = this.transportConnected
+    this.transportConnected = true
+    console.log('[wear] transport -> ready')
+    if (!wasTransportReady) this.requestSync()
+  },
+
+  // 数据存活证明：收到手机端有效业务消息后刷新存活时间，并正式标记为已连接。
+  noteAlive() {
+    this.lastAliveAt = Date.now()
+    this.transportConnected = true
+    if (!this.connected) {
+      this.connected = true
+      syncState.connection = 'connected'
+      syncState.lastError = ''
+      syncState.syncVersion += 1
+      // 确认在线后立即补一次同步（requestSync 自带 3s 防重）
+      this.requestSync()
+    }
+  },
+
+  // 连接状态校准：优先使用官方 demo 使用的 getReadyState()。
+  // readyState 只判断互联通道，手机 App 是否运行由 ping/pong 的存活窗口判断。
+  refreshConnection() {
+    if (!this.connect) return
+    let self = this
+    let onAliveSignal = function () {
+      self.transportConnected = true
+      self.markTransportConnected()
+    }
+    let onDeadSignal = function () {
+      self.transportConnected = false
+      if (Date.now() - self.lastAliveAt > ONLINE_GRACE_MS &&
+          (self.connected || syncState.connection !== 'disconnected')) {
+        self.connected = false
+        syncState.connection = 'disconnected'
+        syncState.syncVersion += 1
+        console.log('[wear] phone app -> disconnected')
+      }
+    }
+    if (typeof this.connect.getReadyState === 'function') {
+      if (this.connectionCheckInFlight) return
+      this.connectionCheckInFlight = true
+      let finish = function () { self.connectionCheckInFlight = false }
+      try {
+        this.connect.getReadyState({
+          success: function (res) {
+            finish()
+            console.log('[wear] readyState status=' + (res && res.status)
+              + ' raw=' + JSON.stringify(res || {}))
+            if (res && (res.status === 1 || res.status === '1' || res.status === 'CONNECTED')) {
+              onAliveSignal()
+            } else {
+              // 某些系统版本 getReadyState 只能判断通道，失败时再用官方 diagnosis
+              // 做一次实际互联探测，避免状态长期停在“连接中”。
+              self.runDiagnosis(onAliveSignal, onDeadSignal)
+            }
+          },
+          fail: function () {
+            finish()
+            self.runDiagnosis(onAliveSignal, onDeadSignal)
+          }
+        })
+      } catch (e) {
+        finish()
+        self.runDiagnosis(onAliveSignal, onDeadSignal)
+      }
+      return
+    }
+    // 极旧固件没有 getReadyState 时保留兼容探测，但不把探测结果当作手机 App 在线。
+    if (typeof this.connect.diagnosis === 'function') {
+      if (this.connectionCheckInFlight) return
+      this.connectionCheckInFlight = true
+      let finish = function () { self.connectionCheckInFlight = false }
+      try {
+        this.connect.diagnosis({
+          timeout: 5000,
+          success: function () { finish(); onAliveSignal() },
+          fail: function () { finish(); onDeadSignal() }
+        })
+      } catch (e) {
+        finish()
+        onDeadSignal()
+      }
+    }
+  },
+
+  runDiagnosis(onSuccess, onFail) {
+    if (!this.connect || typeof this.connect.diagnosis !== 'function') {
+      console.log('[wear] diagnosis unavailable')
+      onFail()
+      return
+    }
+    try {
+      console.log('[wear] diagnosis start')
+      this.connect.diagnosis({
+        timeout: 5000,
+        success: function (data) {
+          console.log('[wear] diagnosis success raw=' + (data ? JSON.stringify(data) : '{}'))
+          onSuccess()
+        },
+        fail: function (error, code) {
+          console.log('[wear] diagnosis fail code=' + (code || '')
+            + ' err=' + (error ? JSON.stringify(error) : '{}'))
+          onFail()
+        }
+      })
+    } catch (e) {
+      console.log('[wear] diagnosis throw ' + String(e))
+      onFail()
+    }
+  },
+
+  // 状态轮询：每 2s 同步校准通道状态；手机 App 前后台由 pong/codes 存活窗口确认。
+  startStatusPoll() {
+    if (this.statusTimerId) return
+    let self = this
+    this.statusTimerId = setInterval(function () {
+      self.refreshConnection()
+    }, 2000)
+  },
+
+  stopStatusPoll() {
+    if (this.statusTimerId) {
+      clearInterval(this.statusTimerId)
+      this.statusTimerId = null
+    }
+  },
+
+  // ═══ 心跳（ping/pong，与手机端 WearableSyncManager 配对）═══
+
+  // 心跳：定期发 ping，手机端回 pong（收到 pong 由 handleIncoming 开头的 noteAlive 刷新存活时间戳）。
+  // 发送失败不降级——降级由 refreshConnection 的 30s 超时制统一负责。
+  sendPing() {
+    this.send({
+      type: 'ping'
+    })
+  },
+
+  startHeartbeat() {
+    if (this.heartbeatTimerId) return
+    let self = this
+    this.heartbeatTimerId = setInterval(function () {
+      self.sendPing()
+    }, HEARTBEAT_INTERVAL_MS)
+  },
+
+  stopHeartbeat() {
+    if (this.heartbeatTimerId) {
+      clearInterval(this.heartbeatTimerId)
+      this.heartbeatTimerId = null
+    }
+  },
+
+  // ═══ 消息接收与快照更新 ═══
+
+  handleIncoming(data) {
+    const rawData = data && Object.prototype.hasOwnProperty.call(data, 'data')
+      ? data.data
+      : data
+    if (rawData === null || rawData === undefined) {
+      console.log('[wear] recv empty event=' + this.describeEvent(data))
+      return
+    }
+    // 收到有效消息即证明通道存活：记录存活时间戳并校准为已连接（双保险恢复）
+    console.log('[wear] recv rawType=' + typeof rawData + ' preview=' + this.previewIncoming(rawData))
+    this.noteAlive()
+    let msg = null
+    const binaryText = this.decodeBinary(rawData)
+    const normalizedData = binaryText !== null ? binaryText : rawData
+    if (typeof normalizedData === 'string') {
+      try {
+        msg = JSON.parse(normalizedData)
+      } catch (e) {
+        console.log('[wear] parse fail text=' + String(normalizedData).slice(0, 240))
+        syncState.lastError = '收到无法解析的消息'
+        syncState.syncVersion += 1
+        return
+      }
+    } else if (normalizedData && typeof normalizedData === 'object') {
+      // 兼容对端直接发对象（官方 demo 的 send({data: object}) 形态）
+      msg = normalizedData
+    }
+    // 兼容旧版本互联层返回的二次 data 信封。
+    if (msg && !msg.type && msg.data !== undefined) {
+      const nestedText = this.decodeBinary(msg.data)
+      const nested = nestedText !== null ? nestedText : msg.data
+      if (typeof nested === 'string') {
+        try { msg = JSON.parse(nested) } catch (e) { msg = null }
+      } else if (nested && typeof nested === 'object') {
+        msg = nested
+      }
+    }
+    if (!msg || typeof msg !== 'object') {
+      console.log('[wear] recv unsupported payload')
+      return
+    }
+    console.log('[wear] recv parsed type=' + (msg.type || '?'))
+
+    // 对齐 Snapnotes 的手机主动握手：手机发 count=0，手表逐级回到 count=2。
+    // 该握手证明 Android MessageApi listener 与 Vela onmessage 已经真正打通。
+    if (msg.tag === HS_TAG) {
+      this.handlePhoneHandshake(msg)
+      return
+    }
+
+    // ── 官方 demo 式分片 JSON 接收：header → data ×N → end ──
+    if (msg.type === 'header') {
+      console.log('[wear] 接收分片开始 totalChunks=' + msg.totalChunks
+        + ' totalSize=' + (msg.totalSize || '?'))
+      this.frameBuffer = {
+        chunks: [],
+        totalChunks: Number(msg.totalChunks) || 0,
+        received: 0
+      }
+      syncState.syncVersion += 1
+      return
+    }
+    if (msg.type === 'data') {
+      if (!this.frameBuffer) {
+        console.log('[wear] 分片数据被忽略：尚未收到 header')
+        return
+      }
+      const index = Number(msg.index)
+      if (isNaN(index) || index < 0 ||
+          (this.frameBuffer.totalChunks > 0 && index >= this.frameBuffer.totalChunks)) {
+        console.log('[wear] 分片索引非法 index=' + msg.index)
+        return
+      }
+      if (this.frameBuffer.chunks[index] !== undefined) {
+        console.log('[wear] 分片重复 index=' + index + '，覆盖旧数据')
+      } else {
+        this.frameBuffer.received += 1
+      }
+      this.frameBuffer.chunks[index] = typeof msg.chunk === 'string' ? msg.chunk : ''
+      syncState.syncVersion += 1
+      console.log('[wear] 分片 index=' + index + ' received=' + (this.frameBuffer.received)
+        + '/' + this.frameBuffer.totalChunks + ' chunkLength=' + String(msg.chunk || '').length)
+      return
+    }
+    if (msg.type === 'end') {
+      const buf = this.frameBuffer
+      this.frameBuffer = null
+      if (!buf || !buf.chunks) return
+      if (buf.totalChunks > 0) {
+        for (let i = 0; i < buf.totalChunks; i++) {
+          if (typeof buf.chunks[i] !== 'string') {
+            console.log('[wear] 分片接收不完整，缺少 index=' + i
+              + ' received=' + buf.received + '/' + buf.totalChunks)
+            syncState.syncPhase = 'failed'
+            syncState.lastError = '同步分片不完整'
+            syncState.syncVersion += 1
+            return
+          }
+        }
+      }
+      const fullJson = buf.chunks.join('')
+      console.log('[wear] 分片接收完成，总长度=' + fullJson.length + '，进入解析')
+      if (fullJson) {
+        this.handleIncoming({ data: fullJson })
+      }
+      return
+    }
+
+    // ── 完成状态结果（兼容旧版手机端用 done 直接回传成功）──
+    if (msg.type === 'done_result' || msg.type === 'done') {
+      const orderId = typeof msg.orderId === 'string' ? msg.orderId : ''
+      if (orderId) {
+        const pending = syncState.pendingCompletions[orderId]
+        // 必须存在当前请求且 requestId 匹配，防止旧回执把新请求或已恢复订单误清理。
+        if (msg.type === 'done_result' &&
+            (!pending || !msg.requestId || msg.requestId !== pending.requestId)) {
+          console.log('[wear] 忽略过期完成回执 orderId=' + orderId
+            + ' requestId=' + msg.requestId + ' expected=' + (pending ? pending.requestId : 'none'))
+          return
+        }
+        const success = msg.type === 'done' || msg.success === true
+        if (success) {
+          this.clearPendingCompletion(orderId)
+          this.applyCompleted(orderId)
+        } else {
+          this.restorePendingCompletion(orderId, msg.message || '手机端完成失败，订单已恢复')
+        }
+      }
+      return
+    }
+
+    // ── 手机业务层握手回执 ──
+    if (msg.type === 'ready') {
+      syncState.businessReady = true
+      syncState.lastError = ''
+      syncState.syncVersion += 1
+      console.log('[wear] phone business -> ready')
+      this.flushPendingCompletions()
+      return
+    }
+
+    // ── 非分片消息（单条 JSON）──
+    if (msg.type === 'codes') {
+      // 全量快照：广播给所有页面（页面 onShow / 版本检测拉取）
+      console.log('[wear] 收到订单快照 snapshotVersion=' + (msg.snapshotVersion || 0)
+        + ' count=' + (Array.isArray(msg.payload) ? msg.payload.length : 0)
+        + ' completed=' + (Array.isArray(msg.completedPayload) ? msg.completedPayload.length : 0))
+      this.applySnapshot(msg)
+      // 兼容尚未实现 ready 的旧手机版本：收到有效快照也视为业务层已就绪。
+      syncState.businessReady = true
+      this.flushPendingCompletions()
+    }
+    // 其他 type 忽略（两端兜底，坏数据不崩溃）
+  },
+
+  handlePhoneHandshake(msg) {
+    const count = Number(msg.count)
+    if (!isFinite(count) || count < 0) {
+      console.log('[wear] invalid phone handshake count=' + msg.count)
+      return
+    }
+    console.log('[wear] phone handshake count=' + count)
+    if (count < 2) {
+      this.send({
+        tag: HS_TAG,
+        count: count + 1,
+        version: BAND_VERSION_CODE
+      })
+    }
+  },
+
+  describeEvent(data) {
+    if (!data) return '{}'
+    try { return JSON.stringify(data).slice(0, 240) } catch (e) { return String(data) }
+  },
+
+  previewIncoming(data) {
+    if (typeof data === 'string') return data.slice(0, 240)
+    const decoded = this.decodeBinary(data)
+    if (decoded !== null) return decoded.slice(0, 240)
+    return this.describeEvent(data)
+  },
+
+  decodeBinary(data) {
+    let bytes = null
+    try {
+      if (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer) {
+        bytes = new Uint8Array(data)
+      } else if (typeof Uint8Array !== 'undefined' && data instanceof Uint8Array) {
+        bytes = data
+      } else if (data && data.buffer && typeof ArrayBuffer !== 'undefined' &&
+          data.buffer instanceof ArrayBuffer) {
+        bytes = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength)
+      }
+    } catch (e) {
+      console.log('[wear] binary detect fail ' + String(e))
+      return null
+    }
+    if (!bytes) return null
+
+    // Vela 版本不一定提供 TextDecoder，保留最小 UTF-8 解码器。
+    let result = ''
+    for (let i = 0; i < bytes.length;) {
+      const first = bytes[i++]
+      let code = 0
+      let extra = 0
+      if (first < 0x80) { code = first } else if ((first & 0xe0) === 0xc0) {
+        code = first & 0x1f; extra = 1
+      } else if ((first & 0xf0) === 0xe0) {
+        code = first & 0x0f; extra = 2
+      } else if ((first & 0xf8) === 0xf0) {
+        code = first & 0x07; extra = 3
+      } else { result += '\ufffd'; continue }
+      if (i + extra > bytes.length) { result += '\ufffd'; break }
+      for (let j = 0; j < extra; j++) {
+        const next = bytes[i++]
+        if ((next & 0xc0) !== 0x80) { code = 0xfffd; break }
+        code = (code << 6) | (next & 0x3f)
+      }
+      if (code <= 0xffff) {
+        result += String.fromCharCode(code)
+      } else {
+        code -= 0x10000
+        result += String.fromCharCode(0xd800 + (code >> 10), 0xdc00 + (code & 0x3ff))
+      }
+    }
+    return result
+  },
+
+  applySnapshot(msg) {
+    let payload = msg.payload
+    if (!Array.isArray(payload)) payload = []
+    let completedPayload = msg.completedPayload
+    if (!Array.isArray(completedPayload)) completedPayload = []
+    // 只覆盖最新版本号的快照
+    const version = Number(msg.snapshotVersion) || 0
+    if (version < syncState.snapshot.snapshotVersion) {
+      console.log('[wear] 忽略旧快照 incoming=' + version
+        + ' cached=' + syncState.snapshot.snapshotVersion)
+      return
+    }
+    const visiblePayload = payload.filter(function (item) {
+      return item && !syncState.completedOrderIds[item.orderId]
+    }).slice(0, MAX_ACTIVE_ORDERS)
+    const visibleCompletedPayload = completedPayload.filter(function (item) {
+      return item && item.orderId
+    }).slice(0, MAX_COMPLETED_ORDERS).map(function (item) {
+      // 已取页不展示二维码，兼容旧手机快照时也清掉历史长字符串。
+      if (item.qrCodeData) return Object.assign({}, item, { qrCodeData: null })
+      return item
+    })
+    syncState.snapshot = {
+      snapshotVersion: version,
+      payload: visiblePayload,
+      completedPayload: visibleCompletedPayload
+    }
+    syncState.syncPhase = 'synced'
+    syncState.lastError = ''
+    syncState.syncVersion += 1
+    this.persistSnapshot(syncState.snapshot)
+  },
+
+  // 手机端确认完成后，立即从手表当前快照移除订单。
+  applyCompleted(orderId) {
+    if (!orderId) return
+    syncState.completedOrderIds[orderId] = true
+    const payload = syncState.snapshot.payload || []
+    const completedPayload = syncState.snapshot.completedPayload || []
+    let completedOrder = null
+    for (let i = 0; i < payload.length; i++) {
+      if (payload[i] && payload[i].orderId === orderId) {
+        completedOrder = payload[i]
+        break
+      }
+    }
+    const next = payload.filter(function (item) {
+      return !item || item.orderId !== orderId
+    })
+    let nextCompleted = completedPayload.slice()
+    if (completedOrder) {
+      let exists = false
+      for (let i = 0; i < nextCompleted.length; i++) {
+        if (nextCompleted[i] && nextCompleted[i].orderId === orderId) {
+          exists = true
+          break
+        }
+      }
+      if (!exists) {
+        const localCompleted = Object.assign({}, completedOrder, { completedAt: Date.now(), qrCodeData: null })
+        nextCompleted.unshift(localCompleted)
+      }
+    }
+    nextCompleted = nextCompleted.slice(0, MAX_COMPLETED_ORDERS)
+    if (next.length === payload.length && nextCompleted.length === completedPayload.length) return
+    syncState.snapshot = {
+      snapshotVersion: syncState.snapshot.snapshotVersion,
+      payload: next,
+      completedPayload: nextCompleted
+    }
+    syncState.syncPhase = 'synced'
+    syncState.syncVersion += 1
+    this.persistSnapshot(syncState.snapshot)
+  },
+
+  clearPendingCompletion(orderId) {
+    const timer = syncState.pendingCompletionTimers[orderId]
+    if (timer) clearTimeout(timer)
+    delete syncState.pendingCompletionTimers[orderId]
+    const pending = syncState.pendingCompletions[orderId]
+    delete syncState.pendingCompletions[orderId]
+    return pending
+  },
+
+  restorePendingCompletion(orderId, message) {
+    const pending = this.clearPendingCompletion(orderId)
+    delete syncState.completedOrderIds[orderId]
+    const completedPayload = syncState.snapshot.completedPayload || []
+    const restoredCompleted = completedPayload.filter(function (item) {
+      return !item || item.orderId !== orderId
+    })
+    if (pending && pending.order) {
+      const payload = syncState.snapshot.payload || []
+      let exists = false
+      for (let i = 0; i < payload.length; i++) {
+        if (payload[i] && payload[i].orderId === orderId) {
+          exists = true
+          break
+        }
+      }
+      if (!exists) {
+        const next = payload.slice()
+        const insertAt = Math.max(0, Math.min(pending.index, next.length))
+        next.splice(insertAt, 0, pending.order)
+        syncState.snapshot = {
+          snapshotVersion: syncState.snapshot.snapshotVersion,
+          payload: next,
+          completedPayload: restoredCompleted
+        }
+        syncState.syncPhase = 'synced'
+        syncState.syncVersion += 1
+        this.persistSnapshot(syncState.snapshot)
+      }
+    }
+    try {
+      prompt.showToast({
+        message: message || '手机端未响应，订单已恢复',
+        duration: 2000
+      })
+    } catch (e) {
+      // Toast 失败不影响本地恢复
+    }
+  },
+
+  persistSnapshot(snapshot) {
+    try {
+      storage.set({
+        key: SNAPSHOT_KEY,
+        value: JSON.stringify(snapshot),
+        fail: function () {
+          // 存储失败不阻塞
+        }
+      })
+    } catch (e) {
+      // 忽略
+    }
+  },
+
+  restoreSnapshot() {
+    storage.get({
+      key: SNAPSHOT_KEY,
+      success: function (data) {
+        if (!data) return
+        try {
+          const parsed = JSON.parse(data)
+          if (parsed && Array.isArray(parsed.payload)) {
+            syncState.snapshot = {
+              snapshotVersion: Number(parsed.snapshotVersion) || 0,
+              payload: parsed.payload.slice(0, MAX_ACTIVE_ORDERS),
+              completedPayload: (Array.isArray(parsed.completedPayload) ? parsed.completedPayload : [])
+                .slice(0, MAX_COMPLETED_ORDERS)
+                .map(function (item) {
+                  if (item && item.qrCodeData) return Object.assign({}, item, { qrCodeData: null })
+                  return item
+                })
+            }
+            syncState.syncVersion += 1
+          }
+        } catch (e) {
+          // 忽略坏缓存
+        }
+      },
+      fail: function () {
+        // 无缓存，忽略
+      }
+    })
+  },
+
+  // 回执：标记订单已完成（幂等待手机端处理）
+  markDone(orderId) {
+    if (!orderId) return
+    if (syncState.pendingCompletions[orderId]) return
+    const payload = syncState.snapshot.payload || []
+    let order = null
+    let index = payload.length
+    for (let i = 0; i < payload.length; i++) {
+      if (payload[i] && payload[i].orderId === orderId) {
+        order = payload[i]
+        index = i
+        break
+      }
+    }
+    this.doneRequestSeq = (this.doneRequestSeq || 0) + 1
+    const requestId = Date.now().toString(36) + '-' + this.doneRequestSeq
+    syncState.pendingCompletions[orderId] = {
+      order: order,
+      index: index,
+      requestId: requestId,
+      attempts: 0
+    }
+    this.applyCompleted(orderId)
+    // done 是用户已经确认的业务操作，不能依赖额外的 ready 回执。
+    // ready 只用于显示/同步状态；手机端监听可能已经注册，但 ready 回包
+    // 可能因手表刚打开、消息时序或后台唤醒窗口而没有到达。只要底层
+    // interconnect 可发送，就立即投递 done，后续由 requestId + 重试保证送达。
+    if (this.transportConnected && this.connect) {
+      this.sendPendingCompletion(orderId)
+    } else {
+      console.log('[wear] done queued until interconnect ready orderId=' + orderId)
+      this.syncState.lastSyncAt = 0
+      this.requestSync()
+      this.schedulePendingCompletionRetry(orderId)
+    }
+  },
+
+  flushPendingCompletions() {
+    for (let orderId in syncState.pendingCompletions) {
+      if (syncState.pendingCompletions[orderId] &&
+          (syncState.pendingCompletions[orderId].attempts || 0) === 0) {
+        this.sendPendingCompletion(orderId)
+      }
+    }
+  },
+
+  // done 是会改变手机数据库状态的关键消息，不能只投递一次。
+  // 每次重发沿用同一个 requestId；手机端按 orderId 幂等，因此重复到达不会产生副作用。
+  sendPendingCompletion(orderId) {
+    const pending = syncState.pendingCompletions[orderId]
+    if (!pending) return
+    if (!this.transportConnected || !this.connect) {
+      console.log('[wear] done send postponed: interconnect not ready orderId=' + orderId)
+      return
+    }
+
+    pending.attempts = (pending.attempts || 0) + 1
+    console.log('[wear] done attempt=' + pending.attempts + '/' + DONE_MAX_ATTEMPTS
+      + ' orderId=' + orderId + ' requestId=' + pending.requestId)
+    this.send({
+      type: 'done',
+      orderId: orderId,
+      requestId: pending.requestId
+    })
+
+    this.schedulePendingCompletionRetry(orderId)
+  },
+
+  // 在通道尚未 ready 时也保留完成请求，连接恢复后立即发送；通道已 ready
+  // 时统一复用同一重试策略。这样 ready 丢失不会让一次点击永久静默。
+  schedulePendingCompletionRetry(orderId) {
+    const pending = syncState.pendingCompletions[orderId]
+    if (!pending) return
+    const oldTimer = syncState.pendingCompletionTimers[orderId]
+    if (oldTimer) clearTimeout(oldTimer)
+    let self = this
+    syncState.pendingCompletionTimers[orderId] = setTimeout(function () {
+      const current = syncState.pendingCompletions[orderId]
+      if (!current) return
+      if ((current.attempts || 0) < DONE_MAX_ATTEMPTS) {
+        self.sendPendingCompletion(orderId)
+      } else {
+        self.restorePendingCompletion(orderId, '手机端未响应，订单已恢复')
+      }
+    }, pending.attempts < DONE_MAX_ATTEMPTS
+      ? DONE_RETRY_INTERVAL_MS
+      : DONE_FINAL_ACK_WAIT_MS)
+  },
+
+  // ═══ 多屏路由分组（480x480 / 466x466）═══
+
+  // welcome 开屏页写入实测屏幕尺寸（仅合法正值才写入；index 主页启动遮罩读取铺满）
+  setViewport(w, h) {
+    if (typeof w === 'number' && isFinite(w) && w > 0) this.deviceWidth = w
+    if (typeof h === 'number' && isFinite(h) && h > 0) this.deviceHeight = h
+  },
+
+  // 设置当前设备分组（入口页 device.getInfo 判定后调用；非法值兜底回默认 480 档）
+  setDeviceGroup(group) {
+    this.deviceGroup = (group === '466x466' || group === '480x480') ? group : '480x480'
+  },
+
+  // 按当前设备分组拼页面路由：getDeviceRoute('detail') → '/pages/480x480/detail'
+  // （参考 rpk1 welcome_logo_new 的 getDeviceRoute 思路：'/pages/' + 分组 + '/' + 页面名）
+  getDeviceRoute(page) {
+    return '/pages/' + this.deviceGroup + '/' + page
+  }
+}
+</script>

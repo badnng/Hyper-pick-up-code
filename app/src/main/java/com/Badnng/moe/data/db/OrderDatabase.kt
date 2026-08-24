@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OrderEntity::class, OrderGroup::class], version = 8, exportSchema = false)
+@Database(entities = [OrderEntity::class, OrderGroup::class], version = 9, exportSchema = false)
 abstract class OrderDatabase : RoomDatabase() {
     abstract fun orderDao(): OrderDao
     abstract fun orderGroupDao(): OrderGroupDao
@@ -116,6 +116,11 @@ abstract class OrderDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "orders", "needsRuleCorrection", "INTEGER NOT NULL DEFAULT 0")
+            }
+        }
         private fun addColumnIfMissing(
             db: SupportSQLiteDatabase,
             table: String,
@@ -152,6 +157,7 @@ abstract class OrderDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
+                        MIGRATION_8_9,
                     )
                     .build()
                 INSTANCE = instance

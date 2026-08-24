@@ -1,0 +1,726 @@
+<template>
+  <!-- 466 档详情页（AIoT 模拟器 466×466）：designWidth: "device-width" 下 CSS px 与物理像素 1:1（无引擎等比缩放）；
+       本档字号 = 原基础字号（见 style 字号说明）；几何按 466/480 ≈ 0.971 比例换算取整 -->
+  <div class="page{{leaving ? ' page-leaving' : ''}}">
+    <!-- 顶部时钟：置顶忽略安全区（clock-bar y∈[0,48]），HH:mm 每 10 秒刷新；
+         返回键：白色大箭头「‹」+ 品牌标题组合整体水平居中（back-bar y∈[48,92]，安全区内，返回键不再孤悬左上角）（品牌图标 + 品牌名，图标预留后续实现，本次仅品牌名文字）；
+         二维码：白色圆角容器 .qr-base（border-radius 12px 常显占位）+ 直角白底 qrcode 缩小嵌套居中（circle 码 221/rect 码 198，白边 14/13.5px，码角不被圆角切到；默认视图码底与悬浮按钮顶重叠 circle 29px/rect 6px，用户已知情）；
+         qrcode 组件不支持 border-radius（真机两次验证：16px 与照抄参考仓库 12px 均无圆角），圆角由 div 容器保证；
+         qrcode 加 if 待数据就绪渲染，容器常显缓解双码闪烁；stack+transparent 曾致不渲染，勿用；
+         页面动画：进入动画页面渲染即播（page-in 右滑 48px + 淡入 0.25s ease-out），
+         无隐藏等待期、无黑屏；二维码容器与码随页面整体动画直接一起出现，无独立淡入动画；
+         原「先隐藏等待组件加载」机制已回退（曾导致黑屏）；
+         退出时 onBack 置 leaving 叠加 .page-leaving 重播 page-out（反向 0.22s ease-in），
+         定时器 220ms 后 router.back()（与动画 0.22s 对应）；页面返回按钮与系统返回手势/按键均走退出动画（onBackPress 拦截后复用） -->
+    <div class="clock-bar"><text class="top-time">{{clockText}}</text></div>
+    <!-- 返回键条：返回箭头 + 品牌标题组合整体水平居中（品牌标题 = 品牌图标 + 名称，图标预留，本次仅名称文字；无品牌名时标题自动隐藏、箭头单独居中） -->
+    <div class="back-bar">
+      <text class="back-btn" onclick="onBack">‹</text>
+      <text class="brand-title" onclick="onBack" if="{{brandName}}">{{brandName}}</text>
+    </div>
+
+    <!-- 无二维码数据兜底 -->
+    <div if="{{noQr}}" class="no-qr">
+      <text class="no-qr-main">无二维码数据</text>
+      <text class="no-qr-sub">该订单未识别到二维码</text>
+    </div>
+
+    <!-- 有二维码：滚动内容（内容超一屏时可滚），从上到下居中：
+         取餐码小字标签 → 大号取餐码 → 二维码（白色圆角容器 .qr-base（border-radius 12px 常显占位）+ 直角白底 qrcode 缩小嵌套居中（circle 码 221/rect 码 198，白边 14/13.5px，码角不被圆角切到）；qrcode 组件不支持 border-radius（真机两次验证：16px 与照抄参考仓库 12px 均无圆角），圆角由 div 容器保证；qrcode 加 if 待数据就绪渲染，容器常显缓解双码闪烁；stack+transparent 曾致不渲染，勿用） → 订单时间（「已完成」按钮已移出 scroll，悬浮固定底部；scroll padding-bottom 93px 保留按钮占位空间，滚到底时间上移、与按钮间距 7px） -->
+    <scroll if="{{!noQr}}" class="scroll" scroll-y="true">
+      <div class="content">
+        <text class="code-label">取餐码</text>
+        <text class="code">{{code}}</text>
+        <div class="qr-wrap">
+          <div class="qr-base" onclick="onQrClick">
+            <qrcode if="{{qrData}}" class="qr" value="{{qrData}}"></qrcode>
+          </div>
+        </div>
+        <text class="time" if="{{createdAtText}}">{{createdAtText}}</text>
+      </div>
+    </scroll>
+
+    <!-- 已完成按钮：悬浮固定底部中间（不随滚动内容滚动；全屏层覆盖其上） -->
+    <div class="btn-wrap">
+      <div class="done-btn" onclick="onMarkCompleted">
+        <text class="done-text">已完成</text>
+      </div>
+    </div>
+
+    <!-- 全屏二维码：点击二维码进入，点击任意处关闭；黑色背景覆盖整屏，居中白底圆角大容器 -->
+    <div if="{{fullscreenQr}}" class="qr-fullscreen" onclick="onFullscreenClose">
+      <div class="qr-full-base">
+        <qrcode class="qr-full" value="{{qrData}}"></qrcode>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style>
+.page {
+  position: relative; /* 作为 .qr-fullscreen 绝对定位层的包含块（left/right/top/bottom: 0 覆盖整屏） */
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  padding: 0px 36px 0px 36px;
+  /* 进入动画页面渲染即播，无隐藏等待（原「先隐藏等组件加载」机制已回退，曾导致黑屏）；
+     动画结束后回静态 opacity 1（默认），无黑屏、无回弹；
+     Vela 无 animation-fill-mode 亦无碍；退出动画（.page-leaving）不受影响 */
+  animation-name: page-in;
+  animation-duration: 0.25s;
+  animation-timing-function: ease-out;
+}
+
+/* 退出动画：onBack 置 leaving=true 时叠加本类，切换 animation-name 重播退出动画
+   （反向右滑 48px + 淡出，0.22s ease-in；与 onBack 中 220ms 延迟返回的定时器时长对应）；
+   静态 opacity: 1 防止退出动画起播前的首帧闪黑（动画期间 opacity 由 keyframes 覆盖生效） */
+.page-leaving {
+  opacity: 1;
+  animation-name: page-out;
+  animation-duration: 0.22s;
+  animation-timing-function: ease-in;
+}
+
+/* 圆屏(shape:circle)：顶部 padding 归零，时钟条置顶忽略安全区（y∈[0,48]），
+   返回键条 y∈[48,92] 留在安全区内；多余内容（时间/按钮）靠 scroll 往下顺 */
+@media (shape: circle) {
+  .page {
+    padding: 0px 36px 0px 36px;
+  }
+}
+
+/* 方屏/矩形屏(shape:rect)：与圆屏一致，顶部 padding 归零，时钟置顶、返回键在安全区内 */
+@media (shape: rect) {
+  .page {
+    padding: 0px 36px 0px 36px;
+  }
+}
+
+/* 466 档字号说明（本页为 466x466 档，= AIoT 模拟器档）：
+   designWidth: "device-width" 下 CSS px 与屏幕物理像素 1:1（无引擎等比缩放）；
+   本档各字号即原基础字号（top-time 24、back-btn 38、brand-title 32、code-label 20、
+   code 34、time 20、done-text 24），行高容器（line-height/height）保持原基础兼容关系：
+   .top-time 24px < line-height 48 ✓、箭头 38px 字在 line-height 44（余 6px）、
+   标题 32px 字在 line-height 44、20px 字在 26/28 行高、34px 字在 height/line-height 46、
+   .done-text 24px < line-height 44 ✓ 均不溢出；
+   480 档（S5 真机）对应原大屏档字号 26/40/34/22/36/22/26，见 pages/480x480/detail.ux */
+
+/* 顶部时钟条：y∈[0,48] 置顶，忽略安全区；时钟文字水平垂直居中 */
+.clock-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 48px;
+}
+/* 返回键条：y∈[48,92]，留在安全区内；返回箭头 + 品牌标题组合整体水平居中（justify-content: center），
+   返回键不再孤悬左上角；.back-btn/.brand-title 均为 height 44px + line-height 44px 等高盒，
+   align-items: center 垂直居中对齐（箭头与标题高低不齐已解决）；position: relative 保留（页面内绝对定位层包含块的既有约定） */
+.back-bar {
+  position: relative;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 44px;
+}
+/* 返回箭头：字号 38px = 原基础值（480 档为 40px），等高盒 line-height/height 44px 不变 */
+.back-btn {
+  font-size: 38px;
+  color: #ffffff;
+  line-height: 44px;
+  height: 44px;
+}
+/* 品牌标题：与返回箭头同处一个 flex 行（margin-left 8px 与箭头拉开间距、两者靠拢），跟随组合整体居中；
+   显式 height 44px + line-height 44px 与箭头等高盒，flex align-items: center 垂直居中对齐；
+   margin-top 4px 为真机对齐补偿（引擎对 text 垂直定位有偏差，等高盒 + flex 居中后标题仍偏高，用 margin 下移补偿），
+   如仍偏差可微调 2-6px；字号 32px = 原基础值（比顶部时钟 24px 大 8px），480 档为 34px；
+   超长品牌名受 max-width 200px 限制，单行省略号兜底 */
+.brand-title {
+  margin-left: 8px;
+  margin-top: 4px;
+  max-width: 200px;
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: bold;
+  line-height: 44px;
+  height: 44px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+/* 顶部当前时间：line-height 48px 撑满时钟条垂直居中，无绝对定位；
+   字号 24px = 原基础值，480 档为 26px */
+.top-time {
+  line-height: 48px;
+  font-size: 24px;
+  color: #ffffff;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+/* 无数据兜底 */
+.no-qr {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding-top: 117px; /* 120 × 466/480 ≈ 116.5 → 117 */
+}
+
+/* 圆屏(shape:circle)：页面顶部 padding 已补安全区，因此调小自身顶部空距避免与返回按钮挤压（40 × 0.971 ≈ 39） */
+@media (shape: circle) {
+  .no-qr {
+    padding-top: 39px;
+  }
+}
+
+/* 方屏/矩形屏(shape:rect)：显式写回默认 padding-top，保持原样 */
+@media (shape: rect) {
+  .no-qr {
+    padding-top: 117px;
+  }
+}
+.no-qr-main {
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: bold;
+}
+.no-qr-sub {
+  font-size: 24px;
+  color: #999999;
+  margin-top: 16px;
+}
+
+/* 有二维码时的滚动容器：垂直滚动必须固定高度（Vela scroll 官方要求）。
+   视口 y∈[92,466]：.page 顶部 padding 0 + clock-bar 48 + back-bar 44 = 92，
+   高度 374px 顶满屏底（466 − 92）；内容为标签/大码/二维码/时间（「已完成」按钮已移出 scroll 悬浮固定底部）；
+   padding-bottom 93px（96 × 466/480 ≈ 93.2 → 93）保留悬浮按钮占位空间：
+   滚到底内容底屏幕 y = 92+374−93 = 373 < 按钮顶 380，留有 7px 间隙，时间文本不被悬浮按钮遮挡；
+   首屏内容 378px 超出视口 4px（时间底部 4px，本就被悬浮按钮遮挡，视觉无感；滚到底后完整） */
+.scroll {
+  flex-direction: column;
+  width: 100%;
+  height: 374px;
+  padding-bottom: 93px;
+}
+
+/* 内容容器：垂直排列，宽度 100% 不分形态收窄 */
+.content {
+  flex-direction: column;
+  width: 100%;
+}
+
+/* 取餐码小字标签（居中）：字号 20px = 原基础值（480 档为 22px），行高容器保持原基础 26px */
+.code-label {
+  font-size: 20px;
+  color: #999999;
+  text-align: center;
+  height: 26px;
+  line-height: 26px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+/* 大号取餐码数字：居中单行；字号 34px = 原基础值（480 档为 36px），行高容器保持原基础 46px */
+.code {
+  font-size: 34px;
+  color: #ffffff;
+  font-weight: bold;
+  text-align: center;
+  margin-top: 4px;
+  height: 46px;
+  line-height: 46px;
+  flex-shrink: 0;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+/* 二维码区：白色圆角容器 .qr-base（border-radius 12px 常显占位）+
+   直角白底 qrcode 缩小嵌套居中（circle 码 221/rect 码 198，白边 14/13.5px，码角不被圆角切到）；
+   qrcode 组件不支持 border-radius（真机两次验证：16px 与照抄参考仓库 12px 均无圆角），
+   圆角由 div 容器保证；qrcode 加 if 待数据就绪渲染，容器常显缓解双码闪烁；
+   stack+transparent 曾致不渲染，勿用 */
+.qr-wrap {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  margin-top: 6px;
+  height: 225px; /* rect 基础容器高（232 × 0.971 ≈ 225）；circle 覆盖 249（见下） */
+  flex-shrink: 0;
+}
+/* 白色圆角容器：常显（数据未就绪时即为白色圆角占位块，消除空 value 白直角块闪烁）；
+   基础 225×225（232 × 466/480 ≈ 225）：直角白底码 198 居中，白边 (225−198)/2 = 13.5px ≥ 圆角 12px；
+   circle 覆盖 249×249 + 码 221（见下） */
+.qr-base {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 225px;
+  height: 225px;
+  background-color: #ffffff;
+  border-radius: 12px;
+}
+/* 直角码：qrcode 组件不支持 border-radius（真机两次验证：16px 与 12px 均无圆角），不设圆角；
+   transparent 方案真机验证失败（二维码不渲染），已回退 #ffffff；
+   码基础 198px（rect）：容器 225 白边 (225-198)/2 = 13.5px；circle 覆盖 221px：容器 249 白边 (249-221)/2 = 14px；
+   两形态白边一致 ≈14px ≥ 圆角 12px、码占容器比例一致；默认视图码底 circle 409/rect 386，与按钮顶 380 重叠 29px/6px（用户已知情）；
+   白底由 .qr-base 圆角容器承担；码与 .qr-base 容器随页面整体进入动画一起出现，无独立淡入动画 */
+.qr {
+  width: 198px;
+  height: 198px;
+  color: #000000;
+  background-color: #ffffff;
+  margin: 0px;
+}
+
+/* 全屏二维码层：点击 .qr-base 进入（onQrClick），点击本层任意处关闭（onFullscreenClose）；
+   绝对定位覆盖整屏（.page 为包含块），黑底；进入淡入动画 full-fade 0.2s；
+   圆屏几何核算（圆心 233,233，半径 233；device-width 下 1:1 无缩放）：
+   全屏容器 311×311 居中（中心 233,233，x∈[77.5,388.5]，y∈[77.5,388.5]；320 × 0.971 ≈ 311）；
+   底角 (77.5,388.5) 距圆心 √(155.5²+155.5²)≈219.9 < 233 在圆内；
+   y=388.5 处弦 x∈[59.5,406.5] ⊃ 容器底边 [77.5,388.5] 完整可见；
+   码 284 四周白边 (311−284)/2 = 13.5px ≥ 圆角 12px，码角不被切；
+   rect 下 311 ≤ 内容宽 394 同样安全；
+   亮度说明：全屏为页面内状态切换，不触发 onShow/onHide，亮度保持进入页面拉高的 75%，无需额外处理 */
+.qr-fullscreen {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background-color: #000000;
+  animation-name: full-fade;
+  animation-duration: 0.2s;
+  animation-timing-function: ease-out;
+}
+/* 全屏白底圆角大容器：311×311（320 × 466/480 ≈ 311；圆屏内接圆边长 330 内留安全余量；rect 屏内容宽 394 亦容纳） */
+.qr-full-base {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 311px;
+  height: 311px;
+  background-color: #ffffff;
+  border-radius: 12px;
+}
+/* 全屏直角码：284×284 居中（292 × 466/480 ≈ 284），码四周白边 (311−284)/2 = 13.5px ≥ 圆角 12px，码角不被切 */
+.qr-full {
+  width: 284px;
+  height: 284px;
+  background-color: #ffffff;
+  margin: 0px;
+}
+
+/* 订单时间小字（YYYY-MM-DD HH:mm，来自 createdAt）：居中单行；
+   字号 20px = 原基础值（480 档为 22px）；margin-top 19px（20 × 0.971 ≈ 19.4 → 19），行高容器保持原基础 28px */
+.time {
+  font-size: 20px;
+  color: #999999;
+  text-align: center;
+  margin-top: 19px;
+  line-height: 28px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+/* 「已完成」按钮：悬浮固定页面底部中间（absolute 定位于 .page 底部 23px，不随 scroll 内容滚动）；
+   按钮本体自适应宽度居中（横向 padding 39px，不全宽）、蓝色胶囊形（按 0.971 比例换算取整）；
+   全屏层在模板最后绘制，z 序覆盖本按钮（全屏时按钮不可点，符合预期） */
+.btn-wrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 23px; /* 24 × 0.971 ≈ 23.3 → 23 */
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+}
+.done-btn {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 63px; /* 65 × 0.971 ≈ 63.1 → 63 */
+  padding: 0 39px; /* 40 × 0.971 ≈ 38.8 → 39 */
+  background-color: #0a84ff;
+  border-radius: 39px;
+}
+/* 完成按钮文字：字号 24px = 原基础值（480 档为 26px），line-height 44px 保持原基础 */
+.done-text {
+  font-size: 24px;
+  color: #ffffff;
+  line-height: 44px;
+  lines: 1;
+}
+
+/* ── 屏幕形态覆盖规则（置于基础样式之后，保证层叠生效）── */
+
+/* 圆屏(shape:circle)：忽略安全区；二维码容器 249×249、码 221×221（circle 覆盖值，按 0.971 换算）。
+   圆屏几何核算（圆心 233,233，半径 233；device-width 下 1:1 无缩放）：
+   顶部：clock-bar y∈[0,48]，24px 时钟居中宽约 60px（x≈[203,263]），
+   y=8 处圆弦 x∈[173,293]，时钟完整可见；
+   返回组合（箭头 + 品牌标题）整体水平居中：38px 箭头宽约 24px + 间距 8 + 标题 32px 字（2-4 字约 64-128px）
+   → 组合宽约 96-160px，居中 x∈[153,313]；长名 max-width 200px 时组合最宽约 232px → x∈[117,349]；
+   y∈[48,92] 处弦最窄 x∈[91,375]（y=48），完整在弦内不裁切；rect 下同样安全；
+   scroll 视口 y∈[92,466] 高 374px；内容 = 标签/大码/二维码/时间（行高容器保持原基础 26/46/28，
+   二维码容器按 0.971 换算 249）：
+   内容总高 = 26 + (4+46) + (6+249) + (19+28) = 378 > 374 视口（首屏超出 4px：时间底部，本就被悬浮按钮遮挡，无感；
+   可滚动量 = 378 + 93(padding-bottom) − 374 = 97px，滚到底后时间完整，见下）；
+   码 221 在容器 249 中居中（白边 (249-221)/2 = 14px ≥ 圆角 12px）：码 y∈[188,409]，
+   默认视图码底 409 与悬浮按钮顶 380 重叠 29px（480 档为 25px，差值因 466 档行高容器未随比例缩放；用户已知情、接受）；
+   时间 y∈[442,470]，默认视图在按钮区内被盖住（按钮底 443），滑到底后完整（见下）；
+   按钮悬浮：bottom 23px + 高 63 → 屏幕 y∈[380,443]，x∈[158,308]（宽约 150 居中）；
+   y=443 处弦 x∈[132,334] ⊃ 按钮底边，y=380 处弦 x∈[52,414] ⊃ 按钮顶边，完整不裁切；rect 下同样安全；
+   scroll padding-bottom 93px 保留按钮占位空间：滚到底内容底屏幕 y = 92+374−93 = 373 < 按钮顶 380，7px 间隙；
+   滚到底内容上移 97 → 时间 y∈[345,373]、码 y∈[91,312] 完整，时间与按钮间距 7px，不被遮挡；
+   全屏层在模板最后，z 序覆盖悬浮按钮（全屏时按钮不可点，符合预期）；
+   容器 249 底边 y=423，底角 (108.5,423) 距圆心 √(124.5²+190²)≈227.2 < 233 在圆内
+   （y=423 处弦 x∈[98,368]，容器 x∈[108.5,357.5] 完整可见）；
+   码 221 居中，四周白边 14px ≥ 圆角 12px，码角不被切；
+   rect 首屏 = 26+50+6+225 = 307 ≤ 374，富余 67px。 */
+@media (shape: circle) {
+  .scroll {
+    height: 374px;
+    padding-bottom: 93px;
+  }
+  .content {
+    width: 100%;
+    align-items: stretch;
+  }
+  .code {
+    margin-top: 4px;
+    font-size: 34px;
+  }
+  .time {
+    margin-top: 19px;
+  }
+  .qr-wrap {
+    height: 249px;
+  }
+  .qr-base {
+    width: 249px;
+    height: 249px;
+  }
+  .qr {
+    width: 221px;
+    height: 221px;
+  }
+}
+
+/* 方屏/矩形屏(shape:rect)：scroll 高度与底部缓冲与圆屏统一；
+   首屏 = 26+50+6+225+19+28 = 354 ≤ 374，富余 20px；容器 225、码 198（基础值，白边 (225-198)/2 = 13.5px ≥ 圆角 12px）；
+   rect 码底 y = 92+26+50+6+13.5+198 = 385.5 ≈ 386，与按钮顶 380 重叠约 6px（480 档 rect 为 1px；
+   466 档行高容器未随比例缩放所致，用户知情）；时间 y∈[418,446] 默认在按钮区内，
+   滚到底（padding-bottom 93）内容底 y=373 < 按钮顶 380，时间 y∈[345,373] 完整、与按钮间距 7px（与圆屏一致） */
+@media (shape: rect) {
+  .scroll {
+    height: 374px;
+    padding-bottom: 93px;
+  }
+  .content {
+    width: 100%;
+    margin-left: 0px;
+    margin-right: 0px;
+    align-items: stretch;
+  }
+  .time {
+    margin-top: 19px;
+  }
+}
+
+/* 页面跳转动画关键帧：
+   page-in：进入动画，右侧滑入 48px + 透明度 0→1（0.25s ease-out，由 .page 触发，
+   页面渲染即自动播放，无隐藏等待）
+   page-out：退出动画，反向滑出（透明度 1→0 + 右移 48px，0.22s ease-in，由 .page-leaving 触发） */
+@keyframes page-in {
+  from { opacity: 0; transform: translateX(48px); }
+  to { opacity: 1; transform: translateX(0px); }
+}
+
+@keyframes page-out {
+  from { opacity: 1; transform: translateX(0px); }
+  to { opacity: 0; transform: translateX(48px); }
+}
+
+/* 全屏二维码层淡入：opacity 0→1（0.2s ease-out，由 .qr-fullscreen 触发） */
+@keyframes full-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+</style>
+
+<script>
+import router from '@system.router'
+import brightness from '@system.brightness'
+
+const BRIGHTNESS_BOOST = 191 // 二维码页拉高亮度：75% × 255
+
+export default {
+  private: {
+    orderId: '',
+    qrData: '',
+    code: '',
+    brandName: '',
+    createdAt: 0,
+    createdAtText: '',
+    noQr: false,
+    completedClicked: false,
+    fullscreenQr: false, // 全屏二维码开关
+    leaving: false, // 退出动画进行中标志（防重复点击）
+    bypassBack: false, // 程序化 router.back() 前的放行标志，防止 onBackPress 误拦截造成循环
+    backTimerId: null, // 退出动画播完延迟返回的定时器（220ms）
+    lastVersion: -1,
+    clockText: '',
+    clockTimerId: null,
+    pageActive: false, // 页面可见标志：onShow=true / onHide=false，抑制离页后的异步亮度设置
+    brightnessApplied: false, // 已拉高亮度标志（还原后置 false，幂等）
+    originalBrightness: -1, // 进入页面前的亮度值（0-255；-1=未记录），退出时还原
+    originalBrightnessMode: -1 // 进入页面前的亮度模式（-1=未记录/读取失败，0=手动，1=自动），退出时还原
+  },
+
+  onInit() {
+    const params = router.getParams()
+    this.orderId = (params && params.orderId) ? params.orderId : ''
+    this.completedClicked = false
+  },
+
+  onShow() {
+    this.pageActive = true
+    this.loadOrder()
+    this.startWatcher() // 同步期间快照被 app 更新时刷新
+    this.startClock() // 顶部当前时间：onShow 启动，onHide/onDestroy 停止
+    this.boostBrightness() // 进入二维码页拉高亮度至 75%，退出时还原
+  },
+
+  onHide() {
+    this.pageActive = false
+    this.stopClock()
+    this.restoreBrightness() // 离开页面还原亮度（幂等）
+  },
+
+  onDestroy() {
+    this.stopWatcher()
+    this.stopClock()
+    this.restoreBrightness() // 兜底还原亮度（幂等，onHide 已还原则跳过）
+    // 清理退出动画延迟返回定时器，防止页面销毁后定时器仍触发 router.back()
+    if (this.backTimerId) {
+      clearTimeout(this.backTimerId)
+      this.backTimerId = null
+    }
+  },
+
+  loadOrder() {
+    const s = this.$app.$def.syncState
+    if (!s) return
+    const order = (s.snapshot.payload || []).find(function (it) {
+      return it.orderId === this.orderId
+    }, this)
+    // 快照为唯一数据源：找不到订单即无数据，走 noQr 兜底 UI
+    if (!order) {
+      this.noQr = true
+      return
+    }
+    this.qrData = order.qrCodeData || ''
+    this.code = order.code || ''
+    this.brandName = order.brandName || ''
+    this.createdAt = order.createdAt || 0
+    this.createdAtText = this.formatTime(this.createdAt)
+    this.noQr = !this.qrData
+    this.lastVersion = s.syncVersion
+  },
+
+  // 毫秒时间戳 → YYYY-MM-DD HH:mm（手动补零；Date 不可用则降级显示原始时间戳）
+  formatTime(ts) {
+    if (!ts) return ''
+    try {
+      const d = new Date(ts)
+      if (typeof d.getFullYear !== 'function' || isNaN(d.getTime())) {
+        return String(ts)
+      }
+      const pad = function (n) {
+        return (n < 10 ? '0' : '') + n
+      }
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+        ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+    } catch (e) {
+      return String(ts)
+    }
+  },
+
+  // 顶部当前时间时钟：JS Date 取 HH:mm，每 10 秒刷新一次
+  startClock() {
+    this.updateClock()
+    if (this.clockTimerId) return
+    let self = this
+    this.clockTimerId = setInterval(function () {
+      self.updateClock()
+    }, 10000)
+  },
+
+  stopClock() {
+    if (this.clockTimerId) {
+      clearInterval(this.clockTimerId)
+      this.clockTimerId = null
+    }
+  },
+
+  // 用当前系统时间更新顶部时钟文本（HH:mm，手动补零；Date 不可用则显示空）
+  updateClock() {
+    try {
+      const d = new Date()
+      if (typeof d.getHours !== 'function' || isNaN(d.getTime())) {
+        this.clockText = ''
+        return
+      }
+      const pad = function (n) {
+        return (n < 10 ? '0' : '') + n
+      }
+      this.clockText = pad(d.getHours()) + ':' + pad(d.getMinutes())
+    } catch (e) {
+      this.clockText = ''
+    }
+  },
+
+  startWatcher() {
+    if (this.watcherId) return
+    let self = this
+    this.watcherId = setInterval(function () {
+      const s = self.$app.$def.syncState
+      if (s && s.syncVersion !== self.lastVersion) {
+        self.loadOrder()
+      }
+    }, 600)
+  },
+
+  stopWatcher() {
+    if (this.watcherId) {
+      clearInterval(this.watcherId)
+      this.watcherId = null
+    }
+  },
+
+  // ── 亮度增强：进入二维码页拉高至 75%（191/255），离开时还原为进入前亮度 ──
+  // 先记录亮度模式（自动 1 / 手动 0）：自动模式需先切手动，设置才生效，退出时一并还原模式；
+  // 每个异步步骤都检查 pageActive，防止「秒进秒出」时回调链在页面离开后仍改动亮度
+  boostBrightness() {
+    if (this.brightnessApplied) return
+    let self = this
+    brightness.getMode({
+      success: function (modeData) {
+        if (!self.pageActive) return
+        let mode = (modeData && typeof modeData.mode === 'number') ? modeData.mode : 0
+        self.originalBrightnessMode = mode
+        if (mode === 1) {
+          // 自动亮度模式：先切手动再设置，退出时还原模式
+          brightness.setMode({
+            mode: 0,
+            success: function () { self.applyBrightness() },
+            fail: function () { self.applyBrightness() } // 切模式失败也继续尝试设置亮度
+          })
+        } else {
+          self.applyBrightness()
+        }
+      },
+      fail: function () {
+        // 读模式失败：按手动处理，仅拉高亮度
+        if (!self.pageActive) return
+        self.originalBrightnessMode = -1
+        self.applyBrightness()
+      }
+    })
+  },
+
+  // 记录原亮度并拉高至 75%；拿不到原值则不拉高（退出时无法还原，避免亮度被改乱）
+  applyBrightness() {
+    let self = this
+    brightness.getValue({
+      success: function (data) {
+        if (!self.pageActive) return
+        if (!data || typeof data.value !== 'number') return
+        self.originalBrightness = data.value
+        self.brightnessApplied = true
+        brightness.setValue({
+          value: BRIGHTNESS_BOOST,
+          success: function () {
+            // 拉高完成时页面已离开：立即还原
+            if (!self.pageActive) self.restoreBrightness()
+          },
+          fail: function () {
+            self.brightnessApplied = false
+            self.originalBrightness = -1
+          }
+        })
+      },
+      fail: function () {
+        // 读不到原亮度：不拉高
+      }
+    })
+  },
+
+  // 还原亮度与模式（与拉高对称；幂等，onHide/onDestroy 均可调用）
+  restoreBrightness() {
+    if (!this.brightnessApplied) return
+    this.brightnessApplied = false
+    if (this.originalBrightness >= 0) {
+      brightness.setValue({
+        value: this.originalBrightness,
+        fail: function () {}
+      })
+    }
+    if (this.originalBrightnessMode === 1) {
+      brightness.setMode({
+        mode: 1,
+        fail: function () {}
+      })
+    }
+    this.originalBrightness = -1
+    this.originalBrightnessMode = -1
+  },
+
+  // 返回：先播退出动画（0.22s），动画播完后由定时器（220ms，与动画时长对应）调 router.back()；
+  // leaving 标志防重复点击；页面返回按钮与系统返回手势/按键均走退出动画（onBackPress 拦截后复用）
+  onBack() {
+    if (this.leaving) return
+    this.leaving = true
+    let self = this
+    this.backTimerId = setTimeout(function () {
+      self.backTimerId = null
+      self.bypassBack = true
+      router.back()
+    }, 220)
+  },
+
+  // 系统返回键/返回手势拦截：全屏二维码打开时优先关闭全屏（不退出页面，也不播退出动画）；
+  // 其余情况统一走退出动画链路（onBack 含防重复）；
+  // return true 阻止引擎默认立即返回；程序化 router.back() 前已置 bypassBack 放行（return false）
+  onBackPress() {
+    if (this.bypassBack) return false
+    if (this.fullscreenQr) {
+      this.fullscreenQr = false
+      return true
+    }
+    this.onBack()
+    return true
+  },
+
+  // 点击二维码：打开全屏二维码
+  onQrClick() {
+    this.fullscreenQr = true
+  },
+
+  // 点击全屏层任意处：关闭全屏二维码
+  onFullscreenClose() {
+    this.fullscreenQr = false
+  },
+
+  // 标记已完成：发 done 回执（幂等）后返回列表；标志位防重复点击
+  onMarkCompleted() {
+    if (this.completedClicked) return
+    this.completedClicked = true
+    this.$app.$def.markDone(this.orderId)
+    router.back()
+  }
+}
+</script>

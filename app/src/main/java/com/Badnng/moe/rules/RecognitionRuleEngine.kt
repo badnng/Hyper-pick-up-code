@@ -41,6 +41,7 @@ object RecognitionRuleEngine {
     private suspend fun doInitialize(context: Context) = withContext(Dispatchers.IO) {
         AppLogger.update("RuleEngine initialize start, activeSourceId=$activeSourceId")
         repository = RuleRepository(context)
+        SimpleRuleRuntime.ensureLoaded(context)
         val config = repository!!.loadSystemConfig()
         activeSourceId = config.activeSourceId
 
@@ -67,6 +68,7 @@ object RecognitionRuleEngine {
     suspend fun reload(context: Context) = withContext(Dispatchers.IO) {
         AppLogger.update("RuleEngine reload start, activeSourceId=$activeSourceId")
         repository = RuleRepository(context)
+        SimpleRuleRuntime.ensureLoaded(context)
         val config = repository!!.loadSystemConfig()
         activeSourceId = config.activeSourceId
 

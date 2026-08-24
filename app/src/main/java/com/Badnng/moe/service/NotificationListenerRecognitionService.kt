@@ -15,6 +15,7 @@ import com.Badnng.moe.recognition.RecognizedOrderFactory
 import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.recognition.RecognitionTextSource
 import com.Badnng.moe.recognition.RecognitionTrigger
+import com.Badnng.moe.wearable.WearableSyncManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -133,6 +134,7 @@ class NotificationListenerRecognitionService : NotificationListenerService() {
         DailyExpressGroupingHelper.regroupPendingExpressByDay(orderDao, groupDao, this)
 
         val notificationHelper = NotificationHelper(applicationContext)
+        val wearableSync = WearableSyncManager.getInstance(applicationContext)
         val refreshedOrders = insertedOrders.mapNotNull { orderDao.getOrderById(it.id) }
         val groupedIds = refreshedOrders.mapNotNull { it.groupId }.toSet()
 
@@ -146,12 +148,31 @@ class NotificationListenerRecognitionService : NotificationListenerService() {
                     groupOrders.forEach { notificationHelper.cancelNotification(it.id) }
                     groupDao.updateOrderCount(groupId, groupOrders.size)
                     notificationHelper.showGroupNotification(group.copy(orderCount = groupOrders.size), groupOrders)
+                    val type = groupOrders.firstOrNull()?.orderType?.takeIf { it.isNotBlank() } ?: "取餐码"
+                    val firstOrder = groupOrders.first()
+                    val groupTitle = firstOrder.brandName?.takeIf { it.isNotBlank() } ?: "新的${type}通知"
+                    val hasQr = groupOrders.any { !it.qrCodeData.isNullOrBlank() }
+                    val groupMessage = buildString {
+                        append("${groupOrders.size}个$type")
+                        if (hasQr) append("，可到手表端查看二维码")
+                    }
+                    wearableSync.sendNewOrderNotify(
+                        firstOrder.id,
+                        groupTitle,
+                        groupMessage
+                    )
                 }
             }
         }
 
         refreshedOrders.filter { it.groupId == null }.forEach { order ->
             notificationHelper.showPromotedLiveUpdate(order, order.brandName)
+            val title = order.brandName?.takeIf { it.isNotBlank() } ?: "新的取餐码"
+            val message = buildString {
+                append(order.takeoutCode)
+                if (!order.qrCodeData.isNullOrBlank()) append("，二维码已同步，可到手表端查看")
+            }
+            wearableSync.sendNewOrderNotify(order.id, title, message)
         }
     }
 

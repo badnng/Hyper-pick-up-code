@@ -140,7 +140,7 @@ fun RecognitionSettingsContent(
         ) ?: OnlineRecognitionPreferences.MODE_OFFLINE
         mutableStateOf(
             if (savedMode == OnlineRecognitionPreferences.MODE_ONLINE &&
-                !PrivacyConsent.isAccepted(preferences)
+                !PrivacyConsent.isCurrentPolicyAccepted(preferences)
             ) {
                 OnlineRecognitionPreferences.MODE_OFFLINE
             } else {
@@ -175,7 +175,7 @@ fun RecognitionSettingsContent(
     var showPrivacyDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(preferences) {
-        if (!PrivacyConsent.isAccepted(preferences) &&
+        if (!PrivacyConsent.isCurrentPolicyAccepted(preferences) &&
             preferences.getString(
                 OnlineRecognitionPreferences.MODE_KEY,
                 OnlineRecognitionPreferences.MODE_OFFLINE,
@@ -222,7 +222,7 @@ fun RecognitionSettingsContent(
     fun setMode(mode: String) {
         performHaptic()
         if (mode == OnlineRecognitionPreferences.MODE_ONLINE &&
-            !PrivacyConsent.isAccepted(preferences)
+            !PrivacyConsent.isCurrentPolicyAccepted(preferences)
         ) {
             showPrivacyDialog = true
             return
@@ -623,7 +623,10 @@ private fun MiuixRecognitionSettingsSections(
             (provider == OnlineRecognitionProvider.MIMO ||
                 provider == OnlineRecognitionProvider.ZHIPU ||
                 provider == OnlineRecognitionProvider.MINIMAX ||
-                provider == OnlineRecognitionProvider.MOONSHOT)
+                provider == OnlineRecognitionProvider.MOONSHOT ||
+                provider == OnlineRecognitionProvider.OPENCODE_GO ||
+                provider == OnlineRecognitionProvider.OPENCODE_ZEN ||
+                provider == OnlineRecognitionProvider.DEEPSEEK)
         ) {
             SmallTitle("使用说明")
             ProviderUsageGuide(
@@ -909,7 +912,10 @@ private fun Md3eRecognitionSettings(
             if (provider == OnlineRecognitionProvider.MIMO ||
                 provider == OnlineRecognitionProvider.ZHIPU ||
                 provider == OnlineRecognitionProvider.MINIMAX ||
-                provider == OnlineRecognitionProvider.MOONSHOT
+                provider == OnlineRecognitionProvider.MOONSHOT ||
+                provider == OnlineRecognitionProvider.OPENCODE_GO ||
+                provider == OnlineRecognitionProvider.OPENCODE_ZEN ||
+                provider == OnlineRecognitionProvider.DEEPSEEK
             ) {
                 Md3eSection("使用说明") {
                     ProviderUsageGuide(
@@ -1257,6 +1263,70 @@ private fun providerGuideSections(
                 ),
                 ProviderGuideStep(
                     text = "将获取的 API Key 复制到上方输入框，然后选择模型即可使用。",
+                ),
+            ),
+        ),
+    )
+
+    OnlineRecognitionProvider.OPENCODE_ZEN -> listOf(
+        ProviderGuideSection(
+            steps = listOf(
+                ProviderGuideStep(
+                    text = "进入 OpenCode 账号页面，点击列表中的“API 密钥”，创建并复制你的 API Key（免费模型也需要 API Key）。",
+                    linkLabel = "https://opencode.ai/auth",
+                    link = "https://opencode.ai/auth",
+                ),
+                ProviderGuideStep(
+                    text = "OpenCode Zen 免费额度由 opencode teams 运营的大规模模型 provider 提供，每天仅有部分限量额度给免费用户使用，所有用量信息均以 opencode teams 的调整为准。",
+                ),
+                ProviderGuideStep(
+                    text = "将 API Key 复制到上方输入框，然后选择模型“MiMo-V2.5 Free”即可使用。",
+                ),
+            ),
+        ),
+    )
+
+    OnlineRecognitionProvider.OPENCODE_GO -> listOf(
+        ProviderGuideSection(
+            steps = listOf(
+                ProviderGuideStep(
+                    text = "通过专属链接注册并订阅 OpenCode Go（约 $10/月）。使用此链接可额外获得 5 美金使用额度（不可叠加，仅抵消回血用）。",
+                    linkLabel = "https://opencode.ai/go?ref=TGNQAJ1FDP",
+                    link = "https://opencode.ai/go?ref=TGNQAJ1FDP",
+                ),
+                ProviderGuideStep(
+                    text = "进入 OpenCode 账号页面，点击列表中的“API 密钥”，创建并复制你的 API Key。",
+                    linkLabel = "https://opencode.ai/auth",
+                    link = "https://opencode.ai/auth",
+                ),
+                ProviderGuideStep(
+                    text = "由于部分模型不允许在中国提供服务，我们剔除了相关模型。",
+                ),
+                ProviderGuideStep(
+                    text = "将 API Key 复制到上方输入框，然后选择模型即可使用。",
+                ),
+                ProviderGuideStep(
+                    text = "Go 订阅有 5 小时、每周和每月用量限制，超过限制后可回退到 Zen 余额继续使用（需在控制台开启）。",
+                ),
+            ),
+        ),
+    )
+
+    OnlineRecognitionProvider.DEEPSEEK -> listOf(
+        ProviderGuideSection(
+            steps = listOf(
+                ProviderGuideStep(
+                    text = "打开 DeepSeek 开放平台官网进行注册或登录。",
+                    linkLabel = "https://platform.deepseek.com/",
+                    link = "https://platform.deepseek.com/",
+                ),
+                ProviderGuideStep(
+                    text = "进入 API Keys 页面，创建并复制你的 API Key。",
+                    linkLabel = "https://platform.deepseek.com/api_keys",
+                    link = "https://platform.deepseek.com/api_keys",
+                ),
+                ProviderGuideStep(
+                    text = "将 API Key 复制到上方输入框，然后选择模型“DeepSeek V4 Flash Vision Exp”即可使用。",
                 ),
             ),
         ),

@@ -29,7 +29,7 @@ object DailyExpressGroupingHelper {
         }
 
         val allOrders = orderDao.getAllOrdersList()
-        val pendingExpress = allOrders.filter { it.orderType == "快递" && !it.isCompleted }
+        val pendingExpress = allOrders.filter { it.orderType == "快递" && !it.isCompleted && !it.needsRuleCorrection }
         if (pendingExpress.isEmpty()) return
 
         val dayFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -95,7 +95,7 @@ object DailyExpressGroupingHelper {
             return DailyGroupingResult(null, emptyList(), emptyList())
         }
 
-        val newExpressOrders = newlyInsertedOrders.filter { it.orderType == "快递" && !it.isCompleted }
+        val newExpressOrders = newlyInsertedOrders.filter { it.orderType == "快递" && !it.isCompleted && !it.needsRuleCorrection }
         if (newExpressOrders.isEmpty()) {
             return DailyGroupingResult(null, emptyList(), newlyInsertedOrders)
         }
@@ -108,6 +108,7 @@ object DailyExpressGroupingHelper {
         val todayPendingExpressOrders = allOrders.filter {
             it.orderType == "快递" &&
                 !it.isCompleted &&
+                !it.needsRuleCorrection &&
                 it.createdAt in dayStart until dayEnd
         }
 

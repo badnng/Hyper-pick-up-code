@@ -112,7 +112,7 @@ fun MiuixOrderDetailContent(
         }
         item {
             MiuixDetailSection("识别结果") {
-                MiuixDetailRow("取件位置", order.pickupLocation ?: UNRECORDED_VALUE)
+                MiuixDetailRow("取件位置", displayablePickupLocation(order.pickupLocation) ?: UNRECORDED_VALUE)
                 MiuixDetailRow("来源应用", order.sourceApp ?: UNRECORDED_VALUE)
                 MiuixDetailRow("来源包名", order.sourcePackage ?: UNRECORDED_VALUE)
                 MiuixDetailRow("触发方式", recognitionTriggerLabel(order))

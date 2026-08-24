@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -198,6 +199,7 @@ fun MiuixChoiceChip(
 ) {
     Box(
         modifier = modifier
+            .heightIn(min = 48.dp)
             .squircleSurface(
                 if (selected) MiuixTheme.colorScheme.primaryContainer else MiuixTheme.colorScheme.surfaceContainer,
                 15.dp,
@@ -207,7 +209,7 @@ fun MiuixChoiceChip(
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             style = MiuixTheme.textStyles.button,
             color = if (selected) MiuixTheme.colorScheme.onPrimaryContainer else MiuixTheme.colorScheme.onSurfaceVariantSummary
         )

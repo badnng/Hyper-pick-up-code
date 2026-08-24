@@ -7,20 +7,22 @@ import org.junit.Test
 class RecognitionTextStructureTest {
     @Test
     fun codeNormalizationKeepsTrackingNumberAndNextPickupCodeOnSeparateLines() {
-        val source = """
-            盐城工学院南校区一食堂北菜鸟驿...绿色公益
-            申通21-5-3607本人|斑*130****5914
-            申通 773413322500502
-            40-2-7253
-            本人|王*130****5914
-            中国邮政 9815041917035
-        """.trimIndent()
+        val firstCode = "12-3-4567"
+        val secondCode = "56-7-8901"
+        val source = listOf(
+            "示例快递服务点",
+            "甲快递${firstCode}收件人",
+            "甲快递 123456789012345",
+            secondCode,
+            "收件人信息",
+            "乙快递 987654321098765",
+        ).joinToString("\n")
 
         val normalized = RecognitionTextStructure.normalizeForCodeMatching(
             text = source,
             datetimePattern = "(?!)",
             spaceCollapsePattern = "(?!)",
-            charRemovals = listOf("|"),
+            charRemovals = emptyList(),
             corrections = emptyList(),
         )
         val codes = Regex("([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)")
@@ -28,31 +30,27 @@ class RecognitionTextStructureTest {
             .map { it.groupValues[1] }
             .toList()
 
-        assertEquals(listOf("21-5-3607", "40-2-7253"), codes)
-        assertTrue(normalized.contains("773413322500502\n40-2-7253"))
+        assertEquals(listOf(firstCode, secondCode), codes)
+        assertTrue(normalized.contains("123456789012345\n$secondCode"))
     }
 
     @Test
     fun extractsLocationBeforeTrailingAddressLabel() {
         val candidates = RecognitionTextStructure.trailingLocationCandidates(
-            lines = listOf(
-                "星巴克臻选（三亚市三亚湾壹...>",
-                "天涯区天涯镇三亚湾路8号联系地址",
-                "我的订单",
-            ),
+            lines = listOf("示例门店", "示例路88号联系地址", "订单列表"),
             labels = listOf("联系地址", "门店地址"),
         )
 
-        assertEquals(listOf("天涯区天涯镇三亚湾路8号"), candidates)
+        assertEquals(listOf("示例路88号"), candidates)
     }
 
     @Test
     fun usesPreviousLineWhenTrailingAddressLabelIsSeparateBlock() {
         val candidates = RecognitionTextStructure.trailingLocationCandidates(
-            lines = listOf("天涯区天涯镇三亚湾路8号", "联系地址"),
+            lines = listOf("示例路88号", "联系地址"),
             labels = listOf("联系地址"),
         )
 
-        assertEquals(listOf("天涯区天涯镇三亚湾路8号"), candidates)
+        assertEquals(listOf("示例路88号"), candidates)
     }
 }

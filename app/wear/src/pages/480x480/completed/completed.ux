@@ -1,0 +1,380 @@
+<template>
+  <div class="page{{leaving ? ' page-leaving' : ''}}">
+    <div class="clock-bar"><text class="top-time">{{clockText}}</text></div>
+    <div class="back-bar">
+      <text class="back-btn" onclick="onBack">‹</text>
+      <text class="page-title" onclick="onBack">已取</text>
+    </div>
+    <div class="status-bar"><text class="status-text">已取订单</text></div>
+    <div if="{{displayItems.length === 0}}" class="empty">
+      <text class="empty-main">暂无已取订单</text>
+    </div>
+    <list if="{{displayItems.length > 0}}" class="order-list">
+      <list-item type="completed" for="{{displayItems}}" tid="itemId" class="order-item">
+        <div if="{{!$item.isGroup}}" class="order-card">
+          <div class="order-row">
+            <image class="card-icon" src="{{brandIconSrc($item.brandName, $item.orderType)}}"></image>
+            <div class="card-info">
+              <text class="card-label">已取</text>
+              <text class="card-code">{{$item.code}}</text>
+            </div>
+          </div>
+          <div class="card-time-row">
+            <text class="card-time">{{formatTime($item.completedAt || $item.createdAt)}}</text>
+          </div>
+        </div>
+        <div if="{{$item.isGroup}}" class="group-card">
+          <div class="group-row">
+          <image class="group-icon" src="{{brandIconSrc($item.brandName, $item.orderType)}}"></image>
+            <div class="group-info">
+              <text class="group-label">{{$item.groupLabel}}</text>
+              <text class="group-code">{{$item.codesText}}</text>
+            </div>
+          </div>
+          <div class="group-meta-row">
+            <text class="group-meta">{{$item.countText}}</text>
+          </div>
+        </div>
+      </list-item>
+    </list>
+  </div>
+</template>
+
+<style>
+.page {
+  position: relative;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  padding: 0px 36px;
+  animation-name: page-in;
+  animation-duration: 0.25s;
+  animation-timing-function: ease-out;
+}
+.page-leaving {
+  opacity: 1;
+  animation-name: page-out;
+  animation-duration: 0.22s;
+  animation-timing-function: ease-in;
+}
+.clock-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 48px;
+}
+.top-time {
+  line-height: 48px;
+  font-size: 26px;
+  color: #ffffff;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+}
+.back-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 44px;
+}
+.back-btn {
+  font-size: 40px;
+  color: #ffffff;
+  line-height: 44px;
+  height: 44px;
+}
+.page-title {
+  margin-left: 8px;
+  margin-top: 4px;
+  font-size: 34px;
+  color: #ffffff;
+  font-weight: bold;
+  line-height: 44px;
+  height: 44px;
+  lines: 1;
+}
+.status-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 40px;
+}
+.status-text {
+  font-size: 18px;
+  color: #888888;
+  lines: 1;
+}
+.empty {
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.empty-main {
+  font-size: 30px;
+  color: #ffffff;
+  font-weight: bold;
+}
+.order-list {
+  height: 348px;
+}
+.order-item {
+  flex-direction: row;
+  justify-content: center;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+.order-card,
+.group-card {
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 420px;
+  height: 135px;
+  padding: 15px 22px;
+  margin-bottom: 5px;
+  border-radius: 30px;
+  background-color: #1f1f1f;
+}
+.order-row,
+.group-row {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+}
+.card-icon {
+  width: 68px;
+  height: 68px;
+}
+.card-info,
+.group-info {
+  flex: 1;
+  flex-direction: column;
+  margin-left: 20px;
+  min-width: 0;
+}
+.card-label,
+.group-label {
+  font-size: 22px;
+  line-height: 26px;
+  color: #999999;
+  lines: 1;
+}
+.card-code,
+.group-code {
+  font-size: 36px;
+  line-height: 42px;
+  color: #ffffff;
+  font-weight: bold;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.card-time-row,
+.group-meta-row {
+  flex-direction: row;
+  justify-content: flex-end;
+}
+.card-time,
+.group-meta {
+  font-size: 22px;
+  line-height: 26px;
+  color: #888888;
+  lines: 1;
+}
+.group-icon {
+  width: 58px;
+  height: 58px;
+}
+.group-code {
+  font-size: 30px;
+  line-height: 36px;
+}
+.group-meta {
+  font-size: 19px;
+}
+@media (shape: circle) {
+  .page { padding: 0px 36px; }
+  .order-list { height: 348px; padding-bottom: 130px; }
+}
+@media (shape: rect) {
+  .page { padding: 0px 36px; }
+}
+@keyframes page-in {
+  from { opacity: 0; transform: translateX(48px); }
+  to { opacity: 1; transform: translateX(0px); }
+}
+@keyframes page-out {
+  from { opacity: 1; transform: translateX(0px); }
+  to { opacity: 0; transform: translateX(48px); }
+}
+</style>
+
+<script>
+import router from '@system.router'
+
+export default {
+  private: {
+    clockText: '',
+    clockTimerId: null,
+    watcherId: null,
+    lastVersion: -1,
+    backTimerId: null,
+    leaving: false,
+    bypassBack: false,
+    displayItems: []
+  },
+
+  onShow() {
+    this.pullFromApp()
+    this.startClock()
+    this.startWatcher()
+  },
+
+  onHide() {
+    this.stopClock()
+    this.stopWatcher()
+  },
+
+  onDestroy() {
+    this.stopClock()
+    this.stopWatcher()
+    if (this.backTimerId) clearTimeout(this.backTimerId)
+  },
+
+  pullFromApp() {
+    const s = this.$app.$def.syncState
+    const orders = s && s.snapshot ? (s.snapshot.completedPayload || []) : []
+    const groups = {}
+    const result = []
+    orders.forEach(function (order) {
+      if (order && order.groupId !== undefined && order.groupId !== null) {
+        const key = String(order.groupId)
+        let group = groups[key]
+        if (!group) {
+          group = {
+            isGroup: true,
+            itemId: 'group-' + key,
+            orders: [],
+            brandName: order.brandName || '',
+            orderType: order.orderType || '',
+            groupLabel: order.brandName || (order.orderType === '快递' ? '快递' : '取餐'),
+            codesText: '',
+            countText: ''
+          }
+          groups[key] = group
+          result.push(group)
+        }
+        group.orders.push(order)
+        group.codesText = group.orders.slice(0, 3).map(function (it) { return it.code }).join(' / ')
+        group.countText = group.orders.length + (order.orderType === '快递' ? '个取件码' : '个取餐码')
+      } else if (order) {
+        result.push(order)
+      }
+    })
+    this.displayItems = result
+  },
+
+  startWatcher() {
+    if (this.watcherId) return
+    let self = this
+    this.watcherId = setInterval(function () {
+      const s = self.$app.$def.syncState
+      if (s && s.syncVersion !== self.lastVersion) {
+        self.lastVersion = s.syncVersion
+        self.pullFromApp()
+      }
+    }, 600)
+  },
+
+  stopWatcher() {
+    if (this.watcherId) clearInterval(this.watcherId)
+    this.watcherId = null
+  },
+
+  startClock() {
+    this.updateClock()
+    if (this.clockTimerId) return
+    let self = this
+    this.clockTimerId = setInterval(function () { self.updateClock() }, 10000)
+  },
+
+  stopClock() {
+    if (this.clockTimerId) clearInterval(this.clockTimerId)
+    this.clockTimerId = null
+  },
+
+  updateClock() {
+    const d = new Date()
+    const pad = function (n) { return (n < 10 ? '0' : '') + n }
+    this.clockText = pad(d.getHours()) + ':' + pad(d.getMinutes())
+  },
+
+  // 根据品牌名选择本地 SVG 图标；未匹配时回退通用图标
+  brandIconSrc(brandName, orderType) {
+    const map = {
+      '麦当劳': '/common/brands/ic_mcdonalds.png',
+      '肯德基': '/common/brands/ic_kfc.png',
+      'KFC': '/common/brands/ic_kfc.png',
+      '瑞幸': '/common/brands/ic_luckin.png',
+      '喜茶': '/common/brands/ic_heytea.png',
+      '星巴克': '/common/brands/ic_starbucks.png',
+      '霸王茶姬': '/common/brands/ic_chagee.png',
+      '古茗': '/common/brands/ic_goodme.png',
+      '蜜雪冰城': '/common/brands/ic_mixue.png',
+      '库迪': '/common/brands/ic_cotti.png',
+      '茶百道': '/common/brands/ic_chabaidao.png',
+      '奈雪': '/common/brands/ic_naixue.png',
+      '奈雪的茶': '/common/brands/ic_naixue.png',
+      '汉堡王': '/common/brands/ic_burger_king.png',
+      '塔斯汀': '/common/brands/ic_tastien.png',
+      '顺丰': '/common/brands/ic_sf_express.png',
+      '菜鸟': '/common/brands/ic_cainiao.png',
+      '丰巢': '/common/brands/ic_hive_box.png',
+      '中国邮政': '/common/brands/ic_china_post.png',
+      '沪上阿姨': '/common/brands/ic_hushang_ayi.png',
+      'CoCo': '/common/brands/ic_coco.png',
+      '华莱士': '/common/brands/ic_wallace.png',
+      '老乡鸡': '/common/brands/ic_lao_xiang_ji.png',
+      '一点点': '/common/brands/ic_yidiandian.png',
+      '申通': '/common/brands/ic_sto.png',
+      '中通': '/common/brands/ic_zto.png',
+      '圆通': '/common/brands/ic_yto.png',
+      '韵达': '/common/brands/ic_yunda.png'
+    }
+    if (brandName && map[brandName]) return map[brandName]
+    if (brandName) {
+      for (const key in map) {
+        if (brandName.indexOf(key) !== -1) return map[key]
+      }
+    }
+    if (orderType === '快递') return '/common/brands/ic_package.png'
+    if (orderType === '饮品') return '/common/brands/ic_drink.png'
+    return '/common/brand-icon.png'
+  },
+
+  formatTime(ts) {
+    if (!ts) return ''
+    const d = new Date(ts)
+    const pad = function (n) { return (n < 10 ? '0' : '') + n }
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+  },
+
+  onBack() {
+    if (this.leaving) return
+    this.leaving = true
+    let self = this
+    this.backTimerId = setTimeout(function () {
+      self.bypassBack = true
+      router.back()
+    }, 220)
+  },
+
+  onBackPress() {
+    if (this.bypassBack) return false
+    this.onBack()
+    return true
+  }
+}
+</script>
+

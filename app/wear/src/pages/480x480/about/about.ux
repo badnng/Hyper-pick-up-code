@@ -1,0 +1,241 @@
+<template>
+  <div class="page{{leaving ? ' page-leaving' : ''}}">
+    <div class="clock-bar">
+      <text class="top-time">{{clockText}}</text>
+    </div>
+
+    <div class="back-bar">
+      <text class="back-btn" onclick="onBack">‹</text>
+      <text class="page-title" onclick="onBack">关于澎湃记</text>
+    </div>
+
+    <scroll class="about-scroll" scroll-y="true">
+      <div class="about-content">
+        <image class="logo" src="/common/about-logo.png"></image>
+        <text class="app-name">澎湃记</text>
+        <text class="tagline">手机端识别，手表端查看</text>
+
+        <div class="info-card">
+          <div class="info-row">
+            <text class="info-label">版本</text>
+            <text class="info-value">1.0.0</text>
+          </div>
+          <div class="info-row info-row-last">
+            <text class="info-label">作者</text>
+            <text class="info-value">badnng</text>
+          </div>
+        </div>
+      </div>
+    </scroll>
+  </div>
+</template>
+
+<style>
+.page {
+  position: relative;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  padding: 0px 36px;
+  animation-name: page-in;
+  animation-duration: 0.25s;
+  animation-timing-function: ease-out;
+}
+.page-leaving {
+  opacity: 1;
+  animation-name: page-out;
+  animation-duration: 0.22s;
+  animation-timing-function: ease-in;
+}
+.clock-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 48px;
+}
+.top-time {
+  line-height: 48px;
+  font-size: 26px;
+  color: #ffffff;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+}
+.back-bar {
+  position: relative;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 44px;
+}
+.back-btn {
+  font-size: 40px;
+  color: #ffffff;
+  line-height: 44px;
+  height: 44px;
+}
+.page-title {
+  margin-left: 8px;
+  margin-top: 4px;
+  max-width: 200px;
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: bold;
+  line-height: 44px;
+  height: 44px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.about-scroll {
+  width: 100%;
+  height: 388px;
+  padding-bottom: 20px;
+}
+.about-content {
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding-top: 16px;
+}
+.logo {
+  width: 74px;
+  height: 74px;
+}
+.app-name {
+  margin-top: 12px;
+  font-size: 32px;
+  line-height: 40px;
+  color: #ffffff;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+}
+.tagline {
+  margin-top: 4px;
+  font-size: 22px;
+  line-height: 30px;
+  color: #999999;
+  text-align: center;
+  lines: 1;
+}
+.info-card {
+  flex-direction: column;
+  width: 350px;
+  margin-top: 20px;
+  padding: 0px;
+}
+.info-row {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  height: 50px;
+  padding: 0px 18px;
+}
+.info-row-last {
+  padding-bottom: 0px;
+}
+.info-label,
+.info-value {
+  font-size: 20px;
+  line-height: 30px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.info-label {
+  color: #999999;
+}
+.info-value {
+  max-width: 220px;
+  color: #ffffff;
+  text-align: right;
+}
+@media (shape: circle) {
+  .page {
+    padding: 0px 36px;
+  }
+}
+@media (shape: rect) {
+  .page {
+    padding: 0px 36px;
+  }
+}
+@keyframes page-in {
+  from { opacity: 0; transform: translateX(48px); }
+  to { opacity: 1; transform: translateX(0px); }
+}
+@keyframes page-out {
+  from { opacity: 1; transform: translateX(0px); }
+  to { opacity: 0; transform: translateX(48px); }
+}
+</style>
+
+<script>
+import router from '@system.router'
+
+export default {
+  private: {
+    clockText: '',
+    clockTimerId: null,
+    backTimerId: null,
+    leaving: false,
+    bypassBack: false
+  },
+
+  onShow() {
+    this.updateClock()
+    if (!this.clockTimerId) {
+      let self = this
+      this.clockTimerId = setInterval(function () {
+        self.updateClock()
+      }, 10000)
+    }
+  },
+
+  onHide() {
+    this.stopClock()
+  },
+
+  onDestroy() {
+    this.stopClock()
+    if (this.backTimerId) {
+      clearTimeout(this.backTimerId)
+      this.backTimerId = null
+    }
+  },
+
+  updateClock() {
+    try {
+      const d = new Date()
+      const pad = function (n) { return (n < 10 ? '0' : '') + n }
+      this.clockText = pad(d.getHours()) + ':' + pad(d.getMinutes())
+    } catch (e) {
+      this.clockText = ''
+    }
+  },
+
+  stopClock() {
+    if (this.clockTimerId) {
+      clearInterval(this.clockTimerId)
+      this.clockTimerId = null
+    }
+  },
+
+  onBack() {
+    if (this.leaving) return
+    this.leaving = true
+    let self = this
+    this.backTimerId = setTimeout(function () {
+      self.backTimerId = null
+      self.bypassBack = true
+      router.back()
+    }, 220)
+  },
+
+  onBackPress() {
+    if (this.bypassBack) return false
+    this.onBack()
+    return true
+  }
+}
+</script>

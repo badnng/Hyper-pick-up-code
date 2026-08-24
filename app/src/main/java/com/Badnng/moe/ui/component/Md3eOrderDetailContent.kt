@@ -118,7 +118,7 @@ fun Md3eOrderDetailContent(
         }
         item {
             Md3eDetailSection("识别结果") {
-                Md3eDetailRow("取件位置", order.pickupLocation ?: UNRECORDED_VALUE)
+                Md3eDetailRow("取件位置", displayablePickupLocation(order.pickupLocation) ?: UNRECORDED_VALUE)
                 Md3eDetailRow("来源应用", order.sourceApp ?: UNRECORDED_VALUE)
                 Md3eDetailRow("来源包名", order.sourcePackage ?: UNRECORDED_VALUE)
                 Md3eDetailRow("触发方式", recognitionTriggerLabel(order))

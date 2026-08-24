@@ -39,3 +39,12 @@ local.properties
 /app/release/
 /.agents/
 /trace_processor
+/wfc
+/.gradle-user
+/.kotlin
+/.tmpgradle
+/.agent-teams
+/.gradle-home
+
+# npm 缓存（工作区重定向）
+/.npm-cache/

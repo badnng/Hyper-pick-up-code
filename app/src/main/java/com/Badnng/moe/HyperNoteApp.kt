@@ -7,6 +7,7 @@ import com.Badnng.moe.helper.AppMemoryPressureState
 import com.Badnng.moe.helper.AppLogger
 import com.Badnng.moe.helper.FairMemoryManager
 import com.Badnng.moe.rules.RecognitionRuleEngine
+import com.Badnng.moe.wearable.WearableSyncManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +23,14 @@ class HyperNoteApp : Application(), Application.ActivityLifecycleCallbacks {
         FairMemoryManager.initialize(this)
         registerActivityLifecycleCallbacks(this)
         AppLogger.app("Application onCreate, process=${android.os.Process.myPid()}")
+        // 进程因开机广播、保活服务或系统回收后恢复时，若用户已开启手表同步，
+        // 立即开始节点发现和监听注册，不等待主页或 ViewModel 创建。
+        // XMS SDK 初始化/节点发现可能触发 Binder 调用，不能阻塞 Activity 首帧。
+        CoroutineScope(Dispatchers.Default + SupervisorJob()).launch {
+            runCatching {
+                WearableSyncManager.getInstance(applicationContext).ensureWearChannel()
+            }
+        }
         // 预热规则引擎，确保短信/通知广播到达时引擎已就绪
         CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             if (!RecognitionRuleEngine.isInitialized) {

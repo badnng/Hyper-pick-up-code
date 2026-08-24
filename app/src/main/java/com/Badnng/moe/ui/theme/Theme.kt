@@ -1,17 +1,16 @@
 package com.Badnng.moe.ui.theme
 
+import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,11 +19,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.navigationevent.OnBackInvokedDefaultInput
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.LocalIsMiuixUi
 import com.Badnng.moe.ui.md3eAppUi
@@ -191,7 +190,6 @@ fun 澎湃记Theme(
     } else {
         md3eColorScheme.background
     }
-    val transitionRunning = styleTransition.isRunning
 
     Box(
         modifier = Modifier
@@ -206,10 +204,7 @@ fun 澎湃记Theme(
     ) {
         styleTransition.AnimatedContent(
             modifier = Modifier
-                .fillMaxSize()
-                .then(
-                    if (transitionRunning) Modifier.clearAndSetSemantics { } else Modifier,
-                ),
+                .fillMaxSize(),
             transitionSpec = {
                 uiStyleSwitchTransform() using SizeTransform(clip = false)
             },
@@ -229,23 +224,6 @@ fun 澎湃记Theme(
             }
         }
 
-        if (transitionRunning) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            do {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                event.changes.forEach { it.consume() }
-                            } while (event.changes.any { it.pressed })
-                        }
-                    }
-                    .clearAndSetSemantics { },
-            )
-        }
-
-        BackHandler(enabled = transitionRunning) { }
     }
 }
 
@@ -313,14 +291,57 @@ private fun AppBackGestureHost(
 ) {
     val dispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     val view = LocalView.current
+    MiuixNavigationEventHost {
+        androidx.compose.foundation.layout.Box {
+            content()
+            NonPredictiveBackInterceptor(
+                enabled = !predictiveBackEnabled,
+                dispatcher = dispatcher,
+                view = view,
+            )
+        }
+    }
+}
 
-    androidx.compose.foundation.layout.Box {
+/**
+ * 为所有 Miuix 内容提供 0.9.4-rc01 所需的导航事件 owner 和 Android 返回输入。
+ * 独立 Activity（例如 OOBE）也必须使用该宿主，否则 Miuix Popup/Dialog 在打开时
+ * 无法找到 NavigationEventDispatcher。
+ */
+@Composable
+internal fun MiuixNavigationEventHost(
+    content: @Composable () -> Unit,
+) {
+    val activity = LocalContext.current as? Activity
+    val navigationEventOwner = rememberNavigationEventDispatcherOwner(
+        enabled = true,
+        parent = null,
+    )
+    val onBackInvokedDispatcher = activity?.onBackInvokedDispatcher
+    val navigationEventInput = remember(onBackInvokedDispatcher) {
+        onBackInvokedDispatcher?.let(::OnBackInvokedDefaultInput)
+    }
+
+    // miuix-nav 0.9.4 and Miuix popup components use NavigationEventDispatcher
+    // for both hardware back and predictive back. The root owner must also own
+    // an Android input, otherwise NavDisplay entries and popup handlers have no
+    // event source and MiuixPopupHost throws when a dropdown is opened.
+    DisposableEffect(navigationEventOwner, navigationEventInput) {
+        val input = navigationEventInput
+        if (input != null) {
+            navigationEventOwner.navigationEventDispatcher.addInput(input)
+        }
+        onDispose {
+            if (input != null) {
+                navigationEventOwner.navigationEventDispatcher.removeInput(input)
+            }
+        }
+    }
+
+    CompositionLocalProvider(
+        LocalNavigationEventDispatcherOwner provides navigationEventOwner,
+    ) {
         content()
-        NonPredictiveBackInterceptor(
-            enabled = !predictiveBackEnabled,
-            dispatcher = dispatcher,
-            view = view,
-        )
     }
 }
 

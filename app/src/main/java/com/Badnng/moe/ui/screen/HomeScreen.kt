@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.os.Build
 import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
@@ -66,9 +67,12 @@ import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.ImageSourceMetadataResolver
 import com.Badnng.moe.helper.ScreenshotStorage
+import com.Badnng.moe.ocr.RecognitionResult
 import com.Badnng.moe.recognition.RecognizedOrderFactory
 import com.Badnng.moe.recognition.RecognitionExecutionMetadata
 import com.Badnng.moe.recognition.RecognitionRouter
+import com.Badnng.moe.recognition.RecognitionCorrectionDetector
+import com.Badnng.moe.recognition.RecognitionCorrectionStore
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.recognition.RecognitionTrigger
 import com.Badnng.moe.viewmodel.OrderViewModel
@@ -478,6 +482,11 @@ fun HomeScreen(
                         is OrderGroup -> {
                             detailOrder = null
                             detailGroup = detailItem
+                        }
+                        is SettingsPage -> {
+                            detailOrder = null
+                            detailGroup = null
+                            settingsDetailStack = listOf(detailItem)
                         }
                     }
                 },
@@ -944,6 +953,7 @@ fun HomeScreen(
                 var imageSourceApp by remember { mutableStateOf<String?>(null) }
                 var imageSourcePackage by remember { mutableStateOf<String?>(null) }
                 var recognitionMetadata by remember { mutableStateOf<RecognitionExecutionMetadata?>(null) }
+                var additionalRecognizedResults by remember { mutableStateOf(emptyList<RecognitionResult>()) }
                 var expanded by remember { mutableStateOf(false) }
                 val options = listOf("餐食", "饮品", "快递")
                 val context = LocalContext.current
@@ -968,18 +978,6 @@ fun HomeScreen(
                 val coroutineScope = rememberCoroutineScope()
                 var screenshotPath by remember { mutableStateOf<String?>(null) }
 
-                fun cropStatusBar(src: Bitmap): Bitmap {
-                    val statusBarHeight = 150
-                    val sideMargin = (src.width * 0.02).toInt()
-                    val targetWidth = (src.width * 0.96).toInt()
-                    val targetHeight = (src.height * 0.81).toInt()
-                    return if (src.height > statusBarHeight + targetHeight && src.width > sideMargin + targetWidth) {
-                        Bitmap.createBitmap(src, sideMargin, statusBarHeight, targetWidth, targetHeight)
-                    } else {
-                        src
-                    }
-                }
-
                 val photoPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.PickVisualMedia()) { uri ->
                     if (uri != null) {
                         coroutineScope.launch {
@@ -988,6 +986,7 @@ fun HomeScreen(
                             imageSourcePackage = imageSource.packageName
                             recognizedFullText = null
                             recognitionMetadata = null
+                            additionalRecognizedResults = emptyList()
                             screenshotPath = null
                             val originalBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                                 ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
@@ -996,19 +995,17 @@ fun HomeScreen(
                                 MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
                             }
 
-                            val bitmap = if (OnlineRecognitionPreferences.isOnline(context)) {
-                                originalBitmap
-                            } else {
-                                cropStatusBar(originalBitmap)
-                            }
-
                             val routedResult = RecognitionRouter(context).recognizeImage(
-                                bitmap,
+                                originalBitmap,
                                 imageSourceApp,
                                 imageSourcePackage,
                                 RecognitionTrigger.IMPORTED_IMAGE,
                             )
-                            val result = routedResult.orders.firstOrNull()
+                            val successfulResults = routedResult.orders
+                                .filter { it.code != null }
+                                .distinctBy { it.code }
+                            val result = successfulResults.firstOrNull() ?: routedResult.orders.firstOrNull()
+                            additionalRecognizedResults = successfulResults.drop(1)
                             recognitionMetadata = routedResult.metadata
 
                             text = result?.code ?: ""
@@ -1022,11 +1019,57 @@ fun HomeScreen(
 
                             // 保存本次识别使用的图片。
                             if (result?.code != null) {
-                                screenshotPath = ScreenshotStorage.saveBitmap(
+                                val savedScreenshotPath = ScreenshotStorage.saveBitmap(
                                     context,
-                                    bitmap,
+                                    originalBitmap,
                                     namePrefix = "导入图片",
                                 )
+                                screenshotPath = savedScreenshotPath
+                                val unrecognizedExplicitCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
+                                    fullText = result.fullText,
+                                    recognizedCodes = successfulResults.mapNotNull { it.code },
+                                )
+                                val partialDraftSaved = if (unrecognizedExplicitCodes.isNotEmpty()) {
+                                    RecognitionCorrectionStore.saveImageDraft(
+                                        context = context,
+                                        bitmap = originalBitmap,
+                                        result = result.copy(code = null, brand = null, pickupLocation = null),
+                                        metadata = routedResult.metadata,
+                                        recognizedText = "导入图片（部分待纠正）",
+                                        sourceApp = imageSourceApp,
+                                        sourcePackage = imageSourcePackage,
+                                        screenshotPrefix = "导入待纠正",
+                                        existingScreenshotPath = savedScreenshotPath,
+                                    )
+                                } else {
+                                    false
+                                }
+                                when {
+                                    partialDraftSaved -> Toast.makeText(
+                                        context,
+                                        "部分取件码未识别，已加入纠正识别",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                    successfulResults.size > 1 -> Toast.makeText(
+                                        context,
+                                        "识别到 ${successfulResults.size} 个取件码，添加时将一并保存",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            } else if (result != null) {
+                                val saved = RecognitionCorrectionStore.saveImageDraft(
+                                    context = context,
+                                    bitmap = originalBitmap,
+                                    result = result,
+                                    metadata = routedResult.metadata,
+                                    recognizedText = "导入图片（待纠正）",
+                                    sourceApp = imageSourceApp,
+                                    sourcePackage = imageSourcePackage,
+                                    screenshotPrefix = "导入待纠正",
+                                )
+                                if (saved) {
+                                    Toast.makeText(context, "识别失败，已加入纠正识别", Toast.LENGTH_SHORT).show()
+                                }
                             }
 
                         }
@@ -1102,6 +1145,23 @@ fun HomeScreen(
                                     )
                                 }
                                 viewModel.addOrder(order)
+                                val metadata = recognitionMetadata
+                                val sharedScreenshotPath = screenshotPath
+                                if (metadata != null && sharedScreenshotPath != null) {
+                                    additionalRecognizedResults
+                                        .filterNot { it.code == text }
+                                        .mapNotNull { result ->
+                                            RecognizedOrderFactory.fromRecognition(
+                                                result = result,
+                                                metadata = metadata,
+                                                screenshotPath = sharedScreenshotPath,
+                                                recognizedText = "图片识别",
+                                                sourceApp = imageSourceApp ?: "图片识别",
+                                                sourcePackage = imageSourcePackage,
+                                            )
+                                        }
+                                        .forEach(viewModel::addOrder)
+                                }
                                 showBottomSheet = false
                             }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
                                 Text("添加")
@@ -1642,7 +1702,9 @@ private fun SettingsPage.md3eTitle(): String = when (this) {
     SettingsPage.Screenshot -> "截图方式"
     SettingsPage.Recognition -> "识别方式"
     SettingsPage.CustomPrompt -> "自定义 Prompt"
+    SettingsPage.RecognitionCorrection -> "纠正识别"
     SettingsPage.KeepAlive -> "保活设置"
+    SettingsPage.WearableSync -> "手表同步"
     SettingsPage.Storage -> "清理空间"
     SettingsPage.About -> "关于"
     SettingsPage.Backup -> "备份与恢复"

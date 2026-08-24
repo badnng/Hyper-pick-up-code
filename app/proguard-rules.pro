@@ -25,3 +25,24 @@
 # PaddleOCR v6 官方 Android SDK 与 ONNX Runtime
 -keep class com.paddle.ocr.** { *; }
 -keep class ai.onnxruntime.** { *; }
+
+# OpenCV Java bindings used by PP-OCRv6 preprocessing. Keep only the bindings
+# referenced by the OCR pipeline so R8 can remove camera/dnn/video wrappers;
+# the prebuilt native lib is kept intact and handled by ABI/package stripping.
+-keep class org.opencv.core.Core { *; }
+-keep class org.opencv.core.CvType { *; }
+-keep class org.opencv.core.Mat { *; }
+-keep class org.opencv.core.MatOfByte { *; }
+-keep class org.opencv.core.MatOfPoint { *; }
+-keep class org.opencv.core.MatOfPoint2f { *; }
+-keep class org.opencv.core.Point { *; }
+-keep class org.opencv.core.Scalar { *; }
+-keep class org.opencv.core.Size { *; }
+-keep class org.opencv.android.Utils { *; }
+-keep class org.opencv.imgcodecs.Imgcodecs { *; }
+-keep class org.opencv.imgproc.Imgproc { *; }
+-keepclassmembers class org.opencv.** { native <methods>; }
+
+# Xiaomi Wearable AIDL contract and Parcelable callback models.
+-keep class com.xiaomi.xms.wearable.** { *; }
+-keep interface com.xiaomi.xms.wearable.** { *; }

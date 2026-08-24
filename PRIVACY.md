@@ -1,13 +1,15 @@
 # 《澎湃记用户协议与隐私说明》
 
-**文档版本：** 1.0 
-**发布日期：** 2026 年 7 月 13 日  
-**生效日期：** 2026 年 7 月 13 日  
+**文档版本：** 2.0 
+**发布日期：** 2026 年 8 月 25 日  
+**生效日期：** 2026 年 8 月 25 日  
 **应用名称：** 澎湃记（Hyper Note / Hyper Pick-up Code）  
 **开发者：** Badnng（独立个人开发者使用的公开网名）  
 **项目地址：** <https://github.com/badnng/Hyper-pick-up-code>
 **开源许可证：** GNU Affero General Public License v3.0 only（AGPL-3.0-only）  
 **邮箱：** <wsj316@outlook.com>
+
+> **本次更新摘要：** 新增 OpenCode Go、OpenCode Zen（免费）与 DeepSeek 三家在线识别供应商；更新数据传输路径与第三方政策链接；新增 2.4 节，明确本应用为第三方独立开发作品，与小米公司相关产品及 Xiaomi HyperOS 均无任何关联，请勿在官方场合将其描述为小米官方产品或功能。
 
 ## 1. 引言
 
@@ -36,9 +38,17 @@
 
 ### 2.3 第三方模型非官方声明
 
-本应用对小米 MiMo、智谱开放平台、OpenAI、月之暗面、MiniMax 及用户自定义兼容接口的名称展示，仅用于说明 API 兼容性并帮助用户选择请求目标。
+本应用对小米 MiMo、智谱开放平台、OpenAI、月之暗面、MiniMax、OpenCode Zen、OpenCode Go、DeepSeek 及用户自定义兼容接口的名称展示，仅用于说明 API 兼容性并帮助用户选择请求目标。
 
 除非另有明确书面披露，本项目与上述供应商不存在隶属、代理、授权经销、联合运营、官方合作或品牌背书关系。开发者目前未因供应商的列出、排序或接入收取推广佣金。用户需要自行判断第三方服务是否适合自己，并遵守相应供应商的服务协议、隐私政策、地区限制和计费规则。
+
+### 2.4 与小米公司及相关产品无关声明
+
+本应用是由独立个人开发者（Badnng）开发并维护的第三方作品，与小米公司（Xiaomi Corporation）、Xiaomi HyperOS（小米澎湃 OS）及小米公司相关产品（包括但不限于小米手机、红米手机、小米平板等）均无任何关联，不存在隶属、代理、授权经销、联合运营、官方合作或品牌背书关系。
+
+“澎湃记”“Hyper Note”等应用名称仅为本开发者自行选定的名称，不应被理解为小米公司相关产品、Xiaomi HyperOS 或任何官方服务的一部分，也不代表小米公司对本应用进行了审核、认证或推荐。
+
+请在小米官方社区、官方客服、官方论坛等场合客观、准确地说明本应用为第三方独立开发作品，不要将其描述为小米公司提供、支持、认可的功能或产品，以免引发误解或影响官方沟通。
 
 ## 3. 我们处理哪些信息
 
@@ -175,6 +185,9 @@ Android 的通知使用权在系统层面可能允许应用看到较广范围的
 | OpenAI | `api.openai.com` |
 | 月之暗面 | `api.moonshot.cn` |
 | MiniMax | `api.minimaxi.com` |
+| OpenCode Zen（免费） | `opencode.ai` |
+| OpenCode Go | `opencode.ai` |
+| DeepSeek | `api.deepseek.com` |
 | 自定义供应商 | 用户自行填写的服务器地址 |
 
 当前代码未将模型请求发送至 Badnng 运营的模型中转服务器。未被当前选择的其他模型供应商不会收到该次请求。
@@ -207,7 +220,9 @@ API Key 会作为鉴权信息发送给其对应的供应商；自定义供应商
 - [MiniMax 开放平台隐私政策](https://platform.minimaxi.com/protocol/privacy-policy)；
 - [智谱开放平台隐私政策](https://docs.bigmodel.cn/cn/terms/privacy-policy)；
 - [OpenAI Platform 隐私政策](https://openai.com/zh-Hans-CN/policies/row-privacy-policy/)；
-- [Kimi API 开放平台用户隐私政策](https://platform.kimi.com/docs/agreement/userprivacy)。
+- [Kimi API 开放平台用户隐私政策](https://platform.kimi.com/docs/agreement/userprivacy)；
+- [OpenCode 隐私政策](https://opencode.ai/zh/legal/privacy-policy)；
+- [DeepSeek 隐私政策](https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html)。
 
 上述链接仅供查阅，不表示开发者是相应供应商的代理人，也不表示供应商对本项目进行了审核、认证或授权。第三方可能自行修改政策或链接，具体内容以其官方网站届时展示的版本为准。
 

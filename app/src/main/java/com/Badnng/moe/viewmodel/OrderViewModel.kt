@@ -11,12 +11,16 @@ import com.Badnng.moe.data.db.OrderGroupDao
 import com.Badnng.moe.data.repository.OrderGroupRepository
 import com.Badnng.moe.data.repository.OrderRepository
 import com.Badnng.moe.helper.NotificationHelper
+import com.Badnng.moe.helper.NotificationScheduler
+import com.Badnng.moe.helper.DailyExpressGroupingHelper
+import com.Badnng.moe.wearable.WearableSyncManager
+import com.Badnng.moe.wearable.WearableSyncSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class OrderViewModel(application: Application) : AndroidViewModel(application) {
+class OrderViewModel(application: Application) : AndroidViewModel(application), WearableSyncSource {
 
     private val orderDao: OrderDao
     private val orderGroupDao: OrderGroupDao
@@ -28,10 +32,13 @@ class OrderViewModel(application: Application) : AndroidViewModel(application) {
     val orders: StateFlow<List<OrderEntity>> = _orders.asStateFlow()
 
     private val _incompleteOrders = MutableStateFlow<List<OrderEntity>>(emptyList())
-    val incompleteOrders: StateFlow<List<OrderEntity>> = _incompleteOrders.asStateFlow()
+    override val incompleteOrders: StateFlow<List<OrderEntity>> = _incompleteOrders.asStateFlow()
 
     private val _completedOrders = MutableStateFlow<List<OrderEntity>>(emptyList())
-    val completedOrders: StateFlow<List<OrderEntity>> = _completedOrders.asStateFlow()
+    override val completedOrders: StateFlow<List<OrderEntity>> = _completedOrders.asStateFlow()
+
+    private val _ruleCorrectionDrafts = MutableStateFlow<List<OrderEntity>>(emptyList())
+    val ruleCorrectionDrafts: StateFlow<List<OrderEntity>> = _ruleCorrectionDrafts.asStateFlow()
 
     private val _orderGroups = MutableStateFlow<List<OrderGroup>>(emptyList())
     val orderGroups: StateFlow<List<OrderGroup>> = _orderGroups.asStateFlow()
@@ -68,6 +75,12 @@ class OrderViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
+            orderDao.getRuleCorrectionDrafts().collect { drafts ->
+                _ruleCorrectionDrafts.value = drafts
+            }
+        }
+
+        viewModelScope.launch {
             groupRepository.getAllGroups().collect { groups ->
                 _orderGroups.value = groups
             }
@@ -84,6 +97,9 @@ class OrderViewModel(application: Application) : AndroidViewModel(application) {
                 _completedGroups.value = groups
             }
         }
+
+        // ★ 手表同步：向 Application 级 manager 注入数据源并启动
+        WearableSyncManager.getInstance(application).attachSource(this)
     }
 
     fun addOrder(order: OrderEntity) {
@@ -95,12 +111,38 @@ class OrderViewModel(application: Application) : AndroidViewModel(application) {
 
     fun markAsCompleted(orderId: String) {
         viewModelScope.launch {
-            val order = orderDao.getOrderById(orderId)
-            val groupId = order?.groupId
-            repository.markAsCompleted(orderId)
-            notificationHelper.cancelNotification(orderId)
-            if (groupId != null) checkAndDissolveGroup(groupId)
+            markAsCompletedFromWearable(orderId)
         }
+    }
+
+    override suspend fun markAsCompletedFromWearable(orderId: String): Boolean {
+        val order = orderDao.getOrderById(orderId) ?: return false
+        // 手表端完成操作不经过 NotificationReceiver，先清理手机端通知和对应闹钟。
+        runCatching { notificationHelper.cancelNotification(orderId) }
+        runCatching {
+            NotificationScheduler.cancel(getApplication(), NotificationScheduler.getOrderRequestCode(orderId))
+        }
+        if (order.isCompleted) return true
+
+        val groupId = order.groupId
+        repository.markAsCompleted(orderId)
+        if (groupId != null) {
+            try {
+                checkAndDissolveGroup(groupId)
+            } catch (_: Throwable) {
+                // 订单完成状态已经写入，分组整理失败不回滚主操作。
+            }
+        }
+        return orderDao.getOrderById(orderId)?.isCompleted == true
+    }
+
+    /**
+     * ViewModel 被销毁时解绑手表同步数据源，避免 Application 级单例
+     * [WearableSyncManager] 永久持有已清理的 OrderViewModel（泄漏）。
+     */
+    override fun onCleared() {
+        WearableSyncManager.getInstance(getApplication<Application>()).detachSource()
+        super.onCleared()
     }
 
     fun deleteOrder(order: OrderEntity) {
@@ -118,6 +160,46 @@ class OrderViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun applyRuleCorrection(
+        draft: OrderEntity,
+        correctedOrders: List<OrderEntity>,
+        keepDraft: Boolean,
+    ) {
+        viewModelScope.launch {
+            for (order in correctedOrders) {
+                repository.insertOrder(order)
+            }
+            if (!keepDraft) {
+                repository.deleteOrder(draft)
+            }
+            DailyExpressGroupingHelper.regroupPendingExpressByDay(
+                orderDao,
+                orderGroupDao,
+                getApplication(),
+            )
+            for (order in correctedOrders) {
+                val refreshed = orderDao.getOrderById(order.id) ?: order
+                if (refreshed.groupId == null) {
+                    notificationHelper.showPromotedLiveUpdate(refreshed, refreshed.brandName)
+                }
+            }
+        }
+    }
+
+    fun resolveRuleCorrection(order: OrderEntity) {
+        viewModelScope.launch {
+            repository.updateOrder(order.copy(needsRuleCorrection = false))
+            DailyExpressGroupingHelper.regroupPendingExpressByDay(
+                orderDao,
+                orderGroupDao,
+                getApplication(),
+            )
+            val refreshed = orderDao.getOrderById(order.id) ?: order
+            if (refreshed.groupId == null) {
+                notificationHelper.showPromotedLiveUpdate(refreshed, refreshed.brandName)
+            }
+        }
+    }
     fun updateOrder(order: OrderEntity) {
         viewModelScope.launch {
             repository.updateOrder(order)
@@ -175,9 +257,22 @@ class OrderViewModel(application: Application) : AndroidViewModel(application) {
                 orderDao.update(order.copy(groupId = null))
             }
             orderGroupDao.deleteGroup(group)
-            notificationHelper.cancelGroupNotification(groupId)
+            runCatching { notificationHelper.cancelGroupNotification(groupId) }
+            runCatching {
+                NotificationScheduler.cancel(getApplication(), NotificationScheduler.getGroupRequestCode(groupId))
+            }
         } else {
             orderGroupDao.updateOrderCount(groupId, incompleteCount)
+            // 手表完成组内一单后，重绘组通知，避免通知仍展示已完成取餐码。
+            val pendingOrders = orderDao.getAllOrdersList().filter {
+                it.groupId == groupId && !it.isCompleted
+            }
+            runCatching {
+                notificationHelper.showGroupNotification(
+                    group.copy(orderCount = incompleteCount),
+                    pendingOrders,
+                )
+            }
         }
     }
 }

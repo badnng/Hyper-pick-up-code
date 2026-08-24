@@ -10,7 +10,9 @@ data class PrivacyPolicyDocument(
 
 object PrivacyConsent {
     const val ACCEPTED_KEY = "privacy_agreement_v1_accepted"
+    const val ACCEPTED_VERSION_KEY = "privacy_agreement_v1_accepted_version"
     const val NETWORK_UPDATE_ENABLED_KEY = "network_update_enabled_privacy_v1"
+    const val POLICY_VERSION = "2.0"
 
     private const val LEGACY_NETWORK_UPDATE_ENABLED_KEY = "network_update_enabled"
     private const val POLICY_ASSET_NAME = "PRIVACY.md"
@@ -19,15 +21,32 @@ object PrivacyConsent {
         preferences.getBoolean(ACCEPTED_KEY, false)
 
     fun accept(preferences: SharedPreferences) {
-        preferences.edit().putBoolean(ACCEPTED_KEY, true).apply()
+        preferences.edit()
+            .putBoolean(ACCEPTED_KEY, true)
+            .putString(ACCEPTED_VERSION_KEY, POLICY_VERSION)
+            .apply()
     }
 
     fun revoke(preferences: SharedPreferences) {
         preferences.edit()
             .putBoolean(ACCEPTED_KEY, false)
             .putBoolean(NETWORK_UPDATE_ENABLED_KEY, false)
+            .remove(ACCEPTED_VERSION_KEY)
             .apply()
     }
+
+    fun acknowledgedPolicyVersion(preferences: SharedPreferences): String? =
+        preferences.getString(ACCEPTED_VERSION_KEY, null)
+
+    fun hasPolicyUpdate(preferences: SharedPreferences): Boolean =
+        isAccepted(preferences) && acknowledgedPolicyVersion(preferences) != POLICY_VERSION
+
+    /**
+     * 是否已同意且确认的版本与当前政策版本一致。
+     * 政策更新（版本落后）后必须重新同意，否则视为未同意。
+     */
+    fun isCurrentPolicyAccepted(preferences: SharedPreferences): Boolean =
+        isAccepted(preferences) && acknowledgedPolicyVersion(preferences) == POLICY_VERSION
 
     fun isNetworkUpdateEnabled(preferences: SharedPreferences): Boolean =
         isAccepted(preferences) &&

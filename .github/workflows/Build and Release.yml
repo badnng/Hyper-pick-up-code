@@ -75,6 +75,51 @@ jobs:
 
       # ─── 以下仅 tag 推送时执行 ───
 
+      - name: Set up Node.js
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/wear/package-lock.json
+
+      - name: Decode RPK signing keys
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RPK_CERT_BASE64: ${{ secrets.RPK_CERT_BASE64 }}
+          RPK_PRIVATE_KEY_BASE64: ${{ secrets.RPK_PRIVATE_KEY_BASE64 }}
+        run: |
+          mkdir -p app/wear/sign/release
+          echo "$RPK_CERT_BASE64" | base64 -d > app/wear/sign/release/certificate.pem
+          echo "$RPK_PRIVATE_KEY_BASE64" | base64 -d > app/wear/sign/release/private.pem
+
+      - name: Build watch RPK
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: app/wear
+        run: |
+          set -e
+          npm ci
+          npm run release
+          RPK=$(ls dist/*.rpk 2>/dev/null | head -n1)
+          test -n "$RPK" || { echo "❌ RPK 构建产物缺失"; exit 1; }
+          # 从 rpk 包内的版本配置文件（manifest.json）读取版本号，校验后再以此命名
+          VERSION=$(python3 -c "
+import zipfile, json, sys
+with zipfile.ZipFile(sys.argv[1]) as z:
+    manifest = json.loads(z.read('manifest.json'))
+print(manifest['versionName'])
+" "$RPK")
+          test -n "$VERSION" || { echo "❌ 无法从 rpk 读取版本配置"; exit 1; }
+          echo "rpk 版本配置: versionName=$VERSION"
+          # 校验 src 源配置与包内配置一致，防止构建产物版本漂移
+          SRC_VERSION=$(python3 -c "import json;print(json.load(open('src/manifest.json'))['versionName'])")
+          if [ "$VERSION" != "$SRC_VERSION" ]; then
+            echo "❌ rpk 包内版本($VERSION) 与源配置($SRC_VERSION) 不一致"
+            exit 1
+          fi
+          mv "$RPK" "dist/com.Badnng.moe_Release_${VERSION}.rpk"
+          echo "✅ RPK 产物: dist/com.Badnng.moe_Release_${VERSION}.rpk"
+
       - name: Attest build provenance
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/attest-build-provenance@v2
@@ -218,7 +263,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/app-release.apk
+          files: |
+            app/build/outputs/apk/release/app-release.apk
+            app/wear/dist/com.Badnng.moe_Release_*.rpk
           body: |
             ## 更新内容
             ${{ steps.changelog.outputs.content }}

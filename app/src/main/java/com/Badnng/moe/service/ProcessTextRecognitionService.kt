@@ -18,7 +18,11 @@ import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.helper.NotificationHelper
+import com.Badnng.moe.ocr.RecognitionResult
 import com.Badnng.moe.recognition.RecognizedOrderFactory
+import com.Badnng.moe.recognition.RecognitionCorrectionDetector
+import com.Badnng.moe.recognition.RecognitionCorrectionStore
+import com.Badnng.moe.recognition.RecognitionExecutionMetadata
 import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.recognition.RecognitionTrigger
 import kotlinx.coroutines.launch
@@ -65,11 +69,27 @@ class ProcessTextRecognitionService : Service() {
             AppLogger.recognition("code=${r.code}, type=${r.type}, brand=${r.brand}, pickup=${r.pickupLocation}")
         }
 
+        val unrecognizedExplicitCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
+            fullText = selectedText,
+            recognizedCodes = results.mapNotNull { it.code },
+        )
+
         if (results.isEmpty()) {
+            val draftSaved = saveCorrectionDraft(selectedText, results, routedResult.metadata)
             withContext(Dispatchers.Main) {
-                Toast.makeText(applicationContext, "未识别到取件码", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    applicationContext,
+                    if (draftSaved) "识别失败，已加入纠正识别" else "未识别到取件码",
+                    Toast.LENGTH_SHORT,
+                ).show()
             }
             return
+        }
+
+        val partialDraftSaved = if (unrecognizedExplicitCodes.isNotEmpty()) {
+            saveCorrectionDraft(selectedText, emptyList(), routedResult.metadata)
+        } else {
+            false
         }
 
         val db = OrderDatabase.getDatabase(applicationContext)
@@ -91,8 +111,13 @@ class ProcessTextRecognitionService : Service() {
         }
 
         if (insertedOrders.isEmpty()) {
+            val draftSaved = saveCorrectionDraft(selectedText, results, routedResult.metadata)
             withContext(Dispatchers.Main) {
-                Toast.makeText(applicationContext, "未识别到取件码", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    applicationContext,
+                    if (draftSaved) "识别失败，已加入纠正识别" else "未识别到取件码",
+                    Toast.LENGTH_SHORT,
+                ).show()
             }
             return
         }
@@ -116,7 +141,11 @@ class ProcessTextRecognitionService : Service() {
                 }
             }
             withContext(Dispatchers.Main) {
-                Toast.makeText(applicationContext, "新识别取件码已自动整理", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    applicationContext,
+                    if (partialDraftSaved) "部分取件码未识别，已加入纠正识别" else "新识别取件码已自动整理",
+                    Toast.LENGTH_SHORT,
+                ).show()
             }
         } else {
             refreshedOrders.forEach { order ->
@@ -124,11 +153,38 @@ class ProcessTextRecognitionService : Service() {
             }
             val firstCode = refreshedOrders.firstOrNull()?.takeoutCode
             withContext(Dispatchers.Main) {
-                Toast.makeText(applicationContext, if (firstCode != null) "识别成功：$firstCode" else "识别成功", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    applicationContext,
+                    if (partialDraftSaved) "部分取件码未识别，已加入纠正识别"
+                    else if (firstCode != null) "识别成功：$firstCode" else "识别成功",
+                    Toast.LENGTH_SHORT,
+                ).show()
             }
         }
     }
     
+    private suspend fun saveCorrectionDraft(
+        selectedText: String,
+        results: List<RecognitionResult>,
+        metadata: RecognitionExecutionMetadata,
+    ): Boolean {
+        val draftResult = results.firstOrNull { it.code == null }?.copy(fullText = selectedText)
+            ?: RecognitionResult(
+                code = null,
+                qr = null,
+                type = "餐食",
+                brand = null,
+                fullText = selectedText,
+            )
+        return RecognitionCorrectionStore.saveTextDraft(
+            context = applicationContext,
+            result = draftResult,
+            metadata = metadata,
+            recognizedText = selectedText,
+            sourceApp = "文字选择",
+        )
+    }
+
     private fun createNotification(): Notification {
         val channelId = "process_text_recognition"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

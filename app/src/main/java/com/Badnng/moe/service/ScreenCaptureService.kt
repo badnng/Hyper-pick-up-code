@@ -39,6 +39,8 @@ import com.Badnng.moe.helper.RootHelper
 import com.Badnng.moe.helper.ScreenshotStorage
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.recognition.RecognizedOrderFactory
+import com.Badnng.moe.recognition.RecognitionCorrectionDetector
+import com.Badnng.moe.recognition.RecognitionCorrectionStore
 import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.recognition.RecognitionTrigger
 import rikka.shizuku.Shizuku
@@ -142,8 +144,8 @@ class ScreenCaptureService : Service() {
             try {
                 bitmap = captureShizukuScreenshot()
                 if (bitmap != null) {
-                    val recognitionBitmap = prepareRecognitionBitmap(bitmap)
-                    recognizeAndStop(recognitionBitmap, appName, pkg, triggeredByAccessibilityShortcut)
+                    val detailBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                    recognizeAndStop(detailBitmap, appName, pkg, triggeredByAccessibilityShortcut)
                 } else {
                     AppLogger.service("Shizuku capture returned null bitmap")
                     stopSelf()
@@ -174,8 +176,8 @@ class ScreenCaptureService : Service() {
             try {
                 bitmap = RootHelper.captureScreenshot()
                 if (bitmap != null) {
-                    val recognitionBitmap = prepareRecognitionBitmap(bitmap)
-                    recognizeAndStop(recognitionBitmap, appName, pkg, triggeredByAccessibilityShortcut)
+                    val detailBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                    recognizeAndStop(detailBitmap, appName, pkg, triggeredByAccessibilityShortcut)
                 } else {
                     AppLogger.service("Root capture returned null bitmap")
                     withContext(Dispatchers.Main) {
@@ -307,8 +309,8 @@ class ScreenCaptureService : Service() {
                 )
                 bitmap.copyPixelsFromBuffer(buffer)
                 cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
-                val recognitionBitmap = prepareRecognitionBitmap(cleanBitmap)
-                recognizeAndStop(recognitionBitmap, appName, pkg, triggeredByAccessibilityShortcut)
+                val detailBitmap = cleanBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                recognizeAndStop(detailBitmap, appName, pkg, triggeredByAccessibilityShortcut)
             } catch (e: Exception) {
                 Log.e("CaptureLog", "MediaProjection capture failed", e)
                 stopSelf()
@@ -320,35 +322,16 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private fun cropStatusBar(src: Bitmap): Bitmap {
-        val statusBarHeight = 150
-        val sideMargin = (src.width * 0.02).toInt()
-        val targetWidth = (src.width * 0.92).toInt()
-        val targetHeight = (src.height * 0.81).toInt()
-        return if (src.height > statusBarHeight + targetHeight && src.width > sideMargin + targetWidth) {
-            Bitmap.createBitmap(src, sideMargin, statusBarHeight, targetWidth, targetHeight)
-        } else {
-            src
-        }
-    }
-
-    private fun prepareRecognitionBitmap(src: Bitmap): Bitmap {
-        if (OnlineRecognitionPreferences.isOnline(applicationContext)) {
-            return src.copy(Bitmap.Config.ARGB_8888, false)
-        }
-        val cropped = cropStatusBar(src)
-        return if (cropped === src) {
-            src.copy(Bitmap.Config.ARGB_8888, false)
-        } else {
-            cropped
-        }
-    }
-
-    private fun recognizeAndStop(bitmap: Bitmap, sourceApp: String?, sourcePkg: String?, triggeredByAccessibilityShortcut: Boolean) {
+    private fun recognizeAndStop(
+        detailBitmap: Bitmap,
+        sourceApp: String?,
+        sourcePkg: String?,
+        triggeredByAccessibilityShortcut: Boolean,
+    ) {
         scope.launch {
             try {
                 val routedResult = RecognitionRouter(applicationContext).recognizeImage(
-                    bitmap,
+                    detailBitmap,
                     sourceApp,
                     sourcePkg,
                     RecognitionTrigger.SCREEN_CAPTURE,
@@ -358,22 +341,67 @@ class ScreenCaptureService : Service() {
                     Log.w("CaptureLog", "Online recognition fallback: $it")
                 }
 
-                if (recognizedOrders.isEmpty()) {
-                    Log.d("CaptureLog", "No code recognized")
+                val successfulResults = recognizedOrders
+                    .filter { it.code != null }
+                    .distinctBy { it.code }
+                val unrecognizedExplicitCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
+                    fullText = recognizedOrders.firstOrNull()?.fullText.orEmpty(),
+                    recognizedCodes = successfulResults.mapNotNull { it.code },
+                )
+                if (successfulResults.isEmpty()) {
+                    val draftSaved = recognizedOrders.firstOrNull()?.let { result ->
+                        RecognitionCorrectionStore.saveImageDraft(
+                            context = applicationContext,
+                            bitmap = detailBitmap,
+                            result = result,
+                            metadata = routedResult.metadata,
+                            recognizedText = "自动识别（待纠正）",
+                            sourceApp = sourceApp,
+                            sourcePackage = sourcePkg,
+                            screenshotPrefix = "识屏待纠正",
+                        )
+                    } == true
+                    Log.d("CaptureLog", "No code recognized, correctionDraftSaved=$draftSaved")
+                    if (draftSaved) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(applicationContext, "识别失败，已加入纠正识别", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                     return@launch
                 }
 
                 val screenshotPath = ScreenshotStorage.saveBitmap(
                     applicationContext,
-                    bitmap,
+                    detailBitmap,
                     namePrefix = "识屏",
                 )
+
+                val partialDraftSaved = if (unrecognizedExplicitCodes.isNotEmpty()) {
+                    recognizedOrders.firstOrNull()?.let { result ->
+                        RecognitionCorrectionStore.saveImageDraft(
+                            context = applicationContext,
+                            bitmap = detailBitmap,
+                            result = result.copy(code = null, brand = null, pickupLocation = null),
+                            metadata = routedResult.metadata,
+                            recognizedText = "自动识别（部分待纠正）",
+                            sourceApp = sourceApp,
+                            sourcePackage = sourcePkg,
+                            screenshotPrefix = "识屏待纠正",
+                            existingScreenshotPath = screenshotPath,
+                        )
+                    } == true
+                } else {
+                    false
+                }
+                if (partialDraftSaved) {
+                    Log.d("CaptureLog", "Partial recognition saved for correction: missing=$unrecognizedExplicitCodes")
+                }
 
                 val database = OrderDatabase.getDatabase(applicationContext)
                 val orderGroupDao = database.orderGroupDao()
                 val orderDao = database.orderDao()
                 val insertedOrders = mutableListOf<OrderEntity>()
-                for (result in recognizedOrders) {
+                for (result in successfulResults) {
                     val code = result.code ?: continue
                     AppLogger.recognition("code=$code, type=${result.type}, brand=${result.brand}, pickup=${result.pickupLocation}")
                     val order = RecognizedOrderFactory.fromRecognition(
@@ -446,9 +474,7 @@ class ScreenCaptureService : Service() {
                     ).show()
                 }
             } finally {
-                if (!bitmap.isRecycled) {
-                    bitmap.recycle()
-                }
+                if (!detailBitmap.isRecycled) detailBitmap.recycle()
                 stopSelf()
             }
         }
