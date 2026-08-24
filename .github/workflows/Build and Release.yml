@@ -103,12 +103,7 @@ jobs:
           RPK=$(ls dist/*.rpk 2>/dev/null | head -n1)
           test -n "$RPK" || { echo "❌ RPK 构建产物缺失"; exit 1; }
           # 从 rpk 包内的版本配置文件（manifest.json）读取版本号，校验后再以此命名
-          VERSION=$(python3 -c "
-import zipfile, json, sys
-with zipfile.ZipFile(sys.argv[1]) as z:
-    manifest = json.loads(z.read('manifest.json'))
-print(manifest['versionName'])
-" "$RPK")
+          VERSION=$(python3 -c "import zipfile,json,sys; z=zipfile.ZipFile(sys.argv[1]); m=json.loads(z.read('manifest.json')); print(m['versionName'])" "$RPK")
           test -n "$VERSION" || { echo "❌ 无法从 rpk 读取版本配置"; exit 1; }
           echo "rpk 版本配置: versionName=$VERSION"
           # 校验 src 源配置与包内配置一致，防止构建产物版本漂移
