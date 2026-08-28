@@ -1,7 +1,7 @@
 {
-  "versionCode": 2026082511,
-  "versionName": "26.8.25.C01-Dev",
-  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n\n26.8.25.C01-Dev 版本更新如下：\n\n我们在v26.7.13.C01-Dev之后的版本更新了 《澎湃记用户协议与隐私说明》\n更新后，联网更新开关将强制关闭，如需开启，需要同意《澎湃记用户协议与隐私说明》\n\n修复 大量记不清楚的问题\n\n优化 小部分UI效果\n优化 Miuix 依赖至 0.9.4-rc1\n优化 opencv/onnxruntime 库的体积大小，并使APK打包大小缩小至常规水平\n\n迁移 room数据库到V9\n\n添加 小米手表与手机客户端的同步支持（需要安装小米运动健康并打开设置内的手表同步功能）*\n添加 三个在线识别的供应商（OpenCode Go/OpenCode Zen for Free/DeepSeek）*\n\n重构 规则系统\n\n* 需要《澎湃记用户协议与隐私说明》同意后才可使用\n* 目前仅支持更新到 Hyper OS 3 For Watch（Vela Watch 5.0）的Xiaomi Watch S5/S4 系列，其他设备适配请耐心等待",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.8.25.C01-Dev/app-release.apk",
-  "md5": "68a3769ccceefa5a2882b33a2881ff36"
+  "versionCode": 2026082911,
+  "versionName": "26.8.29.C01-Dev",
+  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n\n我们在v26.7.13.C01-Dev之后的版本更新了 《澎湃记用户协议与隐私说明》\n更新后，联网更新开关将强制关闭，如需开启，需要同意《澎湃记用户协议与隐私说明》\n快应用已对小米手环8/9/10pro、REDMI Watch 5/6的屏幕进行了适配，欢迎反馈\n\n快应用端 26.8.29-Watch 更改如下：\n优化 App整体性能\n优化 部分UI的显示效果\n\n手机端 26.8.29.C01-Dev 更改如下：\n修复 启动时的冻屏问题\n修复 关于页检查更新按钮不会立即显示的问题\n修复 手表同步通知权限在未安装快应用时无法授权的问题\n\n优化 手表同步页面UI",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.8.29.C01-Dev/app-release.apk",
+  "md5": "bba3f351546a6cbc32e4819d9b53fbe8"
 }
