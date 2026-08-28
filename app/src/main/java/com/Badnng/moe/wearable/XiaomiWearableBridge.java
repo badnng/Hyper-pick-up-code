@@ -49,6 +49,12 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
      */
     private static final int REMOVE_LISTENER_RETRY_COUNT = 8;
     private static final long REMOVE_LISTENER_RETRY_DELAY_MS = 180L;
+    /**
+     * 自启动冷路径下 XMS 服务绑定尚未完成，节点发现可能短暂失败；
+     * 发送系统通知时最多重试 3 次、间隔 600ms 等待服务就绪。
+     */
+    private static final int NOTIFY_NODE_RETRY_COUNT = 3;
+    private static final long NOTIFY_NODE_RETRY_DELAY_MS = 600L;
 
     private final Object apiLock = new Object();
     private final Context appContext;
@@ -59,6 +65,8 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
     private final ServiceApi serviceApi;
     private volatile Node currentNode;
     private volatile boolean permissionGranted;
+    private volatile boolean notifyPermissionGranted;
+    private volatile boolean deviceManagerPermissionGranted;
     private volatile OnMessageReceivedListener messageListener;
     private volatile String listenerNodeId;
     private volatile com.xiaomi.xms.wearable.node.OnDataChangedListener connectionListener;
@@ -85,22 +93,23 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
             new OnServiceConnectionListener() {
                 @Override
                 public void onServiceConnected() {
-                    synchronized (apiLock) {
-                        boolean reconnect = serviceConnectedOnce;
-                        serviceConnectedOnce = true;
-                        log("Mi Fitness 服务已连接: reconnect=" + reconnect);
-                        if (reconnect) {
-                            invalidateRemoteListeners("Mi Fitness 服务重新连接");
-                        }
+                    // ⚠️ 不在回调里持有 apiLock：XMS 回调线程（DefaultDispatch）在回调期间
+                    // 可能长时间 park（实测 3.3s+），若同时持锁，任何触碰 apiLock 的线程
+                    // （含主线程）都会被连带阻塞，造成冷启动后 UI 长时间无响应。
+                    // 回调内只更新 volatile 字段，无需同步块。
+                    boolean reconnect = serviceConnectedOnce;
+                    serviceConnectedOnce = true;
+                    log("Mi Fitness 服务已连接: reconnect=" + reconnect);
+                    if (reconnect) {
+                        invalidateRemoteListeners("Mi Fitness 服务重新连接");
                     }
                 }
 
                 @Override
                 public void onServiceDisconnected() {
-                    synchronized (apiLock) {
-                        log("Mi Fitness 服务已断开");
-                        invalidateRemoteListeners("Mi Fitness 服务断开");
-                    }
+                    // 同样无锁化；只清理 volatile 标志，等待 manager 重新发现节点后自愈。
+                    log("Mi Fitness 服务已断开");
+                    invalidateRemoteListeners("Mi Fitness 服务断开");
                 }
             };
 
@@ -160,7 +169,17 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
 
     @Override
     public boolean isPermissionGranted() {
-        return permissionGranted;
+        return notifyPermissionGranted && deviceManagerPermissionGranted;
+    }
+
+    @Override
+    public boolean isNotifyPermissionGranted() {
+        return notifyPermissionGranted;
+    }
+
+    @Override
+    public boolean isDeviceManagerPermissionGranted() {
+        return deviceManagerPermissionGranted;
     }
 
     @Override
@@ -222,20 +241,28 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
             currentNode = result != null && !result.isEmpty() ? result.get(0) : null;
             if (currentNode == null || currentNode.id == null) {
                 permissionGranted = false;
+                notifyPermissionGranted = false;
+                deviceManagerPermissionGranted = false;
                 if (lastError == null) lastError = "未发现已连接的手表";
                 log("未发现已连接手表");
                 return null;
             }
 
-            permissionGranted = checkPermissions(currentNode.id);
+            notifyPermissionGranted = queryPermission(currentNode.id, Permission.NOTIFY);
+            deviceManagerPermissionGranted =
+                    queryPermission(currentNode.id, Permission.DEVICE_MANAGER);
+            permissionGranted = notifyPermissionGranted && deviceManagerPermissionGranted;
             log("选择手表节点: id=" + currentNode.id + ", name=" + currentNode.name
+                    + ", notify=" + notifyPermissionGranted
+                    + ", deviceManager=" + deviceManagerPermissionGranted
                     + ", permissionGranted=" + permissionGranted);
             return currentNode.id;
         }
     }
 
-    private boolean checkPermissions(String nodeId) {
-        log("查询手表权限: nodeId=" + nodeId);
+    /** 查询单项权限授权状态。 */
+    private boolean queryPermission(String nodeId, Permission permission) {
+        log("查询手表单项权限: nodeId=" + nodeId + ", permission=" + permission.getName());
         if (authApi == null) {
             lastError = "小米穿戴授权 API 不可用";
             log("查询手表权限失败: authApi=null");
@@ -244,117 +271,129 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean granted = new AtomicBoolean(false);
         try {
-            Task<boolean[]> task = authApi.checkPermissions(
-                    nodeId,
-                    new Permission[]{Permission.DEVICE_MANAGER, Permission.NOTIFY}
-            );
+            Task<Boolean> task = authApi.checkPermission(nodeId, permission);
             if (task == null) {
                 lastError = "查询手表权限失败";
-                log("checkPermissions 返回 null");
+                log("checkPermission 返回 null: permission=" + permission.getName());
                 return false;
             }
-            task.addOnSuccessListener(new OnSuccessListener<boolean[]>() {
+            task.addOnSuccessListener(new OnSuccessListener<Boolean>() {
                 @Override
-                public void onSuccess(boolean[] result) {
-                    granted.set(hasAllPermissions(result));
-                    if (granted.get()) lastError = null;
-                    log("checkPermissions 成功: values=" + booleanArray(result)
+                public void onSuccess(Boolean result) {
+                    granted.set(result != null && result);
+                    log("checkPermission 成功: permission=" + permission.getName()
                             + ", granted=" + granted.get());
                     latch.countDown();
                 }
             }).addOnFailureListener(new OnFailureListener() {
                 @Override
                 public void onFailure(Exception error) {
-                    log("checkPermissions 失败: " + errorMessage(error));
+                    log("checkPermission 失败: " + errorMessage(error));
                     setFailure("查询手表权限失败", error);
                     latch.countDown();
                 }
             });
             await(latch, "查询手表权限超时");
         } catch (Throwable error) {
-            log("checkPermissions 抛出异常: " + errorMessage(error));
+            log("checkPermission 抛出异常: " + errorMessage(error));
             setFailure("查询手表权限失败", error);
         }
-        log("查询手表权限结束: nodeId=" + nodeId + ", granted=" + granted.get());
+        log("查询手表单项权限结束: nodeId=" + nodeId
+                + ", permission=" + permission.getName() + ", granted=" + granted.get());
         return granted.get();
     }
 
-    private static boolean hasAllPermissions(boolean[] result) {
-        if (result == null || result.length < 2) return false;
-        for (boolean value : result) {
-            if (!value) return false;
-        }
-        return true;
+    /** 请求通知权限（NOTIFY），不依赖手表端快应用。 */
+    @Override
+    public boolean requestNotifyPermission(Context context) {
+        boolean granted = requestPermissionInternal(permission -> Permission.NOTIFY.getName()
+                .equals(permission.getName()), "申请通知权限");
+        notifyPermissionGranted = granted;
+        permissionGranted = notifyPermissionGranted && deviceManagerPermissionGranted;
+        return granted;
     }
 
-    /** 官方 demo 的 AuthApi.requestPermission(nodeId, Permission...)。 */
+    /** 请求设备管理权限（DEVICE_MANAGER），依赖手表端快应用已安装。 */
     @Override
-    public boolean requestPermission(Context context) {
+    public boolean requestDeviceManagerPermission(Context context) {
+        boolean granted = requestPermissionInternal(permission -> Permission.DEVICE_MANAGER.getName()
+                .equals(permission.getName()), "申请设备管理权限");
+        deviceManagerPermissionGranted = granted;
+        permissionGranted = notifyPermissionGranted && deviceManagerPermissionGranted;
+        return granted;
+    }
+
+    /** 官方 demo 的 AuthApi.requestPermission(nodeId, Permission...)，按单权限申请。 */
+    private boolean requestPermissionInternal(
+            java.util.function.Predicate<Permission> targetPermission,
+            String action
+    ) {
         synchronized (apiLock) {
-            log("申请手表权限开始: nodeId=" + currentNodeId());
+            log(action + "开始: nodeId=" + currentNodeId());
+            // 自启动/恢复期节点可能尚未发现：先同步补一次节点发现，
+            // 否则 Mi Fitness 的权限控制项无法建立/校验，授权请求直接失败。
+            if (authApi != null && (currentNode == null || currentNode.id == null)) {
+                String discovered = findNodeId(contextOrApp());
+                if (discovered == null) {
+                    lastError = "未发现可授权的手表";
+                    log(action + "失败: 自动发现手表节点失败");
+                    return false;
+                }
+            }
             if (authApi == null || currentNode == null || currentNode.id == null) {
                 lastError = "未发现可授权的手表";
-                log("申请手表权限失败: 没有当前节点或 authApi");
+                log(action + "失败: 没有当前节点或 authApi");
                 return false;
             }
             String nodeId = currentNode.id;
+            Permission permission = targetPermission.test(Permission.NOTIFY)
+                    ? Permission.NOTIFY
+                    : Permission.DEVICE_MANAGER;
             CountDownLatch latch = new CountDownLatch(1);
             AtomicBoolean granted = new AtomicBoolean(false);
             try {
-                Task<Permission[]> task = authApi.requestPermission(
-                        nodeId,
-                        Permission.DEVICE_MANAGER,
-                        Permission.NOTIFY
-                );
+                Task<Permission[]> task = authApi.requestPermission(nodeId, permission);
                 if (task == null) {
-                    lastError = "申请手表权限失败";
+                    lastError = action + "失败";
                     log("requestPermission 返回 null");
                     return false;
                 }
                 task.addOnSuccessListener(new OnSuccessListener<Permission[]>() {
                     @Override
-                public void onSuccess(Permission[] result) {
-                    granted.set(hasRequiredPermissions(result));
-                    lastError = granted.get() ? null : "手表权限未全部授予";
-                    log("requestPermission 成功: permissions=" + permissionArray(result)
-                            + ", granted=" + granted.get());
-                    latch.countDown();
+                    public void onSuccess(Permission[] result) {
+                        granted.set(hasGranted(result, targetPermission));
+                        lastError = granted.get() ? null : "手表权限未授予";
+                        log(action + "成功: permissions=" + permissionArray(result)
+                                + ", granted=" + granted.get());
+                        latch.countDown();
                     }
                 }).addOnFailureListener(new OnFailureListener() {
                     @Override
-                public void onFailure(Exception error) {
-                    log("requestPermission 失败: " + errorMessage(error));
-                    setFailure("申请手表权限失败", error);
+                    public void onFailure(Exception error) {
+                        log(action + "失败: " + errorMessage(error));
+                        setFailure(action + "失败", error);
                         latch.countDown();
                     }
                 });
-                await(latch, "申请手表权限超时");
+                await(latch, action + "超时");
             } catch (Throwable error) {
-                log("requestPermission 抛出异常: " + errorMessage(error));
-                setFailure("申请手表权限失败", error);
+                log(action + "抛出异常: " + errorMessage(error));
+                setFailure(action + "失败", error);
             }
-            permissionGranted = granted.get();
-            log("申请手表权限结束: nodeId=" + nodeId + ", granted=" + permissionGranted);
-            return permissionGranted;
+            log(action + "结束: nodeId=" + nodeId + ", granted=" + granted.get());
+            return granted.get();
         }
     }
 
-
-    private static boolean hasRequiredPermissions(Permission[] result) {
-        boolean deviceManager = false;
-        boolean notify = false;
-        if (result != null) {
-            for (Permission permission : result) {
-                if (permission == null) continue;
-                if (Permission.DEVICE_MANAGER.getName().equals(permission.getName())) {
-                    deviceManager = true;
-                }
-                if (Permission.NOTIFY.getName().equals(permission.getName())) {
-                    notify = true;
-                }
-            }
+    private static boolean hasGranted(
+            Permission[] result,
+            java.util.function.Predicate<Permission> targetPermission
+    ) {
+        if (result == null) return false;
+        for (Permission permission : result) {
+            if (permission != null && targetPermission.test(permission)) return true;
         }
-        return deviceManager && notify;
+        return false;
     }
 
     /** 官方 demo 的 MessageApi.sendMessage(nodeId, bytes)。 */
@@ -413,6 +452,30 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
             String nodeId = currentNodeId();
             log("发送系统通知开始: nodeId=" + nodeId + ", title=" + title
                     + ", message=" + message);
+            // 自启动恢复期节点可能尚未发现（manager 的 refreshNode 还没完成）：
+            // 先同步补一次节点发现（IO 线程调用，API 锁可重入），确保通知真正走到 SDK。
+            // XMS 服务绑定是异步的，首次发现失败时等待片刻重试，覆盖自启动冷路径。
+            if (nodeId == null) {
+                String discovered = null;
+                for (int attempt = 1; attempt <= NOTIFY_NODE_RETRY_COUNT && discovered == null; attempt++) {
+                    discovered = findNodeId(context);
+                    if (discovered == null && attempt < NOTIFY_NODE_RETRY_COUNT) {
+                        log("发送系统通知: 自动发现第 " + attempt + " 次失败，等待 XMS 服务绑定后重试");
+                        try {
+                            Thread.sleep(NOTIFY_NODE_RETRY_DELAY_MS);
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+                if (discovered == null) {
+                    lastError = "未发现已连接的手表";
+                    log("发送系统通知跳过: 自动发现手表节点失败");
+                    return false;
+                }
+                nodeId = discovered;
+            }
             if (notifyApi == null || nodeId == null || title == null || message == null) {
                 lastError = "系统通知发送条件不满足";
                 log("发送系统通知跳过: notifyApi=" + (notifyApi != null)
@@ -420,27 +483,29 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
                         + ", message=" + (message != null));
                 return false;
             }
+            // 匿名回调捕获要求 effectively final：复制一份发送用节点 id。
+            final String sendNodeId = nodeId;
             CountDownLatch latch = new CountDownLatch(1);
             AtomicBoolean sent = new AtomicBoolean(false);
             try {
-                Task<Status> task = notifyApi.sendNotify(nodeId, title, message);
+                Task<Status> task = notifyApi.sendNotify(sendNodeId, title, message);
                 if (task == null) {
                     lastError = "发送系统通知失败";
                     log("sendNotify 返回 null");
                     return false;
                 }
-                log("sendNotify Task 已创建: nodeId=" + nodeId);
+                log("sendNotify Task 已创建: nodeId=" + sendNodeId);
                 task.addOnSuccessListener(new OnSuccessListener<Status>() {
                     @Override
                     public void onSuccess(Status status) {
                         if (status != null && status.isSuccess()) {
                             sent.set(true);
                             lastError = null;
-                            log("发送系统通知成功: nodeId=" + nodeId + ", title=" + title);
+                            log("发送系统通知成功: nodeId=" + sendNodeId + ", title=" + title);
                         } else {
                             sent.set(false);
                             lastError = "发送系统通知失败: status=" + (status == null ? "null" : status.toString());
-                            log("发送系统通知状态失败: nodeId=" + nodeId + ", title=" + title
+                            log("发送系统通知状态失败: nodeId=" + sendNodeId + ", title=" + title
                                     + ", status=" + (status == null ? "null" : status.toString()));
                         }
                         latch.countDown();
@@ -448,7 +513,7 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
                 }).addOnFailureListener(new OnFailureListener() {
                     @Override
                     public void onFailure(Exception error) {
-                        log("发送系统通知失败: nodeId=" + nodeId + ", " + errorMessage(error));
+                        log("发送系统通知失败: nodeId=" + sendNodeId + ", " + errorMessage(error));
                         setFailure("发送系统通知失败", error);
                         latch.countDown();
                     }
@@ -683,6 +748,51 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
         }
     }
 
+    /** 官方 NodeApi.isWearAppInstalled(nodeId)：手机端查询手表端快应用是否已安装。 */
+    @Override
+    public Boolean isWatchAppInstalled(Context context, String nodeId) {
+        synchronized (apiLock) {
+            log("查询手表端应用安装状态: nodeId=" + nodeId);
+            if (nodeApi == null || nodeId == null) {
+                log("查询手表端应用安装状态跳过: nodeApi=" + (nodeApi != null));
+                return null;
+            }
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<Boolean> installed = new AtomicReference<>();
+            try {
+                Task<Boolean> task = nodeApi.isWearAppInstalled(nodeId);
+                if (task == null) {
+                    log("isWearAppInstalled 返回 null: nodeId=" + nodeId);
+                    return null;
+                }
+                task.addOnSuccessListener(new OnSuccessListener<Boolean>() {
+                    @Override
+                    public void onSuccess(Boolean result) {
+                        installed.set(result);
+                        log("isWearAppInstalled 成功: nodeId=" + nodeId
+                                + ", installed=" + result);
+                        latch.countDown();
+                    }
+                }).addOnFailureListener(new OnFailureListener() {
+                    @Override
+                    public void onFailure(Exception error) {
+                        log("isWearAppInstalled 失败: " + errorMessage(error));
+                        setFailure("查询手表端应用安装状态失败", error);
+                        latch.countDown();
+                    }
+                });
+                if (!await(latch, "查询手表端应用安装状态超时")) return null;
+            } catch (Throwable error) {
+                log("isWearAppInstalled 抛出异常: " + errorMessage(error));
+                setFailure("查询手表端应用安装状态失败", error);
+                return null;
+            }
+            log("查询手表端应用安装状态结束: nodeId=" + nodeId
+                    + ", installed=" + installed.get());
+            return installed.get();
+        }
+    }
+
     /** 官方 demo 的 NodeApi.subscribe(nodeId, DataItem.ITEM_CONNECTION, listener)。 */
     @Override
     public boolean setConnectionListener(Context context, String nodeId, ConnectionListener listener) {
@@ -877,9 +987,17 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
     private void setFailure(String action, Throwable error) {
         lastFailure = error;
         String detail = error == null ? null : error.getMessage();
-        lastError = detail == null || detail.isBlank()
-                ? action
-                : action + ": " + detail;
+        String detailLower = detail == null ? "" : detail.toLowerCase(java.util.Locale.ROOT);
+        if (detailLower.contains("app not installed")
+                || detailLower.contains("app_uninstalled")
+                || detailLower.contains("not installed")) {
+            // XMS/Mi Fitness 按包名查找手表端快应用失败，明确引导用户安装 rpk。
+            lastError = "手表端未安装澎湃记快应用（rpk），请先安装后再授权";
+        } else {
+            lastError = detail == null || detail.isBlank()
+                    ? action
+                    : action + ": " + detail;
+        }
         Log.w(TAG, lastError, error);
     }
 
@@ -931,16 +1049,6 @@ public final class XiaomiWearableBridge implements WearableSdkBridge {
         }
         if (bytes.length > hexLength) hex.append(" ...");
         return "bytes=" + bytes.length + ", utf8=" + preview + ", hex=" + hex;
-    }
-
-    private static String booleanArray(boolean[] values) {
-        if (values == null) return "null";
-        StringBuilder result = new StringBuilder("[");
-        for (int i = 0; i < values.length; i++) {
-            if (i > 0) result.append(',');
-            result.append(values[i]);
-        }
-        return result.append(']').toString();
     }
 
     private static String permissionArray(Permission[] values) {

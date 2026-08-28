@@ -15,6 +15,7 @@ import com.Badnng.moe.helper.NotificationScheduler
 import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.wearable.WearableSyncManager
 import com.Badnng.moe.wearable.WearableSyncSource
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -98,8 +99,12 @@ class OrderViewModel(application: Application) : AndroidViewModel(application), 
             }
         }
 
-        // ★ 手表同步：向 Application 级 manager 注入数据源并启动
-        WearableSyncManager.getInstance(application).attachSource(this)
+        // ★ 手表同步：向 Application 级 manager 注入数据源并启动。
+        // 延迟到后台线程执行：XMS 类加载/初始化在 Main 线程触碰会与 SDK 回调线程的
+        // 初始化锁竞争（trace 实测冷启动时主线程被阻塞约 3.3s，期间 UI 无法交互）。
+        viewModelScope.launch(Dispatchers.Default) {
+            WearableSyncManager.getInstance(application).attachSource(this@OrderViewModel)
+        }
     }
 
     fun addOrder(order: OrderEntity) {

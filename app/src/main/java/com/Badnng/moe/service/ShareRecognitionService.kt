@@ -167,6 +167,7 @@ class ShareRecognitionService : Service() {
                 ) ?: continue
                 orderDao.insert(order)
                 insertedOrders.add(order)
+                com.Badnng.moe.wearable.WearableSyncManager.notifyOrderSaved(this, order)
             }
             if (insertedOrders.isEmpty()) return
 

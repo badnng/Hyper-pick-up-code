@@ -1,0 +1,1452 @@
+<template>
+  <!-- 480 档主页（S5 真机 480×480，多屏基档；welcome 开屏页 replace 进入）：
+       manifest designWidth=480：px 按屏幕物理宽等比缩放，基档 480×480 屏系数 ×1.000（下述数值均为设计值）；
+       多屏差异由 media query 分档处理（circle480 基档 / S3 circle466 / RW5-6 rect432 / 8·9·10Pro rect336，
+       见 style 文末「屏幕分档」；档内按「设计」划分，非同一设计的缩放）；
+       本档字号 = 原大屏字号档值（见 style 字号说明） -->
+  <div class="page">
+    <!-- 顶部时钟：置顶忽略安全区（clock-bar y∈[0,48]），HH:mm 每 10 秒刷新
+         （onShow 启动定时器 / onHide、onDestroy 停止清理） -->
+    <div class="clock-bar">
+      <text class="top-time">{{ clockText }}</text>
+    </div>
+
+    <!-- 标题条：显示 app 名称「澎湃记」，样式照抄二级页品牌标题；
+         主页为根页面，无返回箭头（不照抄 back-btn、无 onclick），仅标题文本；
+         「关于」按钮已移至底部悬浮胶囊（见文末 about-pill） -->
+    <div class="title-bar">
+      <text class="brand-title">{{ pageTitle }}</text>
+    </div>
+
+    <!-- 手环/方表单行导航（手表排版）：左侧标题、右上角时间（结构与二级页 nav 一致：
+         nav-left 分组 + 时间直挂，避免文本宽度行为差异导致时间超屏）；
+         圆表仍用上方两行布局（clock-bar / title-bar） -->
+    <div class="nav-bar">
+      <div class="nav-left">
+        <text class="nav-title">{{ pageTitle }}</text>
+      </div>
+      <text class="nav-time">{{ clockText }}</text>
+    </div>
+    <!-- 连接状态条：只显示手机端握手状态 + 左侧状态点 + 重试；页面切换交给下方 swiper -->
+    <div class="status-bar">
+      <div
+        class="status-dot{{isConnected ? ' dot-ok' : (isConnecting ? ' dot-pending' : ' dot-bad')}}"
+      ></div>
+      <text class="status-text" if="{{syncPhaseText !== ''}}">{{ syncPhaseText }}</text>
+      <text class="retry-btn" if="{{needRetry}}" onclick="onRetry">重试</text>
+    </div>
+
+    <!-- 同一主页内的待取/已取双页：左右滑动切换，原生 swiper 提供平移动画和底部页指示器。 -->
+    <swiper
+      id="order-swiper"
+      class="content-swiper"
+      loop="false"
+      vertical="false"
+      enableswipe="true"
+      indicator="false"
+      onchange="onSwiperChange"
+      onswipestart="onSwipeStart"
+      onswipeend="onSwipeEnd"
+    >
+      <div class="swiper-page">
+        <div if="{{displayItems.length === 0}}" class="empty">
+          <text class="empty-main" if="{{emptyTitle}}">{{ emptyTitle }}</text>
+          <text class="empty-sub" if="{{emptySub}}">{{ emptySub }}</text>
+        </div>
+        <list if="{{displayItems.length > 0}}" class="order-list" onscroll="onListScroll" onscrollend="onListScrollEnd">
+          <list-item type="order" for="{{displayItems}}" tid="itemId" class="order-item">
+            <div if="{{!$item.isGroup}}" class="order-card">
+              <!-- 主行：左圆图标 + 信息列 +（无二维码时）完成按钮。
+               完成按钮与 .card-main 互为兄弟节点，点击按钮不冒泡触发卡片点击，不会误进详情页 -->
+              <div class="order-row">
+                <div class="card-main" onclick="onCardClick($idx)">
+                  <image class="card-icon" src="{{$item.iconSrc}}"></image>
+                  <div class="card-info">
+                    <text class="card-label">
+                      {{ $item.brandName || ($item.orderType === "快递" ? "快递" : "取餐码") }}
+                    </text>
+                    <text class="card-code">{{ $item.code }}</text>
+                  </div>
+                </div>
+                <!-- 完成按钮始终渲染：显隐只由 !hasQrCode 决定，不依赖 swiper onchange 事件时机
+                 （change 在滑动过程/结束时触发且时机不固定，滑回第一页时按钮会随事件延迟短暂消失）；
+                 第二页「已取」模板本就没有完成按钮，无需按页隐藏 -->
+                <text if="{{!$item.hasQrCode}}" class="done-btn" onclick="onMarkDone($idx)">
+                  完成
+                </text>
+              </div>
+              <!-- 右下角：订单时间（YYYY-MM-DD HH:mm） -->
+              <div class="card-time-row">
+                <text class="card-time" if="{{$item.createdAt}}">
+                  {{ $item.timeText }}
+                </text>
+              </div>
+            </div>
+            <div if="{{$item.isGroup}}" class="group-card">
+              <div class="group-row">
+                <div class="group-main" onclick="onGroupClick($idx)">
+                  <image class="group-icon" src="{{$item.iconSrc}}"></image>
+                  <div class="group-info">
+                    <text class="group-label">{{ $item.groupLabel }}</text>
+                    <text class="group-code">{{ $item.codesText }}</text>
+                  </div>
+                </div>
+                <!-- 组卡片完成按钮：始终渲染（同单卡完成按钮，不依赖 onchange 事件时机） -->
+                <text class="group-done" onclick="onMarkGroupDone($idx)">完成</text>
+              </div>
+              <div class="group-meta-row">
+                <text class="group-meta">{{ $item.countText }}</text>
+              </div>
+            </div>
+          </list-item>
+        </list>
+      </div>
+      <div class="swiper-page">
+        <div if="{{completedDisplayItems.length === 0}}" class="empty">
+          <text class="empty-main">暂无已取订单</text>
+        </div>
+        <list if="{{completedDisplayItems.length > 0}}" class="order-list" onscroll="onListScroll" onscrollend="onListScrollEnd">
+          <list-item
+            type="completed"
+            for="{{completedDisplayItems}}"
+            tid="itemId"
+            class="order-item"
+          >
+            <div if="{{!$item.isGroup}}" class="order-card">
+              <div class="order-row">
+                <div class="card-main">
+                  <image class="card-icon" src="{{$item.iconSrc}}"></image>
+                  <div class="card-info">
+                    <text class="card-label">已取</text>
+                    <text class="card-code">{{ $item.code }}</text>
+                  </div>
+                </div>
+              </div>
+              <div class="card-time-row">
+                <text class="card-time" if="{{$item.createdAt}}">
+                  {{ $item.timeText }}
+                </text>
+              </div>
+            </div>
+            <div if="{{$item.isGroup}}" class="group-card">
+              <div class="group-row">
+                <div class="group-main">
+                  <image class="group-icon" src="{{$item.iconSrc}}"></image>
+                  <div class="group-info">
+                    <text class="group-label">{{ $item.groupLabel }}</text>
+                    <text class="group-code">{{ $item.codesText }}</text>
+                  </div>
+                </div>
+              </div>
+              <div class="group-meta-row">
+                <text class="group-meta">{{ $item.countText }}</text>
+              </div>
+            </div>
+          </list-item>
+        </list>
+      </div>
+    </swiper>
+
+    <!-- 「关于」底部悬浮胶囊按钮（指示器之上）：三款设备统一；滑动列表时淡出（pillHidden）、停止后淡入 -->
+    <!-- 页指示器（最底一行，位于胶囊之下）：swiper 禁用原生 indicator，由 change 事件驱动（样式对齐原生观感） -->
+    <div class="swiper-dots">
+      <div class="dot{{currentPage === 0 ? ' dot-on' : ''}}"></div>
+      <div class="dot{{currentPage === 1 ? ' dot-on' : ''}}"></div>
+    </div>
+
+    <div class="about-pill-row{{pillHidden ? ' pill-hidden' : ''}}">
+      <div class="about-pill" onclick="onAbout">
+        <text class="about-pill-text">关于</text>
+      </div>
+    </div>
+
+
+    <!-- 启动遮罩：与 welcome 开屏无缝衔接（同款黑底+logo 居中），主页面 onReady 加载完成后播淡出移除 -->
+    <div if="{{showSplash}}" class="splash{{splashLeaving ? ' splash-leaving' : ''}}">
+      <div class="logobox">
+        <image class="logo" src="/common/logo.png"></image>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style>
+.page {
+  position: relative;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+}
+
+/* 480 档字号说明（本页为 480x480 档，= S5 真机档）：
+   manifest designWidth=480：px 按屏幕物理宽等比缩放，基档 480×480 屏系数 ×1.000（下述数值均为设计值）；
+   本档各字号即原大屏字号档值（top-time 26、brand-title 34、
+   card-label 24、card-code 40、card-time 24、done-btn 26），行高容器（line-height/height）
+   保持原大屏档兼容关系：
+   .top-time 26px < line-height 48 ✓、.brand-title 34px 在 line-height 44 内 ✓、
+   .card-label 24px < line-height 26 ✓、.card-code 40px < line-height 46 ✓、
+   .card-time 24px < line-height 26 ✓、.done-btn 26px < line-height 28 ✓
+   （按钮高 = 28+8×2 = 44px 不变，主行 79px 内不溢出）均不溢出；
+   信息列（标签 26 + 码字 46）= 72px ≤ 主行 79px 不变；
+    （其余档位 S3 ×0.971 / RW5-6 ×0.900 / 8·9·10Pro ×0.700 的字号见文末分档块）*/
+
+/* 顶部时钟条：y∈[0,48] 置顶，忽略安全区；时钟文字水平垂直居中 */
+.clock-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 48px;
+}
+/* 顶部当前时间：line-height 48px 撑满时钟条垂直居中，无绝对定位；
+   字号 26px = 原大屏档值（S5 真机效果），466 档为 24px */
+.top-time {
+  line-height: 48px;
+  font-size: 26px;
+  color: #ffffff;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+/* 标题条：y∈[48,92]，留在安全区内；标题整体水平居中（justify-content: center），
+   照抄二级页 .back-bar 布局（无返回箭头，仅标题文本）；
+   .brand-title 为 height 44px + line-height 44px 等高盒，align-items: center 垂直居中；
+   position: relative 保留（页面内绝对定位层包含块的既有约定） */
+.title-bar {
+  position: relative;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 44px;
+}
+/* 品牌标题：显示 app 名称「澎湃记」，样式照抄二级页品牌标题；
+   去掉 margin-left 8px（那是给返回箭头间距用的，主页无箭头）；
+   margin-top 4px 为真机对齐补偿（引擎对 text 垂直定位有偏差，等高盒 + flex 居中后标题仍偏高，用 margin 下移补偿），
+   如仍偏差可微调 2-6px；字号 34px = 原大屏档值（比顶部时钟 26px 大 8px），466 档为 32px；
+   超长名称受 max-width 200px 限制，单行省略号兜底 */
+.brand-title {
+  margin-top: 4px;
+  max-width: 200px;
+  font-size: 34px;
+  color: #ffffff;
+  font-weight: bold;
+  line-height: 44px;
+  height: 44px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.about-btn {
+  position: absolute;
+  /* 圆屏标题行靠近上缘，向圆心内收，避免按钮背景落到圆形可视区外。 */
+  right: 96px;
+  top: 8px;
+  width: 36px;
+  height: 36px;
+  line-height: 36px;
+  border-radius: 50%;
+  background-color: #252525;
+  color: #c8c8c8;
+  font-size: 26px;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* 矩形屏单行导航（手表排版：左标题/按钮、右时间）：默认隐藏，rect 档显示 */
+.nav-bar {
+  display: none;
+}
+.nav-title {
+  font-size: 36px;
+  color: #ffffff;
+  font-weight: bold;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.nav-time {
+  font-size: 34px;
+  color: rgba(255, 255, 255, 0.6);
+  lines: 1;
+}
+
+/* 连接状态条（小号灰字）：绿/红状态点 + 已连接/未连接 + 重试（小号蓝字） */
+.status-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 40px;
+}
+/* 连接状态点：绿=已连接，红=未连接（12px 圆点，与状态文字并排，右侧留 8px 间距） */
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+.dot-ok {
+  background-color: #30d158;
+}
+.dot-bad {
+  background-color: #ff453a;
+}
+.dot-pending {
+  background-color: #ffcc00;
+}
+.status-text {
+  font-size: 18px;
+  color: #888888;
+  lines: 1;
+}
+.retry-btn {
+  font-size: 18px;
+  color: #0a84ff;
+  margin-left: 12px;
+  lines: 1;
+}
+/* 内容区由 swiper 固定占满状态栏以下空间，左右滑动只切换列表页，不创建新路由。 */
+.content-swiper {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  indicator-color: #666666;
+  indicator-selected-color: #ffffff;
+  indicator-size: 8px;
+}
+
+/* 「关于」底部悬浮胶囊按钮：位于 swiper 页指示器下方、页面最底，流式布局（点击热区可靠）；
+   滑动列表时淡出（.pill-hidden）、停止后淡入（transition 0.2s）；
+   各档尺寸见文末 rect432 / rect336 分档块（基础档 = 圆表 480 / 466 等比值） */
+.about-pill-row {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 79px;
+  transition-property: opacity;
+  transition-duration: 0.2s;
+  transition-timing-function: ease-out;
+}
+.pill-hidden {
+  opacity: 0;
+}
+.about-pill {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 65px;
+  padding: 0 40px;
+  background-color: #252525;
+  border-radius: 40px;
+}
+.about-pill-text {
+  font-size: 26px;
+  color: #ffffff;
+  lines: 1;
+}
+.swiper-page {
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+/* 空状态 */
+.empty {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  padding: 50px 36px;
+}
+.empty-main {
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: bold;
+}
+.empty-sub {
+  font-size: 24px;
+  color: #999999;
+  margin-top: 16px;
+}
+
+
+/* 滚动容器：Vela 官方 list 列表组件（原生滚动，滑动与表冠旋转均支持；
+    scroll 组件在引擎上滚动失效，故替换为 list）。
+    垂直滚动必须固定高度：268px = 设计稿满高 480px − 时钟行 48px − 标题行 44px − 状态行 40px
+    − 胶囊行 56px − 指示器行 24px；
+    designWidth: "device-width" 下 CSS px 与屏幕物理像素 1:1（无引擎等比缩放）→ 注：manifest 现为 designWidth=480，px 按屏幕物理宽等比缩放、基档 480 屏系数 ×1.000（下述数值均为设计值），
+    对方形屏（宽=高）该值精确等于「屏高 − 时钟行高 − 标题行高 − 状态行高」。 */
+.order-list {
+  height: 245px;
+}
+/* 列表项容器：卡片 420px 在内容区 470px（480−2×5）水平居中，左右各余 25px；
+   list-item 为行向 flex，justify-content: center 居中卡片；
+   circle 下 .order-list 额外承担底部安全区 padding（下 130，见 circle 块），
+   顶部不加 padding（用户已注释掉原 .list 的 padding-top 48px：第一张卡片顶到列表顶部） */
+.order-item {
+  flex-direction: row;
+  justify-content: center;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+
+/* 单条取餐码卡片：深灰圆角矩形（圆角 30px），420×135（宽 420px × 高 135px，
+   flex-shrink: 0 防止 Vela flex 把固定高度卡片压缩（列表超高时 flex 默认会收缩子项，压扁卡片）；
+   用户手动调整：宽 470→420 使左右各余 25px、圆角 16→30）：
+   左灰色圆图标 + 右侧「取餐码」小字标签 + 大号白色取餐码数字 + 右下角小字订单时间；
+   高度核算（内容区 = 135 − 15×2 = 105px，padding 上下 15px）：
+   - 时间行：line-height 26px；
+   - 主行（flex:1 填满余量）= 105 − 26 = 79px：图标 68px ≤ 79 ✓、
+     信息列（标签 26px + 码字 46px）= 72px ≤ 79 ✓、完成按钮（line-height 28 + padding 8×2）= 44px ≤ 79 ✓；
+   - 合计 15 + 79 + 26 + 15 = 135px，不溢出、不裁字 */
+.order-card {
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 420px;
+  height: 135px;
+  padding: 15px 22px;
+  margin-bottom: 5px;
+  border-radius: 30px;
+  background-color: #1f1f1f;
+}
+
+/* 主行：图标 + 信息列（可点击区域）与完成按钮并排 */
+.order-row {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+}
+.card-main {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  min-width: 0;
+}
+
+/* 左圆图标：纯圆无文字 */
+.card-icon {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+}
+.card-info {
+  flex: 1;
+  flex-direction: column;
+  margin-left: 22px;
+  min-width: 0;
+}
+/* 「取餐码」小字标签：字号 24px = 原大屏档值，466 档为 22px */
+.card-label {
+  font-size: 24px;
+  line-height: 26px;
+  color: #888888;
+  lines: 1;
+}
+/* 大号取餐码数字：字号 40px = 原大屏档值，466 档为 38px */
+.card-code {
+  font-size: 40px;
+  line-height: 46px;
+  color: #ffffff;
+  font-weight: bold;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+/* 右下角订单时间：小字右对齐；字号 24px = 原大屏档值，466 档为 22px */
+.card-time-row {
+  flex-direction: row;
+  justify-content: flex-end;
+}
+.card-time {
+  font-size: 24px;
+  line-height: 26px;
+  color: #888888;
+  lines: 1;
+}
+
+/* 组卡片：同一 groupId 的取餐码合并展示，保持与单卡相同尺寸，适合圆屏列表滚动。 */
+.group-card {
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 420px;
+  height: 135px;
+  padding: 15px 22px;
+  margin-bottom: 5px;
+  border-radius: 30px;
+  background-color: #1f1f1f;
+}
+.group-row {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+}
+.group-main {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  min-width: 0;
+}
+.group-icon {
+  width: 58px;
+  height: 58px;
+  flex-shrink: 0;
+}
+.group-info {
+  flex: 1;
+  flex-direction: column;
+  margin-left: 18px;
+  min-width: 0;
+}
+.group-label {
+  font-size: 20px;
+  line-height: 26px;
+  color: #999999;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.group-code {
+  font-size: 28px;
+  line-height: 36px;
+  color: #ffffff;
+  font-weight: bold;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.group-done {
+  font-size: 22px;
+  line-height: 28px;
+  color: #ffffff;
+  background-color: #0a84ff;
+  border-radius: 16px;
+  padding: 8px 12px;
+  margin-left: 8px;
+  text-align: center;
+  lines: 1;
+}
+.group-meta-row {
+  flex-direction: row;
+  justify-content: flex-end;
+}
+.group-meta {
+  font-size: 18px;
+  line-height: 26px;
+  color: #888888;
+  lines: 1;
+}
+
+/* 完成按钮：无二维码订单卡片右侧按钮（蓝色圆角 16px，随卡片放大微调）。
+   与 .card-main 为兄弟节点，点击不会冒泡进卡片点击逻辑，就地完成、不进详情页；
+   字号 26px = 原大屏档值，466 档为 24px */
+.done-btn {
+  font-size: 26px;
+  line-height: 28px;
+  color: #ffffff;
+  background-color: #0a84ff;
+  border-radius: 16px;
+  padding: 8px 14px;
+  margin-left: 8px;
+  text-align: center;
+  lines: 1;
+}
+
+/* 页指示器（页面最底一行，位于「关于」胶囊之下）：原生观感 —— 8px 圆点、#666/#fff、间距 6px */
+.swiper-dots {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 24px;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #666666;
+  margin: 0 6px;
+}
+.dot-on {
+  background-color: #ffffff;
+}
+
+/* 启动遮罩：与 welcome 开屏同款（黑底 + logo 居中，实测屏幕尺寸铺满），
+   主页面 onReady 后播淡出动画移除（动画在主页加载完成后播放） */
+.splash {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.splash-leaving {
+  opacity: 1;
+  animation-name: splash-fade-out;
+  animation-duration: 0.18s;
+  animation-timing-function: ease-out;
+}
+@keyframes splash-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.logobox {
+  align-items: center;
+  justify-content: center;
+}
+.logo {
+  width: 140px;
+  height: 140px;
+}
+
+/* ═══ 屏幕分档（媒体查询长度单位为 dp；px 按 designWidth=480 对屏幕物理宽等比缩放）═══
+   ┌──────────┬────────────┬─────────┬──────┬──────────┐
+   │ 档位     │ 设备       │ 物理    │ dp宽 │ 缩放系数  │
+   ├──────────┼────────────┼─────────┼──────┼──────────┤
+   │ circle480│ S5         │ 480×480 │ 240  │ ×1.000   │
+   │ circle466│ S3         │ 466×466 │ 233  │ ×0.971   │
+   │ rect432  │ RW5 / RW6  │ 432×514 │ 216  │ ×0.900   │
+   │ rect336  │ 8/9/10Pro │ 336×480 │ 168  │ ×0.700   │
+   └──────────┴────────────┴─────────┴──────┴──────────┘
+   档内设计值 = 物理目标 ÷ 缩放系数；分档按「设计」划分（不是同一设计的缩放）：
+   - 手环 rect336（竖窄屏）：按钮贴边、卡片全宽大圆角、大字大图标，信息密度低（见下方 rect336 块）；
+   - 方表 rect432：保留「圆形图标 + 主副标题双行」卡片形态，圆角适中；
+   - 圆表 circle466/480：沿用同一圆屏设计，仅圆缘安全区按各自半径核算。 */
+
+/* circle480（S5 240dp，×1.000）：基础样式字面值即物理值，仅需圆底安全区：
+   半径 240、圆心 y=240；padding-bottom 130px 后内容底 350，
+   该处弦宽 2×√(240²−110²) ≈ 426.6 ≥ 卡片 420，左右各余 3.3px，最后一张完整显示；
+   （原 (shape: circle) 通用块按档位拆分后，S5 档单独保留本安全区） */
+@media (shape: circle) and (min-width: 236) {
+  .order-list {
+    padding-bottom: 130px;
+  }
+}
+
+/* circle466（S3 233dp）：字号/行高沿用基础档（×0.971 后时钟 26→25.2、行高 48→46.6 物理，
+   屏高 466 与 480 差异同步吃进所有长度，无需逐项重设）；仅重设圆底安全区：
+   半径 233、圆心 y=233；基础 130px 时物理 126.2，内容底 339.8 处弦宽 414.1，
+   比卡片 407.7 只余 3px/边，故放大到 140px（物理 135.9）：
+   内容底 330.1，弦宽 2×√(233²−97.1²) ≈ 423.6 ≥ 407.7，左右各余约 8px，完整不裁切；
+   顶部圆角区核算同 S5（卡片 30px 圆角区触及圆缘、各约 19px，视觉无感） */
+@media (shape: circle) and (max-width: 236) {
+  .order-list {
+    padding-bottom: 140px;
+  }
+}
+
+/* rect432（RW5/RW6 216dp，×0.900）：方表设计 —— 保留图标+双行卡片，圆角适中。
+   垂直：时钟 45.9 + 标题 44.1 + 状态 37.8 = 127.8，列表 386.1 → 合计 514 ✓；
+   卡片 399.6×124.2（padding 上下 14.4/左右 21.6，圆角 26.1）：
+   主行 71.1 = 124.2 − 14.4×2 − 时间行 24.3；图标 60.3 ≤ 71.1 ✓、
+   信息列（标签行高 22.5 + 码行高 44.1）= 66.6 ≤ 71.1 ✓、完成按钮（27.9+8.1×2）= 44.1 ≤ 71.1 ✓；
+   一屏核算（可视 386.1，卡片组 124.2+5.4 = 129.6）：
+   初始 2 张完整 + 第 3 张露出 386.1 − 2×129.6 = 126.9（≈98%，几乎整张露出） */
+@media (shape: rect) and (min-width: 192) {
+  .clock-bar {
+    display: none;
+  }
+  .top-time {
+    display: none;
+  }
+  .title-bar {
+    display: none;
+  }
+  .brand-title {
+    display: none;
+  }
+  .nav-bar {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    height: 80px;
+    padding-left: 34px;
+    padding-right: 34px;
+  }
+  .nav-left {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-title {
+    font-size: 36px;
+    margin-left: 16px;
+  }
+  .nav-time {
+    font-size: 28px;
+    margin-left: 14px;
+  }
+  .about-pill-row {
+    height: 86px;
+  }
+  .about-pill {
+    height: 72px;
+    padding: 0 44px;
+    border-radius: 44px;
+  }
+  .about-pill-text {
+    font-size: 29px;
+  }
+  .swiper-dots {
+    height: 27px;
+  }
+  .dot {
+    width: 9px;
+    height: 9px;
+    margin: 0 7px;
+  }
+  .nav-back {
+    width: 80px;
+    height: 80px;
+    line-height: 80px;
+    font-size: 44px;
+    border-radius: 50%;
+    background-color: #252525;
+    color: #ffffff;
+    text-align: center;
+  }
+  .about-btn {
+    display: none;
+  }
+  .status-bar {
+    height: 42px;
+  }
+  .status-dot {
+    width: 13px;
+    height: 13px;
+  }
+  .status-text {
+    font-size: 20px;
+  }
+  .retry-btn {
+    font-size: 20px;
+  }
+  .order-list {
+    height: 336px;
+  }
+  .order-item {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .order-card {
+    width: 444px;
+    height: 138px;
+    padding: 16px 24px;
+    margin-bottom: 6px;
+    border-radius: 29px;
+  }
+  .card-icon {
+    width: 67px;
+    height: 67px;
+  }
+  .card-info {
+    margin-left: 24px;
+  }
+  .card-label {
+    font-size: 22px;
+    line-height: 25px;
+  }
+  .card-code {
+    font-size: 40px;
+    line-height: 49px;
+  }
+  .card-time {
+    font-size: 22px;
+    line-height: 27px;
+  }
+  .group-card {
+    width: 444px;
+    height: 138px;
+    padding: 16px 24px;
+    margin-bottom: 6px;
+    border-radius: 29px;
+  }
+  .group-icon {
+    width: 60px;
+    height: 60px;
+  }
+  .group-info {
+    margin-left: 20px;
+  }
+  .group-label {
+    font-size: 22px;
+    line-height: 26px;
+  }
+  .group-code {
+    font-size: 31px;
+    line-height: 40px;
+  }
+  .group-done {
+    font-size: 24px;
+    line-height: 31px;
+    padding: 9px 13px;
+    margin-left: 9px;
+  }
+  .group-meta {
+    font-size: 20px;
+    line-height: 27px;
+  }
+  .done-btn {
+    font-size: 24px;
+    line-height: 31px;
+    padding: 9px 16px;
+    margin-left: 9px;
+  }
+  .empty {
+    padding: 56px 40px;
+  }
+  .empty-main {
+    font-size: 36px;
+  }
+  .empty-sub {
+    font-size: 27px;
+    margin-top: 18px;
+  }
+  .logo {
+    width: 156px;
+    height: 156px;
+  }
+}
+
+/* rect336（8Pro/9Pro/10Pro 168dp，×0.700）：手环设计（竖窄屏）—— 按钮贴边、卡片全宽大圆角、
+   大字大图标、信息密度低（参照手环应用设计语言，非 480 档缩放）。
+   10Pro 与 9Pro 屏幕规格一致（1.74 英寸 336×480），同一档位生效；
+   若真机 device.getInfo() 返回 screenShape 为 pill-shaped（9/10 标准版胶囊屏
+   192×490/212×520 即此值，dp 宽 96/106，不应命中本档），需另行补档。
+   垂直：时钟 39.9 + 标题 51.8 + 状态 35.7 = 127.4，列表 352.8 → 合计 480.2 ✓（屏高 480，取整余量 0.2px 吃在列表）；
+   时钟/标题贴顶成组：标题 28px 物理大字居中，i 按钮 35.7 物理贴右（right 16.1 物理）：
+   y∈[7,42.7] 时按钮完整在屏内（rect 矩形无圆心裁切问题，仅考虑安全角）✓；
+   卡片 308×112 物理（左右各 14 边距，圆角 30 物理）：
+   主行 63.7 = 112 − 13.3×2 − 时间行 21.7；图标 46.2 ≤ 63.7 ✓、
+   信息列（标签行高 20.3 + 码行高 42.0）= 62.3 ≤ 63.7 ✓、完成按钮（37.8）≤ 63.7 ✓；
+   一屏核算（可视 352.8，卡片组 112+4.9 ≈ 116.9）：
+   初始 2 张完整 + 第 3 张完整露出（352.8 − 2×116.9 = 119.0 ≥ 116.9）、第 4 张露头约 2px，提示可滚动 */
+@media (shape: rect) and (max-width: 192) {
+  .clock-bar {
+    display: none;
+  }
+  .top-time {
+    display: none;
+  }
+  .title-bar {
+    display: none;
+  }
+  .brand-title {
+    display: none;
+  }
+  .nav-bar {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    height: 103px;
+    padding-left: 43px;
+    padding-right: 43px;
+  }
+  .nav-left {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-title {
+    font-size: 36px;
+    margin-left: 16px;
+  }
+  .nav-time {
+    font-size: 34px;
+    margin-left: 14px;
+  }
+  .about-pill-row {
+    height: 106px;
+  }
+  .about-pill {
+    height: 92px;
+    padding: 0 56px;
+    border-radius: 56px;
+  }
+  .about-pill-text {
+    font-size: 37px;
+  }
+  .swiper-dots {
+    height: 34px;
+  }
+  .dot {
+    width: 11px;
+    height: 11px;
+    margin: 0 9px;
+  }
+  .nav-back {
+    width: 103px;
+    height: 103px;
+    line-height: 103px;
+    font-size: 57px;
+    border-radius: 50%;
+    background-color: #252525;
+    color: #ffffff;
+    text-align: center;
+  }
+  .about-btn {
+    display: none;
+  }
+  .status-bar {
+    height: 51px;
+  }
+  .status-dot {
+    width: 17px;
+    height: 17px;
+  }
+  .status-text {
+    font-size: 26px;
+  }
+  .retry-btn {
+    font-size: 26px;
+  }
+  .order-list {
+    height: 392px;
+  }
+  .order-item {
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+  .order-card {
+    width: 440px;
+    height: 160px;
+    padding: 19px 29px;
+    margin-bottom: 7px;
+    border-radius: 43px;
+  }
+  .card-icon {
+    width: 66px;
+    height: 66px;
+  }
+  .card-info {
+    margin-left: 26px;
+  }
+  .card-label {
+    font-size: 26px;
+    line-height: 29px;
+  }
+  .card-code {
+    font-size: 46px;
+    line-height: 60px;
+  }
+  .card-time {
+    font-size: 26px;
+    line-height: 31px;
+  }
+  .group-card {
+    width: 440px;
+    height: 160px;
+    padding: 19px 29px;
+    margin-bottom: 7px;
+    border-radius: 43px;
+  }
+  .group-icon {
+    width: 63px;
+    height: 63px;
+  }
+  .group-info {
+    margin-left: 21px;
+  }
+  .group-label {
+    font-size: 23px;
+    line-height: 29px;
+  }
+  .group-code {
+    font-size: 33px;
+    line-height: 42px;
+  }
+  .group-done {
+    font-size: 26px;
+    line-height: 34px;
+    padding: 9px 14px;
+    margin-left: 9px;
+  }
+  .group-meta {
+    font-size: 21px;
+    line-height: 31px;
+  }
+  .done-btn {
+    font-size: 29px;
+    line-height: 34px;
+    padding: 10px 16px;
+    margin-left: 9px;
+  }
+  .empty {
+    padding: 70px 50px;
+  }
+  .empty-main {
+    font-size: 37px;
+  }
+  .empty-sub {
+    font-size: 29px;
+    margin-top: 20px;
+  }
+  .logo {
+    width: 196px;
+    height: 196px;
+  }
+}
+
+</style>
+
+<script>
+import router from "@system.router"
+
+export default {
+  private: {
+    orders: [],
+    displayOrders: [],
+    displayItems: [],
+    completedOrders: [],
+    completedDisplayItems: [],
+    syncPhaseText: "",
+    isConnected: false,
+    isConnecting: false,
+    needRetry: false,
+    emptyTitle: "",
+    emptySub: "",
+    lastVersion: -1,
+    lastDataVersion: -1,
+    swiping: false,
+    // 当前 swiper 页（0=待取 / 1=已取），驱动底部指示器圆点
+    currentPage: 0,
+    swipeLockTimerId: null,
+    pageTitle: "澎湃记",
+    clockText: "",
+    clockTimerId: null,
+    // 启动遮罩：与 welcome 开屏无缝衔接（同款黑底+logo 居中），onReady 后播淡出移除
+    showSplash: true,
+    splashLeaving: false,
+    splashHideTimerId: null,
+    // 「关于」底部胶囊：滑动列表时淡出、停止后延迟淡入
+    pillHidden: false,
+    pillShowTimerId: null
+  },
+
+  onInit() {
+    // 初始化时同步一次共享状态（多屏差异由 media query / designWidth 处理，不再区分路由目录）
+    this.pullFromApp()
+  },
+
+  onReady() {
+    // 主页面已渲染：立即开始淡出，180ms 后移除启动遮罩（缩短启动等待）
+    let self = this
+    this.splashLeaving = true
+    this.splashHideTimerId = setTimeout(function () {
+      self.showSplash = false
+    }, 180)
+  },
+
+  onShow() {
+    // 打开即同步：请求手机端补发最新快照（app.ux 有 3s 防重）
+    this.$app.$def.requestSync()
+    this.pullFromApp()
+    // 连接存活期间的实时刷新：轻量检测 syncVersion 变化
+    this.startWatcher()
+    // 顶部大时钟：启动定时刷新
+    this.startClock()
+  },
+
+  onHide() {
+    this.stopWatcher()
+    this.stopClock()
+  },
+
+  onDestroy() {
+    this.stopWatcher()
+    this.stopClock()
+    // 清理启动遮罩定时器（onReady 未触发或页面提前销毁时不遗留）
+    if (this.splashHideTimerId) {
+      clearTimeout(this.splashHideTimerId)
+      this.splashHideTimerId = null
+    }
+    // 清理滑动锁定时器
+    if (this.swipeLockTimerId) {
+      clearTimeout(this.swipeLockTimerId)
+      this.swipeLockTimerId = null
+    }
+    // 清理「关于」胶囊淡回定时器
+    if (this.pillShowTimerId) {
+      clearTimeout(this.pillShowTimerId)
+      this.pillShowTimerId = null
+    }
+    this.orders = []
+    this.displayOrders = []
+    this.displayItems = []
+    this.completedOrders = []
+    this.completedDisplayItems = []
+  },
+
+  // ═══ 顶部时钟（HH:mm，10s 刷新；onShow 启动 / onHide、onDestroy 清理）═══
+
+  // 顶部当前时间时钟：JS Date 取 HH:mm，每 10 秒刷新一次
+  startClock() {
+    this.updateClock()
+    if (this.clockTimerId) return
+    let self = this
+    this.clockTimerId = setInterval(function () {
+      self.updateClock()
+    }, 10000)
+  },
+
+  stopClock() {
+    if (this.clockTimerId) {
+      clearInterval(this.clockTimerId)
+      this.clockTimerId = null
+    }
+  },
+
+  // 用当前系统时间更新顶部时钟文本（HH:mm，手动补零；Date 不可用则显示空）
+  updateClock() {
+    try {
+      const d = new Date()
+      if (typeof d.getHours !== "function" || isNaN(d.getTime())) {
+        this.clockText = ""
+        return
+      }
+      const pad = function (n) {
+        return (n < 10 ? "0" : "") + n
+      }
+      this.clockText = pad(d.getHours()) + ":" + pad(d.getMinutes())
+    } catch (e) {
+      this.clockText = ""
+    }
+  },
+
+  // ═══ 状态同步 ═══
+
+  pullFromApp() {
+    // 滑动过程中暂停数据刷新，避免列表重建打断 swiper 手势
+    if (this.swiping) return
+    const s = this.$app.$def.syncState
+    if (!s) return
+    this.orders = s.snapshot.payload || []
+    this.completedOrders = s.snapshot.completedPayload || []
+    // 只有订单数据真正变化时才重建列表，避免返回主页/状态变化导致卡顿
+    const dataChanged = s.dataVersion !== this.lastDataVersion
+    if (dataChanged) {
+      this.lastDataVersion = s.dataVersion
+      this.displayOrders = this.orders
+      this.rebuildDisplayItems()
+      this.rebuildCompletedDisplayItems()
+    }
+    this.updateStatusText(s)
+    this.lastVersion = s.syncVersion
+  },
+
+  updateStatusText(s) {
+    // 状态条只显示两种状态：已连接（绿点）/ 未连接（红点）
+    this.isConnected = s.connection === "connected"
+    this.isConnecting = s.connection === "connecting"
+    this.syncPhaseText = this.isConnected
+      ? "手机端已连接"
+      : s.connection === "connecting"
+        ? "手机端连接中"
+        : "手机端未连接"
+    // 下方空状态区文案保留原逻辑
+    if (s.connection === "disconnected" || s.connection === "connecting") {
+      this.needRetry = false
+      this.emptyTitle = "正在连接…"
+      this.emptySub = ""
+      return
+    }
+    if (s.connection === "error") {
+      this.needRetry = true
+      this.emptyTitle = "无法连接到手机"
+      this.emptySub = s.lastError || ""
+      return
+    }
+    if (s.syncPhase === "syncing") {
+      this.needRetry = false
+      return
+    }
+    if (s.syncPhase === "failed") {
+      this.needRetry = true
+      return
+    }
+    // 已同步
+    this.needRetry = false
+    this.emptyTitle = this.displayOrders.length > 0 ? "" : "暂无待取餐"
+    this.emptySub = this.displayOrders.length > 0 ? "" : "去手机端识别取餐码吧"
+  },
+
+  // ═══ 实时刷新（同步期间快照被 app 更新时）═══
+
+  startWatcher() {
+    if (this.watcherId) return
+    let self = this
+    this.watcherId = setInterval(function () {
+      const s = self.$app.$def.syncState
+      if (s && s.syncVersion !== self.lastVersion) {
+        self.pullFromApp()
+      }
+    }, 600)
+  },
+
+  stopWatcher() {
+    if (this.watcherId) {
+      clearInterval(this.watcherId)
+      this.watcherId = null
+    }
+  },
+
+  // ═══ 卡片交互 ═══
+
+  onMarkDone(idx) {
+    const item = this.displayItems[idx]
+    if (item && item.isGroup) {
+      this.onMarkGroupDone(idx)
+      return
+    }
+    const order = item
+    if (!order) return
+    this.$app.$def.markDone(order.orderId)
+    // 本地即时移除，避免重复点击
+    this.pullFromApp()
+  },
+
+  // 卡片点击：有二维码 → 进详情页（路由按当前设备分组拼前缀，466/480 档各自落位）；
+  // 无二维码 → return 兜底（就地完成走右侧完成按钮）
+  onCardClick(idx) {
+    const item = this.displayItems[idx]
+    const order =
+      item && item.isGroup
+        ? item.orders.find(function (it) {
+            return !!it.qrCodeData
+          })
+        : item
+    if (!order || !order.qrCodeData) return
+    router.push({
+      uri: this.$app.$def.getDeviceRoute("detail"),
+      params: {orderId: order.orderId}
+    })
+  },
+
+  onAbout() {
+    router.push({
+      uri: this.$app.$def.getDeviceRoute("about")
+    })
+  },
+
+  // swiper 翻页回调（{index}）：更新底部指示器
+  onSwiperChange(e) {
+    const idx = e && e.index !== undefined ? e.index : 0
+    this.currentPage = idx
+  },
+
+  // 滑动期间暂停列表刷新，结束后由 watcher 在下一轮自动补拉，避免切换时重建列表卡顿；
+  // 同时让「关于」胶囊淡出（onSwipeEnd 后延迟淡回）
+  onSwipeStart() {
+    this.swiping = true
+    if (this.swipeLockTimerId) clearTimeout(this.swipeLockTimerId)
+    let self = this
+    this.swipeLockTimerId = setTimeout(function () {
+      self.swipeLockTimerId = null
+      self.swiping = false
+    }, 1000)
+  },
+
+  onSwipeEnd() {
+    if (this.swipeLockTimerId) {
+      clearTimeout(this.swipeLockTimerId)
+      this.swipeLockTimerId = null
+    }
+    this.swiping = false
+  },
+
+  // 上下列表滚动（scrollState=1 用户手势中）：胶囊淡出；scrollend 时延迟淡回
+  onListScroll(e) {
+    const state = e && e.scrollState !== undefined ? e.scrollState : 0
+    if (state === 1) {
+      this.pillHidden = true
+    }
+  },
+
+  onListScrollEnd() {
+    this.schedulePillShow()
+  },
+
+  // 列表滚动结束后延迟淡回「关于」胶囊（onListScrollEnd 调用；复用同一 timer 防抖）
+  schedulePillShow() {
+    if (this.pillShowTimerId) clearTimeout(this.pillShowTimerId)
+    let self = this
+    this.pillShowTimerId = setTimeout(function () {
+      self.pillShowTimerId = null
+      self.pillHidden = false
+    }, 300)
+  },
+
+  // 组卡片点击：进入本组多取件码二级页（组内全部取件码可见；含二维码的码可再进单码详情页）
+  onGroupClick(idx) {
+    const item = this.displayItems[idx]
+    if (!item || !item.isGroup) return
+    router.push({
+      uri: this.$app.$def.getDeviceRoute("group"),
+      params: {groupId: item.groupId}
+    })
+  },
+
+  onMarkGroupDone(idx) {
+    const item = this.displayItems[idx]
+    if (!item || !item.isGroup) return
+    item.orders.forEach(function (order) {
+      this.$app.$def.markDone(order.orderId)
+    }, this)
+    this.pullFromApp()
+  },
+
+  rebuildDisplayItems() {
+    this.displayItems = this.buildDisplayItems(this.displayOrders)
+  },
+
+  rebuildCompletedDisplayItems() {
+    this.completedDisplayItems = this.buildDisplayItems(this.completedOrders)
+  },
+
+  buildDisplayItems(orders) {
+    const result = []
+    const groups = {}
+    let self = this
+    orders.forEach(function (order) {
+      if (order && order.groupId !== undefined && order.groupId !== null) {
+        const key = String(order.groupId)
+        let group = groups[key]
+        if (!group) {
+          group = {
+            isGroup: true,
+            itemId: "group-" + key,
+            groupId: order.groupId,
+            orders: [],
+            brandName: order.brandName || "",
+            orderType: order.orderType || "",
+            groupLabel: order.brandName || (order.orderType === "快递" ? "快递" : "取餐"),
+            codesText: "",
+            countText: "",
+            iconSrc: "",
+            hasQrCode: false
+          }
+          groups[key] = group
+          result.push(group)
+        }
+        group.orders.push(order)
+        group.iconSrc = self.brandIconSrc(group.brandName, group.orderType)
+        group.hasQrCode = group.orders.some(function (it) {
+          return !!it.qrCodeData
+        })
+        group.codesText = group.orders
+          .slice(0, 3)
+          .map(function (it) {
+            return it.code
+          })
+          .join(" / ")
+        group.countText =
+          group.orders.length + (order.orderType === "快递" ? "个取件码" : "个取餐码")
+      } else if (order) {
+        result.push(
+          Object.assign({}, order, {
+            iconSrc: self.brandIconSrc(order.brandName, order.orderType),
+            timeText: self.formatTime(order.createdAt),
+            hasQrCode: !!order.qrCodeData
+          })
+        )
+      }
+    })
+    return result
+  },
+
+  // 时间格式化：毫秒时间戳 → YYYY-MM-DD HH:mm（手动补零）；
+  // 环境 Date 不可用或解析失败时，降级显示时间戳前 10 位
+  formatTime(ts) {
+    if (!ts) return ""
+    try {
+      if (typeof Date !== "undefined" && typeof Date.prototype.getFullYear === "function") {
+        const d = new Date(ts)
+        if (!isNaN(d.getTime())) {
+          const pad = function (n) {
+            return (n < 10 ? "0" : "") + n
+          }
+          return (
+            d.getFullYear() +
+            "-" +
+            pad(d.getMonth() + 1) +
+            "-" +
+            pad(d.getDate()) +
+            " " +
+            pad(d.getHours()) +
+            ":" +
+            pad(d.getMinutes())
+          )
+        }
+      }
+    } catch (e) {
+      // 忽略，走降级
+    }
+    return String(ts).slice(0, 10)
+  },
+
+  // 根据品牌名选择本地 SVG 图标；未匹配时回退通用图标
+  brandIconSrc(brandName, orderType) {
+    const map = {
+      麦当劳: "/common/brands/ic_mcdonalds.png",
+      肯德基: "/common/brands/ic_kfc.png",
+      KFC: "/common/brands/ic_kfc.png",
+      瑞幸: "/common/brands/ic_luckin.png",
+      喜茶: "/common/brands/ic_heytea.png",
+      星巴克: "/common/brands/ic_starbucks.png",
+      霸王茶姬: "/common/brands/ic_chagee.png",
+      古茗: "/common/brands/ic_goodme.png",
+      蜜雪冰城: "/common/brands/ic_mixue.png",
+      库迪: "/common/brands/ic_cotti.png",
+      茶百道: "/common/brands/ic_chabaidao.png",
+      奈雪: "/common/brands/ic_naixue.png",
+      奈雪的茶: "/common/brands/ic_naixue.png",
+      汉堡王: "/common/brands/ic_burger_king.png",
+      塔斯汀: "/common/brands/ic_tastien.png",
+      顺丰: "/common/brands/ic_sf_express.png",
+      菜鸟: "/common/brands/ic_cainiao.png",
+      丰巢: "/common/brands/ic_hive_box.png",
+      中国邮政: "/common/brands/ic_china_post.png",
+      沪上阿姨: "/common/brands/ic_hushang_ayi.png",
+      CoCo: "/common/brands/ic_coco.png",
+      华莱士: "/common/brands/ic_wallace.png",
+      老乡鸡: "/common/brands/ic_lao_xiang_ji.png",
+      一点点: "/common/brands/ic_yidiandian.png",
+      申通: "/common/brands/ic_sto.png",
+      中通: "/common/brands/ic_zto.png",
+      圆通: "/common/brands/ic_yto.png",
+      韵达: "/common/brands/ic_yunda.png"
+    }
+    if (brandName && map[brandName]) return map[brandName]
+    if (brandName) {
+      for (const key in map) {
+        if (brandName.indexOf(key) !== -1) return map[key]
+      }
+    }
+    if (orderType === "快递") return "/common/brands/ic_package.png"
+    if (orderType === "饮品") return "/common/brands/ic_drink.png"
+    return "/common/brand-icon.png"
+  },
+
+  onRetry() {
+    this.$app.$def.retrySync()
+    this.pullFromApp()
+  }
+}
+</script>

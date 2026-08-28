@@ -110,6 +110,7 @@ class SmsRecognitionService : Service() {
             ) ?: continue
             orderDao.insert(order)
             insertedOrders.add(order)
+            com.Badnng.moe.wearable.WearableSyncManager.notifyOrderSaved(applicationContext, order)
         }
 
         if (insertedOrders.isEmpty()) return

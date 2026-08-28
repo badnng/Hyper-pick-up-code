@@ -1,13 +1,11 @@
 {
   "package": "com.Badnng.moe",
   "name": "澎湃记",
-  "versionName": "1.0.0",
-  "versionCode": 1,
-  "minPlatformVersion": 1200,
+  "versionName": "26.8.29-Watch",
+  "versionCode": 20260829,
+  "minPlatformVersion": 1000,
   "icon": "/common/logo.png",
-  "deviceTypeList": [
-    "watch"
-  ],
+  "deviceTypeList": ["watch"],
   "features": [
     {
       "name": "system.router"
@@ -25,12 +23,12 @@
       "name": "system.brightness"
     },
     {
-      "name": "system.device"
+      "name": "system.app"
     }
   ],
   "config": {
     "logLevel": "log",
-    "designWidth": "device-width"
+    "designWidth": 480
   },
   "router": {
     "entry": "pages/welcome",
@@ -38,28 +36,16 @@
       "pages/welcome": {
         "component": "welcome"
       },
-      "pages/480x480/index": {
+      "pages/index": {
         "component": "index"
       },
-      "pages/480x480/detail": {
+      "pages/detail": {
         "component": "detail"
       },
-      "pages/480x480/group": {
+      "pages/group": {
         "component": "group"
       },
-      "pages/480x480/about": {
-        "component": "about"
-      },
-      "pages/466x466/index": {
-        "component": "index"
-      },
-      "pages/466x466/detail": {
-        "component": "detail"
-      },
-      "pages/466x466/group": {
-        "component": "group"
-      },
-      "pages/466x466/about": {
+      "pages/about": {
         "component": "about"
       }
     }

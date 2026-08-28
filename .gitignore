@@ -48,3 +48,4 @@ local.properties
 
 # npm 缓存（工作区重定向）
 /.npm-cache/
+/app/wear/.vscode/tasks.json

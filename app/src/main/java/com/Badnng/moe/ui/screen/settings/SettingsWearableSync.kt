@@ -28,14 +28,11 @@ import com.Badnng.moe.ui.component.SettingsGroupSwitchItem
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.wearable.WearableSyncManager
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 「手表同步」设置页（Plan §5.5）。
  *
- * 展示：同步开关 / 连接状态 / 设备信息 / 授权与重试 / 最近同步时间。
+ * 展示：同步开关 / 连接状态 / 设备信息 / 授权与重试。
  * 全部通过 LocalAppUi 抽象组件（SettingsGroup 系列 / messageBlock）实现，MD3E/Miuix 自动兼容。
  * 开关与连接状态区分：管理器的 [WearableSyncManager.State] 才是真实状态，开关仅表示用户偏好。
  *
@@ -63,16 +60,18 @@ fun WearableSyncSettingsContent(
     val sections = buildList<@Composable () -> Unit> {
         add {
             PreferenceSection(title = "手表同步") {
-                SettingsGroupSwitchItem(
-                    title = "同步到小米手表",
-                    description = if (enabled) "已开启，未完成取餐码将推送到手表" else "开启后将未完成的取餐码同步到小米手表",
-                    position = GroupPosition.Single,
-                    checked = enabled,
-                    onCheckedChange = { v ->
-                        performHaptic()
-                        manager.setEnabled(v)
-                    }
-                )
+                SettingsGroup {
+                    SettingsGroupSwitchItem(
+                        title = "同步到小米手表",
+                        description = if (enabled) "已开启，未完成取餐码将推送到手表" else "开启后将未完成的取餐码同步到小米手表",
+                        position = GroupPosition.Single,
+                        checked = enabled,
+                        onCheckedChange = { v ->
+                            performHaptic()
+                            manager.setEnabled(v)
+                        }
+                    )
+                }
             }
         }
 
@@ -101,29 +100,15 @@ fun WearableSyncSettingsContent(
                             position = GroupPosition.Middle,
                             onClick = { performHaptic(); manager.refreshNode() }
                         )
-                        SettingsGroupItem(
-                            title = "设备权限",
-                            description = if (state.permissionGranted) "已授权" else "未授权，开启同步前需授权",
+                        SettingsGroupSwitchItem(
+                            title = "通知权限",
+                            description = notifyPermissionDescription(state),
                             position = GroupPosition.Last,
-                            onClick = {
+                            checked = state.notifyPermissionEnabled,
+                            onCheckedChange = { v ->
                                 performHaptic()
-                                manager.requestPermission()
+                                manager.setNotifyPermissionEnabled(v)
                             }
-                        )
-                    }
-                }
-            }
-        }
-
-        if (state.sdkIntegrated) {
-            add {
-                PreferenceSection(title = "待同步") {
-                    SettingsGroup {
-                        SettingsGroupItem(
-                            title = "未完成取餐码",
-                            description = "${state.pendingOrdersCount} 条待同步",
-                            position = GroupPosition.Single,
-                            onClick = { performHaptic() }
                         )
                     }
                 }
@@ -136,39 +121,21 @@ fun WearableSyncSettingsContent(
                     SettingsGroupItem(
                         title = "重新查找手表设备",
                         description = "断线后重新发现连接的设备（一次仅支持一个设备）",
-                        position = GroupPosition.Single,
+                        position = GroupPosition.First,
                         onClick = {
                             performHaptic()
                             manager.refreshNode()
                         }
                     )
-                }
-            }
-        }
-
-        if (state.lastSyncAt > 0L) {
-            add {
-                PreferenceSection(title = "最近同步") {
-                    SettingsGroup {
-                        SettingsGroupItem(
-                            title = "全量快照版本",
-                            description = "#${state.lastSnapshotVersion}",
-                            position = GroupPosition.First,
-                            onClick = { performHaptic() }
-                        )
-                        SettingsGroupItem(
-                            title = "同步时间",
-                            description = formatTime(state.lastSyncAt),
-                            position = GroupPosition.Middle,
-                            onClick = { performHaptic() }
-                        )
-                        SettingsGroupItem(
-                            title = "最近回执",
-                            description = lastAckText(state),
-                            position = GroupPosition.Last,
-                            onClick = { performHaptic() }
-                        )
-                    }
+                    SettingsGroupItem(
+                        title = "重新申请手表权限",
+                        description = "按顺序重新申请通知权限与设备管理权限（设备管理权限需先装快应用）",
+                        position = GroupPosition.Last,
+                        onClick = {
+                            performHaptic()
+                            manager.requestPermission()
+                        }
+                    )
                 }
             }
         }
@@ -216,14 +183,8 @@ private fun connectionText(state: WearableSyncManager.State, enabled: Boolean): 
     return "未连接"
 }
 
-private fun formatTime(ts: Long): String =
-    SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(ts))
-
-private fun lastAckText(state: WearableSyncManager.State): String {
-    val ackId = state.lastAckOrderId
-    return if (!ackId.isNullOrBlank()) {
-        "订单 ${ackId.take(8)} · ${formatTime(state.lastAckAt)}"
-    } else {
-        "暂无"
-    }
+private fun notifyPermissionDescription(state: WearableSyncManager.State): String = when {
+    !state.notifyPermissionEnabled -> "已关闭，不再向手表发送新订单提醒"
+    state.notifyPermissionGranted -> "已授权，新订单提醒将推送到手表"
+    else -> "未授权，连接后自动申请"
 }

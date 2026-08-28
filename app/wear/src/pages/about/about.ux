@@ -1,0 +1,491 @@
+<template>
+  <div class="page{{leaving ? ' page-leaving' : ''}}">
+    <div class="clock-bar">
+      <text class="top-time">{{ clockText }}</text>
+    </div>
+
+    <!-- 返回键条：返回箭头 + 标题整体水平居中；手环/方表见下方 nav-bar 单行导航（‹ 字符按钮） -->
+    <div class="back-bar">
+      <text class="back-btn" onclick="onBack">‹</text>
+      <text class="page-title" onclick="onBack">关于澎湃记</text>
+    </div>
+
+    <!-- 手环/方表单行导航（手表排版）：左上角返回按钮+标题、右上角时间；
+         圆表仍用上方两行布局（clock-bar / back-bar） -->
+    <div class="nav-bar">
+      <div class="nav-left">
+        <text class="nav-back" onclick="onBack">‹</text>
+        <text class="nav-title" onclick="onBack">关于澎湃记</text>
+      </div>
+      <text class="nav-time">{{ clockText }}</text>
+    </div>
+
+    <scroll class="about-scroll" scroll-y="true">
+      <div class="about-content">
+        <image class="logo" src="/common/about-logo.png"></image>
+        <text class="app-name">澎湃记</text>
+        <text class="tagline">手机端识别，手表端查看</text>
+
+        <div class="info-card">
+          <div class="info-row">
+            <text class="info-label">版本</text>
+            <text class="info-value">{{ versionText }}</text>
+          </div>
+          <div class="info-row info-row-last">
+            <text class="info-label">作者</text>
+            <text class="info-value">Badnng</text>
+          </div>
+        </div>
+      </div>
+    </scroll>
+  </div>
+</template>
+
+<style>
+.page {
+  position: relative;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  padding: 0px 36px;
+  animation-name: page-in;
+  animation-duration: 0.25s;
+  animation-timing-function: ease-out;
+}
+.page-leaving {
+  opacity: 1;
+  animation-name: page-out;
+  animation-duration: 0.22s;
+  animation-timing-function: ease-in;
+}
+.clock-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 48px;
+}
+.top-time {
+  line-height: 48px;
+  font-size: 26px;
+  color: #ffffff;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+}
+.back-bar {
+  position: relative;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 44px;
+}
+.back-btn {
+  font-size: 40px;
+  color: #ffffff;
+  line-height: 44px;
+  height: 44px;
+}
+/* 矩形屏单行导航（手表排版：左返回+标题、右时间）：默认隐藏，rect 档显示 */
+.nav-bar {
+  display: none;
+}
+.nav-title {
+  font-size: 36px;
+  color: #ffffff;
+  font-weight: bold;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.nav-time {
+  font-size: 34px;
+  color: rgba(255, 255, 255, 0.6);
+  lines: 1;
+}
+.page-title {
+  margin-left: 8px;
+  margin-top: 4px;
+  max-width: 200px;
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: bold;
+  line-height: 44px;
+  height: 44px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.about-scroll {
+  width: 100%;
+  height: 388px;
+  padding-bottom: 20px;
+}
+.about-content {
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding-top: 16px;
+}
+.logo {
+  width: 74px;
+  height: 74px;
+}
+.app-name {
+  margin-top: 12px;
+  font-size: 32px;
+  line-height: 40px;
+  color: #ffffff;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+}
+.tagline {
+  margin-top: 4px;
+  font-size: 22px;
+  line-height: 30px;
+  color: #999999;
+  text-align: center;
+  lines: 1;
+}
+.info-card {
+  flex-direction: column;
+  width: 350px;
+  margin-top: 20px;
+  padding: 0px;
+}
+.info-row {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  height: 50px;
+  padding: 0px 18px;
+}
+.info-row-last {
+  padding-bottom: 0px;
+}
+.info-label,
+.info-value {
+  font-size: 20px;
+  line-height: 30px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.info-label {
+  color: #999999;
+}
+.info-value {
+  max-width: 220px;
+  color: #ffffff;
+  text-align: right;
+}
+/* ═══ 屏幕分档（媒体查询长度单位为 dp；px 按 designWidth=480 对屏幕物理宽等比缩放）═══
+   circle480（S5 240dp，×1.000）：即基础样式；circle466（S3 233dp，×0.971）等比同步，
+   内容居中且无底部悬浮层，两圆屏共用基础值即可，无需额外档位。
+   rect432（RW5/RW6 216dp，×0.900）：方表设计 —— 信息卡 349.2 ≤ 内容宽 432−80=352 ✓、
+   scroll 423.9 = 514 − 45.9 − 44.1 ✓、内容 297.0 ≤ 423.9 首屏完整 ✓。
+   rect336（8Pro/9Pro/10Pro 168dp，×0.700）：手环设计 —— 信息卡 273 ≤ 内容宽 336−60=276 ✓、
+   scroll 392 = 480 − 44.1 − 44.1 ✓、内容 296.1 ≤ 392 首屏完整 ✓。 */
+@media (shape: rect) and (min-width: 192) {
+  .page {
+    padding: 0px 40px;
+  }
+  .clock-bar {
+    display: none;
+  }
+  .top-time {
+    display: none;
+  }
+  .back-bar {
+    display: none;
+  }
+  .nav-bar {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    height: 80px;
+    padding-left: 34px;
+    padding-right: 34px;
+  }
+  .nav-left {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-title {
+    font-size: 36px;
+    margin-left: 6px;
+    line-height: 44px;
+    height: 44px;
+    margin-top: 4px;
+  }
+  .nav-time {
+    font-size: 28px;
+    margin-left: 14px;
+  }
+  .nav-back {
+    font-size: 42px;
+    color: #ffffff;
+    margin-right: 6px;
+    line-height: 44px;
+    height: 44px;
+  }
+  /* 返回按钮（手环/方表思路）：‹ 圆形字符按钮（深灰圆底），与标题同行靠左（见 nav-bar 单行导航），
+     不再与标题并排居中（圆表思路） */
+  .back-btn {
+    display: none;
+  }
+  .page-title {
+    margin-left: 0px;
+    margin-top: 4px;
+    max-width: 222px;
+    font-size: 36px;
+    line-height: 49px;
+    height: 49px;
+  }
+  .about-scroll {
+    height: 491px;
+    padding-bottom: 24px;
+  }
+  .about-content {
+    padding-top: 18px;
+  }
+  .logo {
+    width: 82px;
+    height: 82px;
+  }
+  .app-name {
+    margin-top: 13px;
+    font-size: 36px;
+    line-height: 45px;
+  }
+  .tagline {
+    margin-top: 4px;
+    font-size: 24px;
+    line-height: 34px;
+  }
+  .info-card {
+    width: 388px;
+    margin-top: 22px;
+  }
+  .info-row {
+    height: 56px;
+    padding: 0px 20px;
+  }
+  .info-label,
+  .info-value {
+    font-size: 22px;
+    line-height: 34px;
+  }
+  .info-value {
+    max-width: 244px;
+  }
+}
+@media (shape: rect) and (max-width: 192) {
+  .page {
+    padding: 0px 30px;
+  }
+  .clock-bar {
+    display: none;
+  }
+  .top-time {
+    display: none;
+  }
+  .back-bar {
+    display: none;
+  }
+  .nav-bar {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    height: 103px;
+    padding-left: 34px;
+    padding-right: 34px;
+  }
+  .nav-left {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-title {
+    font-size: 36px;
+    margin-left: 6px;
+    max-width: 220px;
+    line-height: 56px;
+    height: 56px;
+    margin-top: 5px;
+  }
+  .nav-time {
+    font-size: 34px;
+    margin-left: 14px;
+  }
+  .nav-back {
+    font-size: 54px;
+    color: #ffffff;
+    margin-right: 8px;
+    line-height: 56px;
+    height: 56px;
+  }
+  .back-btn {
+    display: none;
+  }
+  .page-title {
+    margin-left: 0px;
+    margin-top: 5px;
+    max-width: 214px;
+    font-size: 46px;
+    line-height: 63px;
+    height: 63px;
+  }
+  .about-scroll {
+    height: 583px;
+    padding-bottom: 29px;
+  }
+  .about-content {
+    padding-top: 23px;
+  }
+  .logo {
+    width: 106px;
+    height: 106px;
+  }
+  .app-name {
+    margin-top: 17px;
+    font-size: 46px;
+    line-height: 57px;
+  }
+  .tagline {
+    margin-top: 6px;
+    font-size: 31px;
+    line-height: 43px;
+  }
+  .info-card {
+    width: 390px;
+    margin-top: 29px;
+  }
+  .info-row {
+    height: 71px;
+    padding: 0px 26px;
+  }
+  .info-label,
+  .info-value {
+    font-size: 29px;
+    line-height: 43px;
+  }
+  .info-value {
+    max-width: 314px;
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0px);
+  }
+}
+@keyframes page-out {
+  from {
+    opacity: 1;
+    transform: translateX(0px);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+}
+</style>
+
+<script>
+import router from "@system.router"
+import app from "@system.app"
+
+export default {
+  private: {
+    clockText: "",
+    versionText: "",
+    clockTimerId: null,
+    backTimerId: null,
+    leaving: false,
+    bypassBack: false
+  },
+
+  onShow() {
+    this.loadVersion()
+    this.updateClock()
+    if (!this.clockTimerId) {
+      let self = this
+      this.clockTimerId = setInterval(function () {
+        self.updateClock()
+      }, 10000)
+    }
+  },
+
+  onHide() {
+    this.stopClock()
+  },
+
+  onDestroy() {
+    this.stopClock()
+    if (this.backTimerId) {
+      clearTimeout(this.backTimerId)
+      this.backTimerId = null
+    }
+  },
+
+  loadVersion() {
+    try {
+      this.versionText = app.getInfo().versionName
+    } catch (e) {
+      this.versionText = "未知"
+    }
+  },
+
+  updateClock() {
+    try {
+      const d = new Date()
+      const pad = function (n) {
+        return (n < 10 ? "0" : "") + n
+      }
+      this.clockText = pad(d.getHours()) + ":" + pad(d.getMinutes())
+    } catch (e) {
+      this.clockText = ""
+    }
+  },
+
+  stopClock() {
+    if (this.clockTimerId) {
+      clearInterval(this.clockTimerId)
+      this.clockTimerId = null
+    }
+  },
+
+  onBack() {
+    if (this.leaving) return
+    this.leaving = true
+    let self = this
+    this.backTimerId = setTimeout(function () {
+      self.backTimerId = null
+      self.bypassBack = true
+      router.back()
+    }, 220)
+  },
+
+  onBackPress() {
+    if (this.bypassBack) return false
+    this.onBack()
+    return true
+  }
+}
+</script>

@@ -107,8 +107,10 @@ class WearableSyncManager private constructor(
     /** 最近一次确认节点存在的时间；服务短暂抖动时保留“已连接”显示。 */
     private var lastNodeSeenAt = 0L
     private var messageListenerBoundAt = 0L
-    /** 已自动申请过权限的节点 id（去重：同一节点只自动申请一次）。 */
-    private var autoPermRequestedFor: String? = null
+    /** 已自动申请过通知权限的节点 id（去重：同一节点只自动申请一次）。 */
+    private var autoNotifyPermRequestedFor: String? = null
+    /** 已自动申请过设备管理权限的节点 id（去重，仅检测到手表端 rpk 已安装时自动申请）。 */
+    private var autoDeviceManagerPermRequestedFor: String? = null
     /** 下次发现节点时强制 remove→add，修复 XMS 本地 registered 但远端回调失效。 */
     @Volatile
     private var forceMessageRebind = false
@@ -158,6 +160,10 @@ class WearableSyncManager private constructor(
         updateState { s ->
             s.copy(
                 sdkIntegrated = sdkOk,
+                notifyPermissionEnabled = prefs.getBoolean(
+                    KEY_NOTIFY_PERMISSION_ENABLED,
+                    DEFAULT_PERMISSION_ENABLED,
+                ),
                 lastError = if (sdkOk) sdkError ?: s.lastError else (sdkError ?: "未安装 Mi Fitness 穿戴服务"),
             )
         }
@@ -202,7 +208,8 @@ class WearableSyncManager private constructor(
         watchdogJob?.cancel()
         watchdogJob = null
         releaseBridge()
-        autoPermRequestedFor = null
+        autoNotifyPermRequestedFor = null
+        autoDeviceManagerPermRequestedFor = null
         _state.value = _state.value.copy(
             started = false,
             connected = false,
@@ -210,6 +217,8 @@ class WearableSyncManager private constructor(
             nodeId = null,
             deviceName = null,
             permissionGranted = false,
+            notifyPermissionGranted = false,
+            deviceManagerPermissionGranted = false,
         )
         lastNodeSeenAt = 0L
         connectionListenerNodeId = null
@@ -317,7 +326,8 @@ class WearableSyncManager private constructor(
             releaseBridge()
             boundNodeId = null
             connectionListenerNodeId = null
-            autoPermRequestedFor = null
+            autoNotifyPermRequestedFor = null
+            autoDeviceManagerPermRequestedFor = null
             updateState {
                 it.copy(
                     discovering = false,
@@ -326,6 +336,8 @@ class WearableSyncManager private constructor(
                     nodeId = null,
                     deviceName = null,
                     permissionGranted = false,
+                    notifyPermissionGranted = false,
+                    deviceManagerPermissionGranted = false,
                 )
             }
             lastNodeSeenAt = 0L
@@ -383,13 +395,28 @@ class WearableSyncManager private constructor(
                 val nodeId = runBridgeCall("查找手表设备") {
                     withContext(Dispatchers.IO) { bridge.findNodeId(appContext) }
                 }
-                val permission = if (nodeId != null) {
-                    runBridgeCall("查询手表权限") {
-                        withContext(Dispatchers.IO) { bridge.isPermissionGranted }
+                val notifyPermission = if (nodeId != null) {
+                    runBridgeCall("查询手表通知权限") {
+                        withContext(Dispatchers.IO) { bridge.isNotifyPermissionGranted }
                     } ?: false
                 } else {
                     false
                 }
+                val deviceManagerPermission = if (nodeId != null) {
+                    runBridgeCall("查询手表设备管理权限") {
+                        withContext(Dispatchers.IO) { bridge.isDeviceManagerPermissionGranted }
+                    } ?: false
+                } else {
+                    false
+                }
+                val watchAppInstalled = if (nodeId != null && !deviceManagerPermission) {
+                    runBridgeCall("查询手表端快应用安装状态") {
+                        withContext(Dispatchers.IO) { bridge.isWatchAppInstalled(appContext, nodeId) }
+                    }
+                } else {
+                    null
+                }
+                val permission = notifyPermission && deviceManagerPermission
                 val queriedConnection = if (nodeId != null) {
                     runBridgeCall("查询手表互联状态") {
                         withContext(Dispatchers.IO) {
@@ -399,7 +426,7 @@ class WearableSyncManager private constructor(
                 } else {
                     null
                 }
-                log("节点刷新结果: nodeId=$nodeId, permission=$permission, queriedConnection=$queriedConnection")
+                log("节点刷新结果: nodeId=$nodeId, notifyPermission=$notifyPermission, deviceManagerPermission=$deviceManagerPermission, watchAppInstalled=$watchAppInstalled, queriedConnection=$queriedConnection")
                 // 记录重绑前节点（同节点免重绑需要与旧值比较）
                 val prevNodeId = boundNodeId
                 boundNodeId = nodeId
@@ -417,6 +444,9 @@ class WearableSyncManager private constructor(
                         transportConnected = queriedConnection ?: (nodeId != null),
                         deviceName = nodeId?.let { id -> it.deviceName ?: id.take(8) } ?: it.deviceName,
                         permissionGranted = nodeId != null && permission,
+                        notifyPermissionGranted = nodeId != null && notifyPermission,
+                        deviceManagerPermissionGranted = nodeId != null && deviceManagerPermission,
+                        watchAppInstalled = watchAppInstalled ?: it.watchAppInstalled,
                         lastError = bridgeLastError(if (nodeId != null) it.lastError else "未发现已连接的手表"),
                     )
                 }
@@ -446,18 +476,40 @@ class WearableSyncManager private constructor(
                     if (!connectionAlreadyBound) {
                         bindConnectionListener(nodeId)
                     }
-                    // 自动申请一次权限（按节点去重）：Mi Fitness 需 Android 应用至少请求一次权限
-                    // 才会创建权限控制项，否则手表端 interconnect 会一直判定对端未安装/未授权 → 手表显示未连接
-                    if (!permission && autoPermRequestedFor != nodeId) {
-                        autoPermRequestedFor = nodeId
-                        requestPermission()
+                    // 通知权限不依赖手表端快应用，按「通知权限」开关自动申请；
+                    // 设备管理权限（RPK 同步）跟随「同步到小米手表」总开关，仅在检测到手表端 rpk
+                    // 已安装时自动申请（用户装好后重新发现节点即可补上）。
+                    // 去重标记仅在申请成功后记录：失败的申请（用户未确认/被拒绝）允许下轮重试，
+                    // 避免一次失败后通知权限永远无法授予、手表收不到提醒。
+                    if (!notifyPermission &&
+                        _state.value.notifyPermissionEnabled &&
+                        autoNotifyPermRequestedFor != nodeId
+                    ) {
+                        requestNotifyPermission()
+                        if (_state.value.notifyPermissionGranted) {
+                            autoNotifyPermRequestedFor = nodeId
+                        } else {
+                            log("通知权限自动申请未成功，等待下轮刷新重试")
+                        }
+                    }
+                    if (!deviceManagerPermission &&
+                        watchAppInstalled == true &&
+                        autoDeviceManagerPermRequestedFor != nodeId
+                    ) {
+                        requestDeviceManagerPermission()
+                        if (_state.value.deviceManagerPermissionGranted) {
+                            autoDeviceManagerPermRequestedFor = nodeId
+                        } else {
+                            log("设备管理权限自动申请未成功，等待下轮刷新重试")
+                        }
                     }
                     pushLatestIfReady()
                     log("节点刷新完成: nodeId=$nodeId")
                     break
                 } else {
                     // 节点丢失：重置自动授权去重标记，下次发现同节点可重新申请
-                    autoPermRequestedFor = null
+                    autoNotifyPermRequestedFor = null
+                    autoDeviceManagerPermRequestedFor = null
                     connectionListenerNodeId = null
                     // 失败快速重试：同一协程内 5s 后重试，无自取消问题；
                     // 重试循环进行中时外部 refreshNode() 调用会被「isActive 复用」挡下，无取消风暴
@@ -467,30 +519,77 @@ class WearableSyncManager private constructor(
         }
     }
 
-    /** 申请设备权限（供设置页「授权」按钮手动触发，或节点发现时自动调用）。 */
+    /**
+     * 申请设备权限（供设置页「授权」按钮手动触发）。
+     * 顺序：先通知权限（NOTIFY，不依赖手表快应用），后设备管理权限
+     * （DEVICE_MANAGER，依赖手表端已安装 rpk），避免未安装快应用时授权整体卡死。
+     */
     fun requestPermission() {
         scope.launch {
-            val granted = runBridgeCall("申请手表权限") {
-                withContext(Dispatchers.IO) { bridge.requestPermission(appContext) }
-            } ?: false
-            updateState { it.copy(permissionGranted = granted) }
-            if (granted) {
-                // 授权成功后监听才真正可用；已注册时不要重复 remove/add，
-                // 仅在监听确实丢失时补注册。
-                boundNodeId?.let { nodeId ->
-                    val messageRegistered = runCatching {
-                        bridge.isListenerRegistered
-                    }.getOrDefault(false)
-                    if (!messageRegistered) bindMessageListener(nodeId)
-
-                    val connectionRegistered = runCatching {
-                        bridge.isConnectionListenerRegistered
-                    }.getOrDefault(false)
-                    if (!connectionRegistered) bindConnectionListener(nodeId)
-                }
-                pushLatestIfReady()
-            }
+            requestNotifyPermission()
+            requestDeviceManagerPermission()
         }
+    }
+
+    /**
+     * 开关「通知权限」：开启时自动申请 NOTIFY（不依赖手表端快应用），
+     * 关闭后不再向手表发送系统通知。
+     */
+    fun setNotifyPermissionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFY_PERMISSION_ENABLED, enabled).apply()
+        updateState { it.copy(notifyPermissionEnabled = enabled) }
+        if (enabled) {
+            scope.launch {
+                if (!_state.value.notifyPermissionGranted) requestNotifyPermission()
+            }
+        } else {
+            log("通知权限开关已关闭，不再向手表发送系统通知")
+        }
+    }
+
+    /** 申请通知权限（NOTIFY）。不依赖手表端快应用，应优先申请。 */
+    private suspend fun requestNotifyPermission() {
+        val granted = runBridgeCall("申请手表通知权限") {
+            withContext(Dispatchers.IO) { bridge.requestNotifyPermission(appContext) }
+        } ?: false
+        updateState {
+            it.copy(
+                notifyPermissionGranted = granted,
+                permissionGranted = granted && it.deviceManagerPermissionGranted,
+            )
+        }
+        if (granted) onPermissionGranted()
+    }
+
+    /** 申请设备管理权限（DEVICE_MANAGER）。依赖手表端快应用已安装。 */
+    private suspend fun requestDeviceManagerPermission() {
+        val granted = runBridgeCall("申请手表设备管理权限") {
+            withContext(Dispatchers.IO) { bridge.requestDeviceManagerPermission(appContext) }
+        } ?: false
+        updateState {
+            it.copy(
+                deviceManagerPermissionGranted = granted,
+                permissionGranted = it.notifyPermissionGranted && granted,
+            )
+        }
+        if (granted) onPermissionGranted()
+    }
+
+    private fun onPermissionGranted() {
+        // 授权成功后监听才真正可用；已注册时不要重复 remove/add，
+        // 仅在监听确实丢失时补注册。
+        boundNodeId?.let { nodeId ->
+            val messageRegistered = runCatching {
+                bridge.isListenerRegistered
+            }.getOrDefault(false)
+            if (!messageRegistered) bindMessageListener(nodeId)
+
+            val connectionRegistered = runCatching {
+                bridge.isConnectionListenerRegistered
+            }.getOrDefault(false)
+            if (!connectionRegistered) bindConnectionListener(nodeId)
+        }
+        pushLatestIfReady()
     }
 
     /** 新订单通知入口：同一 orderId 去重，避免截图/通知/短信等多个识别入口重复弹。 */
@@ -520,11 +619,22 @@ class WearableSyncManager private constructor(
             log("发送系统通知跳过: 手表同步开关未开启")
             return
         }
-        if (boundNodeId == null) {
-            log("发送系统通知跳过: 未绑定手表节点")
+        if (!_state.value.notifyPermissionEnabled) {
+            log("发送系统通知跳过: 通知权限开关未开启")
             return
         }
+        if (boundNodeId == null) {
+            // 自启动/恢复期节点可能尚未发现：不在此阻断，交给 bridge 在发送时
+            // 自动补一次节点发现（findNodeId），避免提醒静默丢失。
+            log("发送系统通知: 本地节点缓存为空，交由 SDK 自动发现后发送")
+        }
         scope.launch {
+            // 通知权限未授予时先补申请一次（NOTIFY 不依赖手表快应用）；
+            // 随后照常尝试发送，避免权限状态滞后导致提醒静默丢失。
+            if (!_state.value.notifyPermissionGranted) {
+                log("发送系统通知前补申请通知权限")
+                requestNotifyPermission()
+            }
             val ok = sendMutex.withLock {
                 runBridgeCall("发送手表系统通知") {
                     withContext(Dispatchers.IO) {
@@ -637,10 +747,13 @@ class WearableSyncManager private constructor(
         if (pendingOrdersForPush == snapshot) pendingOrdersForPush = null
 
         try {
-            // 全量快照 + 版本号
+            // 全量快照 + 版本号，官方 demo 式分片 JSON
             latestSnapshotVersion = nextSnapshotVersion()
-            // 官方 demo 式分片：先切帧再逐帧发送
-            val frames = WearableSyncProtocol.encodeCodesFrames(orders, completedOrders, latestSnapshotVersion)
+            val frames = WearableSyncProtocol.encodeCodesFrames(
+                orders,
+                completedOrders,
+                latestSnapshotVersion,
+            )
             log("开始发送订单快照: nodeId=$nodeId, snapshotVersion=$latestSnapshotVersion, frames=${frames.size}, incomplete=${orders.size}, completed=${completedOrders.size}")
             val delivered = sendMutex.withLock {
                 var allDelivered = true
@@ -670,9 +783,9 @@ class WearableSyncManager private constructor(
                         lastError = "",
                     )
                 }
-            log("订单快照发送完成: snapshotVersion=$latestSnapshotVersion, incomplete=${orders.size}, completed=${completedOrders.size}")
+                log("订单快照发送完成: snapshotVersion=$latestSnapshotVersion, incomplete=${orders.size}, completed=${completedOrders.size}")
             } else {
-                log("订单快照发送未完成: snapshotVersion=$latestSnapshotVersion, count=${orders.size}")
+                log("订单快照发送未完成: snapshotVersion=$latestSnapshotVersion, count=${orders.size}, lastError=${bridge.lastError}")
                 updateState { it.copy(lastError = bridge.lastError ?: "消息发送失败") }
             }
         } finally {
@@ -1051,6 +1164,14 @@ class WearableSyncManager private constructor(
         val nodeId: String? = null,
         val deviceName: String? = null,
         val permissionGranted: Boolean = false,
+        /** 通知权限（NOTIFY）是否已授予；不依赖手表端快应用。 */
+        val notifyPermissionGranted: Boolean = false,
+        /** 设备管理权限（DEVICE_MANAGER）是否已授予；依赖手表端快应用已安装。 */
+        val deviceManagerPermissionGranted: Boolean = false,
+        /** 用户是否开启「通知权限」开关；关闭后不再向手表发送系统通知。 */
+        val notifyPermissionEnabled: Boolean = true,
+        /** 手表端快应用（rpk）安装状态；null 表示未知。用于提示「需先安装快应用」。 */
+        val watchAppInstalled: Boolean? = null,
         val pendingOrdersCount: Int = 0,
         val lastSyncAt: Long = 0L,
         val lastSnapshotVersion: Long = 0L,
@@ -1064,17 +1185,19 @@ class WearableSyncManager private constructor(
         private const val PREFS_NAME = "wearable_sync"
         private const val KEY_ENABLED = "wearable_sync_enabled"
         private const val KEY_SNAPSHOT_VERSION = "wearable_snapshot_version"
+        private const val KEY_NOTIFY_PERMISSION_ENABLED = "wearable_notify_permission_enabled"
+        private const val DEFAULT_PERMISSION_ENABLED = true
         private const val DEFAULT_ENABLED = false
         private const val DEBOUNCE_MS = 500L
         /** 穿戴通道自愈快速重试间隔：监听未注册/节点发现失败时 5s 重试。 */
         private const val WATCHDOG_RETRY_MS = 5_000L
         /** Mi Fitness 服务重连/节点发现短暂失败时的连接状态保活窗口。 */
         private const val NODE_LOSS_GRACE_MS = 30_000L
-        /** 分片帧之间的发送间隔。XMS/手表端处理能力有限，必须给每帧留出缓冲时间。 */
+        /** JSON 回退分片帧之间的发送间隔。XMS/手表端处理能力有限，必须给每帧留出缓冲时间。 */
         private const val FRAME_DELAY_MS = 180L
-        /** 手表端仅展示近期订单，避免历史数据造成 JSON、缓存和 list 同时膨胀。 */
+        /** 手表端仅展示近期订单，避免历史数据造成缓存和 list 同时膨胀。 */
         private const val MAX_WATCH_INCOMPLETE_ORDERS = 20
-        private const val MAX_WATCH_COMPLETED_ORDERS = 30
+        private const val MAX_WATCH_COMPLETED_ORDERS = 10
         private const val DONE_RESULT_CACHE_SIZE = 64
 
         @Volatile
@@ -1085,6 +1208,23 @@ class WearableSyncManager private constructor(
             instance ?: synchronized(this) {
                 instance ?: WearableSyncManager(context.applicationContext).also { instance = it }
             }
+
+        /**
+         * 识别入库后的统一手表通知入口：任何识别方式保存订单后调用。
+         *
+         * 不依赖 OrderViewModel/attachSource：自启动进程（分享/识屏/短信/划词）里
+         * 本管理器可能尚未绑定订单流，但系统通知链路（节点发现→授权→
+         * NotifyApi.sendNotify）是独立的，此处可直接触达。
+         */
+        fun notifyOrderSaved(context: Context, order: OrderEntity) {
+            val title = order.brandName?.takeIf { it.isNotBlank() }
+                ?: "新的${order.orderType}通知"
+            val message = buildString {
+                append(order.takeoutCode)
+                if (!order.qrCodeData.isNullOrBlank()) append("，二维码已同步，可到手表端查看")
+            }
+            getInstance(context).sendNewOrderNotify(order.id, title, message)
+        }
     }
 
     private fun nextSnapshotVersion(): Long {

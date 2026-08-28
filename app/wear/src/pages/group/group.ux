@@ -1,19 +1,35 @@
 <template>
-  <!-- 480 档多取件码二级页（S5 真机 480×480）：主页组卡片点击进入（params.groupId），
+  <!-- 480 档多取件码二级页（S5 真机 480×480，多屏基档）：主页组卡片点击进入（params.groupId），
        展示该组全部取件码（主页组卡片只预览前 3 个）；
-       designWidth: "device-width" 下 CSS px 与屏幕物理像素 1:1（无引擎等比缩放）；
-       本档字号 = 原大屏字号档值（见 style 字号说明）；
+       多屏差异由 media query 分档处理（circle480 基档 / S3 circle466 / RW5-6 rect432 / 8·9·10Pro rect336，
+       见 style 文末「屏幕分档」；档内 px 按 designWidth=480 对屏宽等比缩放，档内数值为设计值）；
        页面动画与返回手势：同 detail/completed 二级页（page-in/page-out + onBackPress 拦截） -->
   <div class="page{{leaving ? ' page-leaving' : ''}}">
     <!-- 顶部时钟：置顶忽略安全区（clock-bar y∈[0,48]），HH:mm 每 10 秒刷新 -->
-    <div class="clock-bar"><text class="top-time">{{clockText}}</text></div>
-    <!-- 返回键条：返回箭头 + 组标题（品牌名，如「圆通」；无品牌名时用 取件码/取餐码）整体水平居中 -->
+    <div class="clock-bar">
+      <text class="top-time">{{ clockText }}</text>
+    </div>
+    <!-- 返回键条：返回箭头 + 组标题（品牌名，如「圆通」；无品牌名时用 取件码/取餐码）整体水平居中；
+         （避免 Vela absolute 热区不可靠的问题），rect 档显示、圆表隐藏；
+         右侧 .back-spacer 对称占位，保证标题在本档仍严格居中 -->
     <div class="back-bar">
       <text class="back-btn" onclick="onBack">‹</text>
-      <text class="page-title" onclick="onBack" if="{{pageTitle}}">{{pageTitle}}</text>
+      <text class="page-title" onclick="onBack" if="{{pageTitle}}">{{ pageTitle }}</text>
+    </div>
+
+    <!-- 手环/方表单行导航（手表排版）：左上角返回按钮+标题、右上角时间；
+         圆表仍用上方两行布局（clock-bar / back-bar） -->
+    <div class="nav-bar">
+      <div class="nav-left">
+        <text class="nav-back" onclick="onBack">‹</text>
+        <text class="nav-title" onclick="onBack">{{ pageTitle }}</text>
+      </div>
+      <text class="nav-time">{{ clockText }}</text>
     </div>
     <!-- 计数条：共 N 个取件码（与主页组卡片 meta 语义一致；空状态时不显示） -->
-    <div if="{{items.length > 0}}" class="count-bar"><text class="count-text">{{countText}}</text></div>
+    <div if="{{items.length > 0}}" class="count-bar">
+      <text class="count-text">{{ countText }}</text>
+    </div>
 
     <!-- 空状态：组内订单全部完成后显示（快照为唯一数据源，组内无订单即空） -->
     <div if="{{items.length === 0}}" class="empty">
@@ -29,8 +45,8 @@
         <div class="code-card">
           <div class="code-row">
             <div class="code-main" onclick="onRowClick($idx)">
-              <text class="code-text">{{$item.code}}</text>
-              <text class="code-meta">{{$item.metaText}}</text>
+              <text class="code-text">{{ $item.code }}</text>
+              <text class="code-meta">{{ $item.metaText }}</text>
             </div>
             <text if="{{!$item.hasQr}}" class="done-btn" onclick="onMarkOne($idx)">完成</text>
           </div>
@@ -71,8 +87,8 @@
   animation-timing-function: ease-in;
 }
 
-/* 480 档字号说明（本页为 480x480 档，= S5 真机档）：
-   designWidth: "device-width" 下 CSS px 与屏幕物理像素 1:1（无引擎等比缩放）；
+/* 480 档字号说明（本页为 480x480 基档，= S5 真机档；其余档位见文末分档块）：
+   manifest designWidth=480：px 按屏幕物理宽等比缩放，基档 480×480 屏系数 ×1.000（下述数值均为设计值）；
    本档各字号即原大屏档值（top-time 26、back-btn 40、page-title 34、count-text 19、
    empty-main 30、empty-sub 24、code-text 36、code-meta 22、done-btn 26、all-done-text 26），
    行高容器（line-height/height）保持原大屏兼容关系：
@@ -80,7 +96,7 @@
    标题 34px 字在 line-height 44 ✓、.code-text 36px < line-height 44 ✓、
    .code-meta 22px < line-height 26 ✓、.done-btn 26px < line-height 28 ✓、
    .all-done-text 26px < line-height 44 ✓ 均不溢出；
-   466 档（AIoT 模拟器）对应原基础字号 24/38/32/18/28/22/34/20/24/24，见 pages/466x466/group.ux */
+   （其余档位 S3 ×0.971 / RW5-6 ×0.900 / 8·9·10Pro ×0.700 的字号见文末分档块）*/
 
 /* 顶部时钟条：y∈[0,48] 置顶，忽略安全区；时钟文字水平垂直居中 */
 .clock-bar {
@@ -113,6 +129,22 @@
   color: #ffffff;
   line-height: 44px;
   height: 44px;
+}
+/* 矩形屏单行导航（手表排版：左返回+标题、右时间）：默认隐藏，rect 档显示 */
+.nav-bar {
+  display: none;
+}
+.nav-title {
+  font-size: 36px;
+  color: #ffffff;
+  font-weight: bold;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.nav-time {
+  font-size: 34px;
+  color: rgba(255, 255, 255, 0.6);
+  lines: 1;
 }
 .page-title {
   margin-left: 8px;
@@ -267,24 +299,276 @@
   lines: 1;
 }
 
-/* 圆屏(shape:circle)：页面无需顶部安全区 padding（时钟条置顶）；底部安全区
-   padding-bottom 130px 直接放在 list 组件 .code-list 上：
-   内容底 = 480 − 130 = 350，该处弦宽约 426.6px ≥ 卡片 420px，最后一张完整显示、不裁切；
-   且不与悬浮按钮重叠（按钮顶 391 > 内容底 350，间隙 41px） */
-@media (shape: circle) {
-  .page {
-    padding: 0px 36px;
-  }
+/* ═══ 屏幕分档（媒体查询长度单位为 dp；px 按 designWidth=480 对屏幕物理宽等比缩放）═══
+   ┌──────────┬────────────┬─────────┬──────┬──────────┐
+   │ 档位     │ 设备       │ 物理    │ dp宽 │ 缩放系数  │
+   ├──────────┼────────────┼─────────┼──────┼──────────┤
+   │ circle480│ S5         │ 480×480 │ 240  │ ×1.000   │
+   │ circle466│ S3         │ 466×466 │ 233  │ ×0.971   │
+   │ rect432  │ RW5 / RW6  │ 432×514 │ 216  │ ×0.900   │
+   │ rect336  │ 8/9/10Pro  │ 336×480 │ 168  │ ×0.700   │
+   └──────────┴────────────┴─────────┴──────┴──────────┘
+   档内设计值 = 物理目标 ÷ 缩放系数。 */
+
+/* circle480（S5 240dp，×1.000）：圆底安全区 padding-bottom 130px ——
+   内容底 350 处弦宽 2×√(240²−110²) ≈ 426.6 ≥ 卡片 420，左右各余 3.3px，最后一张完整显示；
+   不与悬浮按钮重叠（按钮顶 391 > 内容底 350，间隙 41px） */
+@media (shape: circle) and (min-width: 236) {
   .code-list {
-    height: 348px;
     padding-bottom: 130px;
   }
 }
 
-/* 方屏/矩形屏(shape:rect)：显式写回默认，保持基础样式（padding-bottom 96px 已含按钮占位） */
-@media (shape: rect) {
-  .page {
-    padding: 0px 36px;
+/* circle466（S3 233dp，×0.971）：字号/行高沿用基础档（等比同步，无需逐项重设）；
+   仅放大圆底安全区：半径 233，130px 时物理 126.2、内容底 339.8 处弦宽 414.1
+   比卡片 407.7 只余 3px/边，故取 140px（物理 135.9）：内容底 330.1，
+   弦宽 2×√(233²−97.1²) ≈ 423.6 ≥ 407.7，左右各余约 8px，完整不裁切 */
+@media (shape: circle) and (max-width: 236) {
+  .code-list {
+    padding-bottom: 140px;
+  }
+}
+
+/* rect432（RW5/RW6 216dp，×0.900）：方表设计 —— 保留「大码字 + 元信息」双行卡片，圆角适中。
+   几何核算（物理值 = 设计值 × 0.900）：
+   垂直：时钟 45.9 + 返回 44.1 + 计数 37.8 = 127.8，列表 386.1 → 合计 513.9 ✓（屏高 514）；
+   卡片 399.6×102.6（padding 上下 14.4/左右 21.6，圆角 26.1）：
+   主行 73.8 = 102.6 − 14.4×2；内容 = 码 44.1 + 1.8 + 元信息 22.5 = 68.4 ≤ 73.8 ✓ 余 5.4、
+   完成按钮（27.9+8.1×2）= 44.1 ≤ 73.8 ✓；
+   一屏（可视 386.1，卡片组 102.6+5.4 = 108）：3 张完整 + 第 4 张露出 386.1 − 324 = 62.1（≈57%） */
+@media (shape: rect) and (min-width: 192) {
+  .clock-bar {
+    display: none;
+  }
+  .top-time {
+    display: none;
+  }
+  .back-bar {
+    display: none;
+  }
+  .nav-bar {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    height: 80px;
+    padding-left: 34px;
+    padding-right: 34px;
+  }
+  .nav-left {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-title {
+    font-size: 36px;
+    margin-left: 6px;
+    line-height: 44px;
+    margin-top: 4px;
+  }
+  .nav-time {
+    font-size: 28px;
+    margin-left: 14px;
+  }
+  .nav-back {
+    font-size: 42px;
+    color: #ffffff;
+    margin-right: 6px;
+    line-height: 44px;
+  }
+  /* 返回按钮（手环/方表思路）：‹ 圆形字符按钮（深灰圆底），与标题同行靠左（见 nav-bar 单行导航），
+     不再与标题并排居中（圆表思路） */
+  .back-btn {
+    display: none;
+  }
+  .page-title {
+    margin-left: 0px;
+    margin-top: 4px;
+    max-width: 222px;
+    font-size: 36px;
+    line-height: 49px;
+    height: 49px;
+  }
+  .count-bar {
+    height: 42px;
+  }
+  .count-text {
+    font-size: 21px;
+  }
+  .empty-main {
+    font-size: 33px;
+  }
+  .empty-sub {
+    font-size: 27px;
+    margin-top: 18px;
+  }
+  .code-list {
+    height: 449px;
+    padding-bottom: 107px;
+  }
+  .code-item {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .code-card {
+    width: 444px;
+    height: 114px;
+    padding: 16px 24px;
+    margin-bottom: 6px;
+    border-radius: 29px;
+  }
+  .code-text {
+    font-size: 40px;
+    line-height: 49px;
+  }
+  .code-meta {
+    font-size: 24px;
+    line-height: 25px;
+    margin-top: 2px;
+  }
+  .done-btn {
+    font-size: 24px;
+    line-height: 31px;
+    padding: 9px 16px;
+    margin-left: 9px;
+  }
+  .btn-wrap {
+    bottom: 27px;
+  }
+  .all-done-btn {
+    height: 72px;
+    padding: 0 44px;
+    border-radius: 44px;
+  }
+  .all-done-text {
+    font-size: 29px;
+    line-height: 49px;
+  }
+}
+
+/* rect336（8Pro/9Pro/10Pro 168dp，×0.700）：手环设计（竖窄屏）—— 返回/标题加大贴边、
+   卡片全宽大圆角（非 480 档缩放）。
+   几何核算（物理值 = 设计值 × 0.700）：
+   垂直：时钟 44.1 + 返回 44.1 + 计数 35.7 = 123.9，列表 356.3 → 合计 480.2 ✓（屏高 480）；
+   卡片 308×102.2（padding 上下 13.3/左右 20.3，圆角 30.1）：
+   主行 75.6 = 102.2 − 13.3×2；内容 = 码 42.0 + 2.1 + 元信息 21.7 = 65.8 ≤ 75.6 ✓ 余 9.8、
+   完成按钮（23.8+6.3×2）= 36.4 ≤ 75.6 ✓；
+   一屏（可视 356.3，卡片组 102.2+4.9 ≈ 107.1）：3 张完整 + 第 4 张露出 356.3 − 321.3 = 35.0（≈33%） */
+@media (shape: rect) and (max-width: 192) {
+  .clock-bar {
+    display: none;
+  }
+  .top-time {
+    display: none;
+  }
+  .back-bar {
+    display: none;
+  }
+  .nav-bar {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    height: 103px;
+    padding-left: 43px;
+    padding-right: 43px;
+  }
+  .nav-left {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+  .nav-title {
+    font-size: 36px;
+    margin-left: 6px;
+    line-height: 56px;
+    margin-top: 5px;
+  }
+  .nav-time {
+    font-size: 34px;
+    margin-left: 14px;
+  }
+  .nav-back {
+    font-size: 54px;
+    color: #ffffff;
+    margin-right: 8px;
+    line-height: 56px;
+  }
+  .back-btn {
+    display: none;
+  }
+  .page-title {
+    margin-left: 0px;
+    margin-top: 5px;
+    max-width: 214px;
+    font-size: 46px;
+    line-height: 63px;
+    height: 63px;
+  }
+  .count-bar {
+    height: 51px;
+  }
+  .count-text {
+    font-size: 26px;
+  }
+  .empty-main {
+    font-size: 37px;
+  }
+  .empty-sub {
+    font-size: 29px;
+    margin-top: 20px;
+  }
+  .code-list {
+    height: 532px;
+    padding-bottom: 137px;
+  }
+  .code-item {
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+  .code-card {
+    width: 440px;
+    height: 146px;
+    padding: 19px 29px;
+    margin-bottom: 7px;
+    border-radius: 43px;
+  }
+  .code-text {
+    font-size: 47px;
+    line-height: 60px;
+  }
+  .code-meta {
+    font-size: 30px;
+    line-height: 31px;
+    margin-top: 3px;
+  }
+  .done-btn {
+    font-size: 26px;
+    line-height: 34px;
+    padding: 9px 16px;
+    margin-left: 9px;
+  }
+  .btn-wrap {
+    bottom: 34px;
+  }
+  .all-done-btn {
+    height: 92px;
+    padding: 0 56px;
+    border-radius: 56px;
+  }
+  .all-done-text {
+    font-size: 37px;
+    line-height: 62px;
   }
 }
 
@@ -292,26 +576,38 @@
    page-in：进入动画，右侧滑入 48px + 透明度 0→1（0.25s ease-out）
    page-out：退出动画，反向滑出（透明度 1→0 + 右移 48px，0.22s ease-in） */
 @keyframes page-in {
-  from { opacity: 0; transform: translateX(48px); }
-  to { opacity: 1; transform: translateX(0px); }
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0px);
+  }
 }
 
 @keyframes page-out {
-  from { opacity: 1; transform: translateX(0px); }
-  to { opacity: 0; transform: translateX(48px); }
+  from {
+    opacity: 1;
+    transform: translateX(0px);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(48px);
+  }
 }
 </style>
 
 <script>
-import router from '@system.router'
+import router from "@system.router"
 
 export default {
   private: {
-    groupId: '',
-    pageTitle: '',
-    countText: '',
+    groupId: "",
+    pageTitle: "",
+    countText: "",
     items: [],
-    clockText: '',
+    clockText: "",
     clockTimerId: null,
     watcherId: null,
     lastVersion: -1,
@@ -323,9 +619,10 @@ export default {
 
   onInit() {
     const params = router.getParams()
-    this.groupId = (params && params.groupId !== undefined && params.groupId !== null)
-      ? String(params.groupId)
-      : ''
+    this.groupId =
+      params && params.groupId !== undefined && params.groupId !== null
+        ? String(params.groupId)
+        : ""
   },
 
   onShow() {
@@ -353,44 +650,55 @@ export default {
 
   loadGroup() {
     const s = this.$app.$def.syncState
-    const orders = (s && s.snapshot) ? (s.snapshot.payload || []) : []
+    const orders = s && s.snapshot ? s.snapshot.payload || [] : []
     const groupId = this.groupId
     const items = []
     let firstOrder = null
     orders.forEach(function (order) {
       if (!order || !groupId || String(order.groupId) !== groupId) return
       if (!firstOrder) firstOrder = order
-      const typeText = order.orderType === '快递' ? '取件码' : '取餐码'
+      const typeText = order.orderType === "快递" ? "取件码" : "取餐码"
       const timeText = this.formatTime(order.createdAt)
       items.push({
-        itemId: order.orderId || ('code-' + items.length),
+        itemId: order.orderId || "code-" + items.length,
         orderId: order.orderId,
-        code: order.code || '',
+        code: order.code || "",
         hasQr: !!order.qrCodeData,
-        metaText: timeText ? (typeText + ' · ' + timeText) : typeText
+        metaText: timeText ? typeText + " · " + timeText : typeText
       })
     }, this)
     this.items = items
     const firstTypeText = firstOrder
-      ? (firstOrder.orderType === '快递' ? '取件码' : '取餐码')
-      : '取件码'
-    this.pageTitle = firstOrder
-      ? (firstOrder.brandName || firstTypeText)
-      : ''
-    this.countText = '共 ' + items.length + ' 个' + firstTypeText
+      ? firstOrder.orderType === "快递"
+        ? "取件码"
+        : "取餐码"
+      : "取件码"
+    this.pageTitle = firstOrder ? firstOrder.brandName || firstTypeText : ""
+    this.countText = "共 " + items.length + " 个" + firstTypeText
     this.lastVersion = s ? s.syncVersion : this.lastVersion
   },
 
   // 毫秒时间戳 → YYYY-MM-DD HH:mm（手动补零；环境 Date 不可用或解析失败时降级显示时间戳前 10 位）
   formatTime(ts) {
-    if (!ts) return ''
+    if (!ts) return ""
     try {
-      if (typeof Date !== 'undefined' && typeof Date.prototype.getFullYear === 'function') {
+      if (typeof Date !== "undefined" && typeof Date.prototype.getFullYear === "function") {
         const d = new Date(ts)
         if (!isNaN(d.getTime())) {
-          const pad = function (n) { return (n < 10 ? '0' : '') + n }
-          return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-            ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+          const pad = function (n) {
+            return (n < 10 ? "0" : "") + n
+          }
+          return (
+            d.getFullYear() +
+            "-" +
+            pad(d.getMonth() + 1) +
+            "-" +
+            pad(d.getDate()) +
+            " " +
+            pad(d.getHours()) +
+            ":" +
+            pad(d.getMinutes())
+          )
         }
       }
     } catch (e) {
@@ -420,16 +728,16 @@ export default {
   updateClock() {
     try {
       const d = new Date()
-      if (typeof d.getHours !== 'function' || isNaN(d.getTime())) {
-        this.clockText = ''
+      if (typeof d.getHours !== "function" || isNaN(d.getTime())) {
+        this.clockText = ""
         return
       }
       const pad = function (n) {
-        return (n < 10 ? '0' : '') + n
+        return (n < 10 ? "0" : "") + n
       }
-      this.clockText = pad(d.getHours()) + ':' + pad(d.getMinutes())
+      this.clockText = pad(d.getHours()) + ":" + pad(d.getMinutes())
     } catch (e) {
-      this.clockText = ''
+      this.clockText = ""
     }
   },
 
@@ -460,8 +768,8 @@ export default {
     const item = this.items[idx]
     if (!item || !item.hasQr) return
     router.push({
-      uri: this.$app.$def.getDeviceRoute('detail'),
-      params: { orderId: item.orderId }
+      uri: this.$app.$def.getDeviceRoute("detail"),
+      params: {orderId: item.orderId}
     })
   },
 

@@ -96,6 +96,7 @@ class SmsRecognitionReceiver : BroadcastReceiver() {
                 ) ?: continue
                 orderDao.insert(order)
                 insertedOrders.add(order)
+                com.Badnng.moe.wearable.WearableSyncManager.notifyOrderSaved(context, order)
             }
 
             if (insertedOrders.isEmpty()) return@withContext

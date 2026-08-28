@@ -2,6 +2,8 @@ package com.Badnng.moe.ui.screen.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableIntStateOf
 import android.os.Build
 import android.widget.ImageView
 import android.widget.Toast
@@ -117,6 +119,25 @@ fun AboutSettingsContent(
     var versionTapCount by remember { mutableIntStateOf(0) }
     var showPrivacyPolicy by remember { mutableStateOf(false) }
     var privacyAccepted by remember { mutableStateOf(PrivacyConsent.isAccepted(prefs)) }
+    /** 隐私/联网更新偏好变化时自增，驱动 networkUpdateEnabled 及时重算，让检查更新按钮立即显示。 */
+    var privacyPrefsRevision by remember { mutableIntStateOf(0) }
+
+    androidx.compose.runtime.DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == PrivacyConsent.ACCEPTED_KEY ||
+                key == PrivacyConsent.NETWORK_UPDATE_ENABLED_KEY
+            ) {
+                privacyAccepted = PrivacyConsent.isAccepted(prefs)
+                privacyPrefsRevision++
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    // 显式读取 revision，使隐私/联网更新偏好变化时触发重组
+    @Suppress("UNUSED_EXPRESSION")
+    privacyPrefsRevision
 
     val coroutineScope = rememberCoroutineScope()
     val notificationHelper = remember(appContext) { NotificationHelper(appContext) }

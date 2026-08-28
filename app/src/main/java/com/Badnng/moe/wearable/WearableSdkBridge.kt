@@ -31,8 +31,17 @@ interface WearableSdkBridge {
     /** 官方 AAR 已加载且 Mi Fitness XMS service 可解析。 */
     val isSdkAvailable: Boolean
 
-    /** 是否已授权所需权限（仅在 SDK 集成且节点存在时有意义）。 */
+    /** 通知权限（NOTIFY）是否已授予。不依赖手表端快应用，优先申请。 */
+    val isNotifyPermissionGranted: Boolean
+        get() = false
+
+    /** 设备管理权限（DEVICE_MANAGER：状态查询/订阅 + 消息通道）是否已授予。依赖手表端快应用已安装。 */
+    val isDeviceManagerPermissionGranted: Boolean
+        get() = false
+
+    /** 是否已授权所需权限（通知 + 设备管理）。 */
     val isPermissionGranted: Boolean
+        get() = isNotifyPermissionGranted && isDeviceManagerPermissionGranted
 
     /**
      * 消息监听是否已注册。供上层「穿戴通道自愈轮询」判断监听是否丢失；
@@ -56,8 +65,25 @@ interface WearableSdkBridge {
      */
     fun findNodeId(context: Context): String?
 
-    /** 请求节点权限（DEVICE_MANAGER / NOTIFY）。成功后返回 true。 */
-    fun requestPermission(context: Context): Boolean
+    /**
+     * 请求通知权限（NOTIFY）。
+     * 该权限不依赖手表端快应用，应在设备管理权限之前申请。
+     * @return 是否授予成功。
+     */
+    fun requestNotifyPermission(context: Context): Boolean
+
+    /**
+     * 请求设备管理权限（DEVICE_MANAGER）。
+     * 该权限依赖手表端快应用（rpk）已安装，未安装时 Mi Fitness 会返回 “app not installed”。
+     * @return 是否授予成功。
+     */
+    fun requestDeviceManagerPermission(context: Context): Boolean
+
+    /**
+     * 查询手表端对应快应用（rpk）是否已安装。
+     * @return true/false；null 表示服务未返回有效结果。
+     */
+    fun isWatchAppInstalled(context: Context, nodeId: String): Boolean?
 
     /**
      * 向手表发送字节消息。
@@ -107,7 +133,9 @@ class UnavailableWearableSdkBridge : WearableSdkBridge {
 
     override val isSdkAvailable: Boolean = false
 
-    override val isPermissionGranted: Boolean = false
+    override val isNotifyPermissionGranted: Boolean = false
+
+    override val isDeviceManagerPermissionGranted: Boolean = false
 
     override val isConnectionListenerRegistered: Boolean = false
 
@@ -116,10 +144,17 @@ class UnavailableWearableSdkBridge : WearableSdkBridge {
         return null
     }
 
-    override fun requestPermission(context: Context): Boolean {
-        log("Mi Fitness 服务未集成，无法请求权限")
+    override fun requestNotifyPermission(context: Context): Boolean {
+        log("Mi Fitness 服务未集成，无法请求通知权限")
         return false
     }
+
+    override fun requestDeviceManagerPermission(context: Context): Boolean {
+        log("Mi Fitness 服务未集成，无法请求设备管理权限")
+        return false
+    }
+
+    override fun isWatchAppInstalled(context: Context, nodeId: String): Boolean? = null
 
     override fun sendMessage(context: Context, bytes: ByteArray): Boolean {
         log("Mi Fitness 服务未集成，跳过消息发送")
