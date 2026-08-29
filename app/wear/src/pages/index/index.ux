@@ -53,7 +53,7 @@
           <text class="empty-main" if="{{emptyTitle}}">{{ emptyTitle }}</text>
           <text class="empty-sub" if="{{emptySub}}">{{ emptySub }}</text>
         </div>
-        <list if="{{displayItems.length > 0}}" class="order-list" onscroll="onListScroll" onscrollend="onListScrollEnd">
+        <list if="{{displayItems.length > 0}}" class="order-list">
           <list-item type="order" for="{{displayItems}}" tid="itemId" class="order-item">
             <div if="{{!$item.isGroup}}" class="order-card">
               <!-- 主行：左圆图标 + 信息列 +（无二维码时）完成按钮。
@@ -105,7 +105,7 @@
         <div if="{{completedDisplayItems.length === 0}}" class="empty">
           <text class="empty-main">暂无已取订单</text>
         </div>
-        <list if="{{completedDisplayItems.length > 0}}" class="order-list" onscroll="onListScroll" onscrollend="onListScrollEnd">
+        <list if="{{completedDisplayItems.length > 0}}" class="order-list">
           <list-item
             type="completed"
             for="{{completedDisplayItems}}"
@@ -147,14 +147,14 @@
       </div>
     </swiper>
 
-    <!-- 「关于」底部悬浮胶囊按钮（指示器之上）：三款设备统一；滑动列表时淡出（pillHidden）、停止后淡入 -->
+    <!-- 「关于」底部悬浮胶囊按钮（指示器之上）：三款设备统一，常驻显示 -->
     <!-- 页指示器（最底一行，位于胶囊之下）：swiper 禁用原生 indicator，由 change 事件驱动（样式对齐原生观感） -->
     <div class="swiper-dots">
       <div class="dot{{currentPage === 0 ? ' dot-on' : ''}}"></div>
       <div class="dot{{currentPage === 1 ? ' dot-on' : ''}}"></div>
     </div>
 
-    <div class="about-pill-row{{pillHidden ? ' pill-hidden' : ''}}">
+    <div class="about-pill-row">
       <div class="about-pill" onclick="onAbout">
         <text class="about-pill-text">关于</text>
       </div>
@@ -315,20 +315,13 @@
   indicator-size: 8px;
 }
 
-/* 「关于」底部悬浮胶囊按钮：位于 swiper 页指示器下方、页面最底，流式布局（点击热区可靠）；
-   滑动列表时淡出（.pill-hidden）、停止后淡入（transition 0.2s）；
+/* 「关于」底部悬浮胶囊按钮：位于 swiper 页指示器下方、页面最底，流式布局（点击热区可靠），常驻显示；
    各档尺寸见文末 rect432 / rect336 分档块（基础档 = 圆表 480 / 466 等比值） */
 .about-pill-row {
   flex-direction: row;
   justify-content: center;
   align-items: center;
   height: 79px;
-  transition-property: opacity;
-  transition-duration: 0.2s;
-  transition-timing-function: ease-out;
-}
-.pill-hidden {
-  opacity: 0;
 }
 .about-pill {
   flex-direction: row;
@@ -336,7 +329,7 @@
   align-items: center;
   height: 65px;
   padding: 0 40px;
-  background-color: #252525;
+  background-color: #0a84ff;
   border-radius: 40px;
 }
 .about-pill-text {
@@ -1034,10 +1027,7 @@ export default {
     // 启动遮罩：与 welcome 开屏无缝衔接（同款黑底+logo 居中），onReady 后播淡出移除
     showSplash: true,
     splashLeaving: false,
-    splashHideTimerId: null,
-    // 「关于」底部胶囊：滑动列表时淡出、停止后延迟淡入
-    pillHidden: false,
-    pillShowTimerId: null
+    splashHideTimerId: null
   },
 
   onInit() {
@@ -1081,11 +1071,6 @@ export default {
     if (this.swipeLockTimerId) {
       clearTimeout(this.swipeLockTimerId)
       this.swipeLockTimerId = null
-    }
-    // 清理「关于」胶囊淡回定时器
-    if (this.pillShowTimerId) {
-      clearTimeout(this.pillShowTimerId)
-      this.pillShowTimerId = null
     }
     this.orders = []
     this.displayOrders = []
@@ -1251,8 +1236,7 @@ export default {
     this.currentPage = idx
   },
 
-  // 滑动期间暂停列表刷新，结束后由 watcher 在下一轮自动补拉，避免切换时重建列表卡顿；
-  // 同时让「关于」胶囊淡出（onSwipeEnd 后延迟淡回）
+  // 滑动期间暂停列表刷新，结束后由 watcher 在下一轮自动补拉，避免切换时重建列表卡顿
   onSwipeStart() {
     this.swiping = true
     if (this.swipeLockTimerId) clearTimeout(this.swipeLockTimerId)
@@ -1269,28 +1253,6 @@ export default {
       this.swipeLockTimerId = null
     }
     this.swiping = false
-  },
-
-  // 上下列表滚动（scrollState=1 用户手势中）：胶囊淡出；scrollend 时延迟淡回
-  onListScroll(e) {
-    const state = e && e.scrollState !== undefined ? e.scrollState : 0
-    if (state === 1) {
-      this.pillHidden = true
-    }
-  },
-
-  onListScrollEnd() {
-    this.schedulePillShow()
-  },
-
-  // 列表滚动结束后延迟淡回「关于」胶囊（onListScrollEnd 调用；复用同一 timer 防抖）
-  schedulePillShow() {
-    if (this.pillShowTimerId) clearTimeout(this.pillShowTimerId)
-    let self = this
-    this.pillShowTimerId = setTimeout(function () {
-      self.pillShowTimerId = null
-      self.pillHidden = false
-    }, 300)
   },
 
   // 组卡片点击：进入本组多取件码二级页（组内全部取件码可见；含二维码的码可再进单码详情页）
