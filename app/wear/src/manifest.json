@@ -1,8 +1,8 @@
 {
   "package": "com.Badnng.moe",
   "name": "澎湃记",
-  "versionName": "26.8.29-Watch",
-  "versionCode": 20260829,
+  "versionName": "26.9.13-Watch",
+  "versionCode": 20260913,
   "minPlatformVersion": 1000,
   "icon": "/common/logo.png",
   "deviceTypeList": ["watch"],

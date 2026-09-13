@@ -10,20 +10,27 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,13 +43,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.helper.BrandIconResolver
-import com.Badnng.moe.recognition.RecognitionCorrectionDetector
 import com.Badnng.moe.recognition.RecognitionInputType
 import com.Badnng.moe.rules.*
 import com.Badnng.moe.ui.LocalAppUi
@@ -54,20 +71,32 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 import java.util.UUID
+import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
+import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
+import top.yukonga.miuix.kmp.basic.Text as MiuixText
+import top.yukonga.miuix.kmp.basic.TextButton as MiuixTextButton
+import top.yukonga.miuix.kmp.basic.Button as MiuixButton
+import top.yukonga.miuix.kmp.basic.ButtonDefaults as MiuixButtonDefaults
+import top.yukonga.miuix.kmp.basic.TextField as MiuixTextField
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Photos
+import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.squircle.squircleSurface
+import top.yukonga.miuix.kmp.utils.MiuixIndication
 
 sealed interface SimpleRuleCenterPage {
     data object Root : SimpleRuleCenterPage
+    data class WordCategory(val type: WordType) : SimpleRuleCenterPage
     data class Category(val category: SimpleRuleCategory) : SimpleRuleCenterPage
     data class CreateBrand(val category: SimpleRuleCategory) : SimpleRuleCenterPage
     data class Brand(val brandId: String) : SimpleRuleCenterPage
     data class CreateTemplate(val brandId: String) : SimpleRuleCenterPage
     data class Template(val brandId: String, val templateId: String) : SimpleRuleCenterPage
     data object BlockedWords : SimpleRuleCenterPage
+    data object CustomLocations : SimpleRuleCenterPage
     data object CustomIcons : SimpleRuleCenterPage
 }
 
@@ -101,6 +130,7 @@ fun rememberSimpleRuleCenterState(
 
 fun SimpleRuleCenterPage.title(pack: SimpleRulePack): String = when (this) {
     SimpleRuleCenterPage.Root -> "规则"
+    is SimpleRuleCenterPage.WordCategory -> type.displayName
     is SimpleRuleCenterPage.Category -> category.displayName
     is SimpleRuleCenterPage.CreateBrand -> "添加${category.displayName}品牌"
     is SimpleRuleCenterPage.Brand -> pack.brands.firstOrNull { it.id == brandId }?.name ?: "品牌规则"
@@ -108,6 +138,7 @@ fun SimpleRuleCenterPage.title(pack: SimpleRulePack): String = when (this) {
     is SimpleRuleCenterPage.Template -> pack.brands.firstOrNull { it.id == brandId }
         ?.templates?.firstOrNull { it.id == templateId }?.name ?: "识别模板"
     SimpleRuleCenterPage.BlockedWords -> "自定义屏蔽词"
+    SimpleRuleCenterPage.CustomLocations -> "自定义取件地点"
     SimpleRuleCenterPage.CustomIcons -> "自定义图标"
 }
 
@@ -120,6 +151,7 @@ fun SimpleRuleCenterContent(
     onOpenPage: ((SimpleRuleCenterPage) -> Unit)? = null,
     onReplacePage: ((SimpleRuleCenterPage) -> Unit)? = null,
     onBackPage: (() -> Unit)? = null,
+    pageOverride: SimpleRuleCenterPage? = null,
 ) {
     val context = LocalContext.current
     val appUi = LocalAppUi.current
@@ -141,11 +173,14 @@ fun SimpleRuleCenterContent(
         onBackPage?.invoke() ?: state.back()
     }
     val repository = remember { SimpleRuleRepository(context.applicationContext) }
+    val wordRepo = remember { PickupWordRuleRepository(context.applicationContext) }
+    var wordPack by remember { mutableStateOf(PickupWordRulePack.empty()) }
     var pack by remember { mutableStateOf(SimpleRulePack.empty()) }
     var loading by remember { mutableStateOf(true) }
     var deletingRuleKey by remember { mutableStateOf<String?>(null) }
     var creatingRuleKey by remember { mutableStateOf<String?>(null) }
     var pendingSaveJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var showBuiltInRestoreConfirm by remember { mutableStateOf(false) }
 
     fun save(newPack: SimpleRulePack) {
         // 先更新界面，再取消上一次待写入任务并重新防抖，避免旧快照覆盖新规则。
@@ -205,6 +240,7 @@ fun SimpleRuleCenterContent(
 
     LaunchedEffect(Unit) {
         pack = repository.load()
+        wordPack = wordRepo.load()
         state.updateTitle(state.page.title(pack))
         loading = false
     }
@@ -217,12 +253,12 @@ fun SimpleRuleCenterContent(
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("无法读取文件") }
-                    .fold(onSuccess = { repository.importJson(it) }, onFailure = { Result.failure(it) })
+                    .fold(onSuccess = { wordRepo.importJson(it) }, onFailure = { Result.failure(it) })
             }
             result.onSuccess {
-                pack = it
+                wordPack = it
                 state.reset()
-                Toast.makeText(context, "已导入 ${it.brands.size} 个品牌规则", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "已导入词汇规则", Toast.LENGTH_SHORT).show()
             }.onFailure {
                 Toast.makeText(context, "导入失败：${it.message}", Toast.LENGTH_LONG).show()
             }
@@ -233,7 +269,7 @@ fun SimpleRuleCenterContent(
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(repository.exportJson(pack)) }
+                    context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(wordRepo.exportJson(wordPack)) }
                         ?: error("无法写入文件")
                 }
             }.onSuccess { Toast.makeText(context, "规则已导出", Toast.LENGTH_SHORT).show() }
@@ -248,7 +284,69 @@ fun SimpleRuleCenterContent(
         return
     }
 
-    when (val page = state.page) {
+    if (showBuiltInRestoreConfirm) {
+        val confirmRestore: () -> Unit = {
+            performHaptic()
+            showBuiltInRestoreConfirm = false
+            // 规则写盘由 importBuiltInPack 自己负责，取消在途的防抖保存，
+            // 否则它可能用旧快照覆盖刚追加进来的内置品牌。
+            pendingSaveJob?.cancel()
+            scope.launch {
+                repository.importBuiltInPack()
+                    .onSuccess { restored ->
+                        pack = restored
+                        Toast.makeText(
+                            context,
+                            "已追加内置识别规则，共 ${restored.brands.size} 个品牌",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                    .onFailure {
+                        Toast.makeText(context, "追加失败：${it.message}", Toast.LENGTH_LONG).show()
+                    }
+            }
+        }
+        if (isMiuix) {
+            top.yukonga.miuix.kmp.overlay.OverlayDialog(
+                title = "追加内置识别规则",
+                summary = "把内置的快递、餐食、饮品取件码模板追加到当前规则，短信、通知、划词都能用；你已建的品牌和模板会原样保留，不会被覆盖。",
+                show = true,
+                onDismissRequest = { showBuiltInRestoreConfirm = false },
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    MiuixTextButton(
+                        text = "取消",
+                        onClick = { showBuiltInRestoreConfirm = false },
+                        modifier = Modifier.weight(1f),
+                    )
+                    MiuixButton(
+                        onClick = confirmRestore,
+                        modifier = Modifier.weight(1f),
+                        colors = MiuixButtonDefaults.buttonColors(),
+                    ) {
+                        MiuixText("恢复", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        } else {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showBuiltInRestoreConfirm = false },
+                title = { Text("追加内置识别规则") },
+                text = { Text("把内置的快递、餐食、饮品取件码模板追加到当前规则，短信、通知、划词都能用；你已建的品牌和模板会原样保留，不会被覆盖。") },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = confirmRestore) { Text("追加") }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { showBuiltInRestoreConfirm = false }) { Text("取消") }
+                },
+            )
+        }
+    }
+
+    when (val page = pageOverride ?: state.page) {
         SimpleRuleCenterPage.Root -> LazyColumn(
             modifier = modifier.fillMaxSize(),
             contentPadding = contentPadding,
@@ -257,13 +355,13 @@ fun SimpleRuleCenterContent(
             item {
                 RuleSectionTitle("识别规则", isMiuix)
                 appUi.settingsGroup(if (isMiuix) Modifier else Modifier.padding(horizontal = 12.dp)) {
-                    SimpleRuleCategory.entries.forEachIndexed { index, category ->
-                        val count = pack.brands.count { it.category == category }
+                    WordType.entries.forEachIndexed { index, type ->
+                        val count = wordPack.enabledWords(type).size
                         appUi.settingsGroupItem(
-                            category.displayName,
-                            if (count == 0) "暂无品牌规则" else "$count 个品牌",
-                            groupPosition(index, SimpleRuleCategory.entries.size),
-                            { performHaptic(); openPage(SimpleRuleCenterPage.Category(category)) },
+                            type.displayName,
+                            if (count == 0) "暂无词汇（点击添加）" else "$count 个定位词",
+                            groupPosition(index, WordType.entries.size),
+                            { performHaptic(); openPage(SimpleRuleCenterPage.WordCategory(type)) },
                             null,
                         )
                     }
@@ -277,6 +375,15 @@ fun SimpleRuleCenterContent(
                         "为识别结果设置品牌图标",
                         GroupPosition.First,
                         { performHaptic(); openPage(SimpleRuleCenterPage.CustomIcons) },
+                        null,
+                    )
+                    val customLocationsText = prefs.getString("custom_pickup_locations", "") ?: ""
+                    val customLocationsCount = customLocationsText.split(",").map { it.trim() }.filter { it.isNotBlank() }.size
+                    appUi.settingsGroupItem(
+                        "自定义取件地点",
+                        if (customLocationsCount == 0) "未设置" else "$customLocationsCount 个关键词",
+                        GroupPosition.Middle,
+                        { performHaptic(); openPage(SimpleRuleCenterPage.CustomLocations) },
                         null,
                     )
                     val blockedCount = rememberBlockedWordsEditorState().words.size
@@ -294,22 +401,38 @@ fun SimpleRuleCenterContent(
                 appUi.settingsGroup(if (isMiuix) Modifier else Modifier.padding(horizontal = 12.dp)) {
                     appUi.settingsGroupItem(
                         "导入规则",
-                        "仅支持新的完整规则包 v${SimpleRulePack.SCHEMA_VERSION}",
+                        "导入词汇规则包（餐食/快递定位词）",
                         GroupPosition.First,
                         { performHaptic(); importLauncher.launch(arrayOf("application/json", "text/plain")) },
                         if (isMiuix) null else ({ Icon(Icons.Default.FileUpload, contentDescription = null) }),
                     )
                     appUi.settingsGroupItem(
                         "导出规则",
-                        "导出后可交给应用内置",
-                        GroupPosition.Last,
-                        { performHaptic(); exportLauncher.launch("澎湃记识别规则-v${SimpleRulePack.SCHEMA_VERSION}.json") },
+                        "导出词汇规则（三类型词汇 + 品牌表）",
+                        GroupPosition.Middle,
+                        { performHaptic(); exportLauncher.launch("澎湃记词汇规则-v${PickupWordRulePack.SCHEMA_VERSION}.json") },
                         if (isMiuix) null else ({ Icon(Icons.Default.FileDownload, contentDescription = null) }),
+                    )
+                    appUi.settingsGroupItem(
+                        "追加内置识别规则",
+                        "补齐快递、餐食、饮品的取件码模板（保留你已建的品牌）",
+                        GroupPosition.Last,
+                        { performHaptic(); showBuiltInRestoreConfirm = true },
+                        if (isMiuix) null else ({ Icon(Icons.Default.Restore, contentDescription = null) }),
                     )
                 }
             }
             item { Spacer(Modifier.height(12.dp)) }
         }
+
+        is SimpleRuleCenterPage.WordCategory -> WordCategoryPage(
+            type = page.type,
+            isMiuix = isMiuix,
+            contentPadding = contentPadding,
+            performHaptic = performHaptic,
+            onBack = { backPage() },
+            modifier = modifier,
+        )
 
         is SimpleRuleCenterPage.Category -> CategoryPage(
             category = page.category,
@@ -408,6 +531,13 @@ fun SimpleRuleCenterContent(
                 }
             }
         }
+
+        SimpleRuleCenterPage.CustomLocations -> CustomLocationsPage(
+            isMiuix = isMiuix,
+            contentPadding = contentPadding,
+            performHaptic = performHaptic,
+            modifier = modifier,
+        )
 
         SimpleRuleCenterPage.CustomIcons -> CustomIconsPage(
             isMiuix = isMiuix,
@@ -729,6 +859,33 @@ private fun TemplatePage(
 }
 
 @Composable
+private fun CustomLocationsPage(
+    isMiuix: Boolean,
+    contentPadding: PaddingValues,
+    performHaptic: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val state = rememberCustomPickupLocationsEditorState()
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+        verticalArrangement = if (isMiuix) Arrangement.Top else Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            RuleSectionTitle("自定义取件地点", isMiuix)
+            Box(Modifier.padding(horizontal = 12.dp)) {
+                if (isMiuix) {
+                    MiuixCustomPickupLocationsEditor(state, performHaptic)
+                } else {
+                    Md3eCustomPickupLocationsEditor(state, performHaptic)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun CustomIconsPage(
     isMiuix: Boolean,
     contentPadding: PaddingValues,
@@ -753,7 +910,6 @@ private fun CustomIconsPage(
     LazyColumn(modifier.fillMaxSize(), contentPadding = contentPadding, verticalArrangement = if (isMiuix) Arrangement.Top else Arrangement.spacedBy(12.dp)) {
         item {
             RuleSectionTitle("图标规则", isMiuix)
-            RuleHelp("品牌名称包含对应关键词时使用该图标。多个关键词使用逗号分隔。", isMiuix, Modifier.padding(horizontal = 12.dp))
         }
         items(mappings.indices.toList(), key = { index -> "$index-${mappings[index].iconPath}" }) { index ->
             val mapping = mappings[index]
@@ -817,11 +973,20 @@ private fun CustomIconsPage(
             }
         }
         item {
-            Box(if (isMiuix) Modifier else Modifier.padding(horizontal = 12.dp)) {
-                LocalAppUi.current.primaryActionButton("添加图标规则", true) {
-                    performHaptic(); mappings = mappings + BrandIconResolver.IconMapping("", "")
-                    BrandIconResolver.saveCustomMappings(context, mappings)
+            Column {
+                Box(if (isMiuix) Modifier else Modifier.padding(horizontal = 12.dp)) {
+                    LocalAppUi.current.primaryActionButton("添加图标规则", true) {
+                        performHaptic(); mappings = mappings + BrandIconResolver.IconMapping("", "")
+                        BrandIconResolver.saveCustomMappings(context, mappings)
+                    }
                 }
+                RuleHelp(
+                    "品牌名称包含对应关键词时使用该图标。多个关键词使用逗号分隔。",
+                    isMiuix,
+                    Modifier
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 8.dp),
+                )
             }
         }
     }
@@ -929,840 +1094,260 @@ private fun SimpleRulePack.updateBrand(brand: SimpleBrandRule): SimpleRulePack =
     brands = brands.map { if (it.id == brand.id) brand else it },
 )
 
-
-
-
-
-
-
-
-
-
+/**
+ * 单个类型的词汇管理页（餐食定位词 / 快递定位词 / 辅助锚点词）。
+ * 交互与「自定义取件地点」一致：词汇显示为标签（chips），点击标签删除；
+ * 底部输入框 + 尾部添加按钮（回车 / 完成键同样添加），label 带数量统计。
+ * 识别时先判定页面类型（餐食/快递），再用对应类型词汇定位裁剪二次识别。
+ */
 @Composable
-private fun CorrectionSurface(
+private fun WordCategoryPage(
+    type: WordType,
     isMiuix: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
-    content: @Composable () -> Unit,
-) {
-    if (isMiuix) {
-        val colors = top.yukonga.miuix.kmp.basic.CardDefaults.defaultColors(
-            top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.surfaceContainer,
-        )
-        if (onClick == null) {
-            top.yukonga.miuix.kmp.basic.Card(
-                modifier = modifier,
-                colors = colors,
-                content = { content() },
-            )
-        } else {
-            top.yukonga.miuix.kmp.basic.Card(
-                modifier = modifier,
-                colors = colors,
-                onClick = onClick,
-                content = { content() },
-            )
-        }
-    } else {
-        androidx.compose.material3.Surface(
-            modifier = modifier.then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)),
-            shape = RoundedCornerShape(15.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            content = content,
-        )
-    }
-}
-
-@Composable
-fun RecognitionCorrectionRouteContent(
-    isMiuix: Boolean,
+    contentPadding: PaddingValues,
+    performHaptic: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenDraft: ((String) -> Unit)? = null,
-) {
-    val context = LocalContext.current
-    val orderViewModelFactory = remember(context) {
-        ViewModelProvider.AndroidViewModelFactory.getInstance(
-            context.applicationContext as android.app.Application,
-        )
-    }
-    val viewModel: com.Badnng.moe.viewmodel.OrderViewModel = viewModel(factory = orderViewModelFactory)
-    val drafts by viewModel.ruleCorrectionDrafts.collectAsStateWithLifecycle()
-    RecognitionCorrectionPage(
-        drafts = drafts,
-        isMiuix = isMiuix,
-        onBack = onBack,
-        onCorrectionApplied = viewModel::applyRuleCorrection,
-        onDelete = viewModel::deleteOrder,
-        modifier = modifier,
-        showTopBar = false,
-        onOpenDraft = onOpenDraft,
-    )
-}
-private fun correctionRuleSource(draft: com.Badnng.moe.data.db.OrderEntity): SimpleRuleSource =
-    if (draft.recognitionInputType == RecognitionInputType.TEXT.key) {
-        SimpleRuleSource.TEXT
-    } else {
-        SimpleRuleSource.IMAGE
-    }
-
-private data class CorrectionSaveResult(
-    val correctedOrders: List<com.Badnng.moe.data.db.OrderEntity>,
-    val remainingCodes: List<String>,
-)
-
-private fun buildCorrectedOrders(
-    draft: com.Badnng.moe.data.db.OrderEntity,
-    matches: List<SimpleRuleMatch>,
-): List<com.Badnng.moe.data.db.OrderEntity> {
-    val now = System.currentTimeMillis()
-    return matches.mapIndexed { index, matched ->
-        draft.copy(
-            id = UUID.randomUUID().toString(),
-            takeoutCode = matched.code,
-            pickupLocation = matched.location,
-            brandName = matched.brand,
-            orderType = matched.category.resultType,
-            needsRuleCorrection = false,
-            recognizedText = "纠正规则识别",
-            isCompleted = false,
-            completedAt = null,
-            createdAt = now + index,
-            groupId = null,
-        )
-    }
-}
-
-private data class CorrectionBrandSuggestion(
-    val brandName: String,
-    val keyword: String,
-    val category: SimpleRuleCategory,
-)
-
-private fun findCorrectionBrandSuggestion(lines: List<String>, targetLine: Int): CorrectionBrandSuggestion? {
-    if (lines.isEmpty() || targetLine !in lines.indices) return null
-    val forwardEnd = (targetLine + 4).coerceAtMost(lines.lastIndex)
-    val backwardStart = (targetLine - 4).coerceAtLeast(0)
-    val searchOrder = buildList {
-        addAll(targetLine..forwardEnd)
-        if (targetLine > backwardStart) addAll((targetLine - 1) downTo backwardStart)
-    }
-    for (lineIndex in searchOrder) {
-        val line = lines[lineIndex]
-        val hit = SimpleRuleRuntime.current().brands
-            .asSequence()
-            .filter { it.enabled }
-            .flatMap { brand ->
-                (brand.keywords + brand.name).asSequence()
-                    .map(String::trim)
-                    .filter(String::isNotBlank)
-                    .filter { line.contains(it, ignoreCase = true) }
-                    .map { keyword -> brand to keyword }
-            }
-            .maxByOrNull { (_, keyword) -> keyword.length }
-        if (hit != null) {
-            return CorrectionBrandSuggestion(hit.first.name, hit.second, hit.first.category)
-        }
-    }
-    return null
-}
-
-private fun correctionCodePlaceholder(code: String, digitsOnly: Boolean): String = when {
-    code.isBlank() -> "{{code}}"
-    digitsOnly && code.all(Char::isDigit) -> "{{code:digits:${code.length}}}"
-    else -> "{{code:alnum:${code.length}}}"
-}
-
-private fun findNearestKeywordLine(lines: List<String>, targetLine: Int, keyword: String): Int? {
-    if (keyword.isBlank() || targetLine !in lines.indices) return null
-    val forward = (targetLine..(targetLine + 4).coerceAtMost(lines.lastIndex))
-        .firstOrNull { lines[it].contains(keyword, ignoreCase = true) }
-    if (forward != null) return forward
-    return ((targetLine - 1) downTo (targetLine - 4).coerceAtLeast(0))
-        .firstOrNull { lines[it].contains(keyword, ignoreCase = true) }
-}
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-fun RecognitionCorrectionPage(
-    drafts: List<com.Badnng.moe.data.db.OrderEntity>,
-    isMiuix: Boolean,
-    onBack: () -> Unit,
-    onCorrectionApplied: (
-        draft: com.Badnng.moe.data.db.OrderEntity,
-        correctedOrders: List<com.Badnng.moe.data.db.OrderEntity>,
-        keepDraft: Boolean,
-    ) -> Unit,
-    onDelete: (com.Badnng.moe.data.db.OrderEntity) -> Unit,
-    modifier: Modifier = Modifier,
-    showTopBar: Boolean = true,
-    onOpenDraft: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val repository = remember { SimpleRuleRepository(context.applicationContext) }
-    val orderDao = remember { OrderDatabase.getDatabase(context.applicationContext).orderDao() }
-    val correctionHaptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    val correctionPrefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
-    val performCorrectionHaptic = {
-        if (correctionPrefs.getBoolean("haptic_enabled", true)) {
-            correctionHaptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-        }
-    }
-    var selectedDraft by remember { mutableStateOf<com.Badnng.moe.data.db.OrderEntity?>(null) }
-    var editorRevision by remember { mutableIntStateOf(0) }
-    var targetCorrectionCode by remember { mutableStateOf<String?>(null) }
-    var editorBackProgress by remember { mutableFloatStateOf(0f) }
-    var editorBackEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
-    val predictiveBackEnabled = correctionPrefs.getBoolean("predictive_back_enabled", true)
+    val repo = remember { PickupWordRuleRepository(context.applicationContext) }
+    var pack by remember { mutableStateOf(PickupWordRulePack.empty()) }
+    var loading by remember { mutableStateOf(true) }
+    var pendingSaveJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var newWord by remember { mutableStateOf("") }
 
-    LaunchedEffect(selectedDraft?.id) {
-        val draft = selectedDraft ?: run {
-            targetCorrectionCode = null
-            return@LaunchedEffect
-        }
-        val rawText = draft.fullText.orEmpty()
-        val source = correctionRuleSource(draft)
-        val recognizedCodes = SimpleRuleRuntime.recognizeCurrent(
-            rawText = rawText,
-            source = source,
-            sourcePackage = draft.sourcePackage,
-            qrData = draft.qrCodeData,
-        ).map { it.code } + orderDao.getRecognizedCodesByText(rawText)
-        targetCorrectionCode = RecognitionCorrectionDetector.findUnrecognizedCodes(rawText, recognizedCodes).firstOrNull()
-        editorRevision += 1
-    }
-
-    PredictiveBackHandler(enabled = onOpenDraft == null && predictiveBackEnabled && selectedDraft != null) { events: Flow<BackEventCompat> ->
-        try {
-            events.collect { event ->
-                editorBackProgress = event.progress
-                editorBackEdge = event.swipeEdge
-            }
-            selectedDraft = null
-        } catch (_: CancellationException) {
-            // 手势取消时保留编辑内容，只复位视觉进度。
-        } finally {
-            editorBackProgress = 0f
-        }
-    }
-    BackHandler(enabled = onOpenDraft == null && !predictiveBackEnabled && selectedDraft != null) {
-        selectedDraft = null
-    }
-
-    Column(modifier.fillMaxSize().background(if (isMiuix) top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.surface else MaterialTheme.colorScheme.background)) {
-        if (showTopBar) {
-            if (isMiuix) {
-                top.yukonga.miuix.kmp.basic.TopAppBar(
-                    title = if (selectedDraft == null) "纠正识别" else "创建纠正规则",
-                    color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.surface,
-                    navigationIcon = {
-                        top.yukonga.miuix.kmp.basic.IconButton(onClick = { performCorrectionHaptic(); if (selectedDraft != null) selectedDraft = null else onBack() }) {
-                            top.yukonga.miuix.kmp.basic.Icon(
-                                imageVector = top.yukonga.miuix.kmp.icon.MiuixIcons.Regular.Back,
-                                contentDescription = "返回",
-                            )
-                        }
-                    },
-                )
-            } else {
-                androidx.compose.material3.TopAppBar(
-                    title = { Text(if (selectedDraft == null) "纠正识别" else "创建纠正规则") },
-                    navigationIcon = {
-                        IconButton(onClick = { performCorrectionHaptic(); if (selectedDraft != null) selectedDraft = null else onBack() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                )
-            }
-
-        }
-
-        val draft = selectedDraft
-        if (draft == null) {
-            if (drafts.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (isMiuix) {
-                            top.yukonga.miuix.kmp.basic.Text(
-                                "暂无待纠正内容",
-                                style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body1,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            top.yukonga.miuix.kmp.basic.Text(
-                                "主动图片识别失败后会保留在这里",
-                                style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body2,
-                                color = ruleSecondaryTextColor(true),
-                            )
-                        } else {
-                            Text("暂无待纠正内容", fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(8.dp))
-                            Text("主动图片识别失败后会保留在这里", color = ruleSecondaryTextColor(false))
-                        }
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = if (isMiuix) PaddingValues(top = 12.dp) else PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                    verticalArrangement = if (isMiuix) Arrangement.Top else Arrangement.spacedBy(10.dp),
-                ) {
-                    items(drafts, key = { it.id }) { item ->
-                        val openDraft = {
-                            performCorrectionHaptic()
-                            onOpenDraft?.invoke(item.id) ?: run { selectedDraft = item }
-                        }
-                        CorrectionSurface(
-                            isMiuix = isMiuix,
-                            modifier = if (isMiuix) {
-                                Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()
-                            } else {
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).clickable(onClick = openDraft)
-                            },
-                            onClick = if (isMiuix) openDraft else null,
-                        ) {
-                            Column(Modifier.padding(16.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        val subtitle = listOfNotNull(item.brandName, item.orderType)
-                                            .joinToString(" · ")
-                                            .ifBlank { "未识别品牌" }
-                                        if (isMiuix) {
-                                            top.yukonga.miuix.kmp.basic.Text(
-                                                "识别失败",
-                                                style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body1,
-                                                fontWeight = FontWeight.Bold,
-                                                color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.primary,
-                                            )
-                                            top.yukonga.miuix.kmp.basic.Text(
-                                                subtitle,
-                                                style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body2,
-                                                color = ruleSecondaryTextColor(true),
-                                            )
-                                        } else {
-                                            Text("识别失败", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                            Text(subtitle, color = ruleSecondaryTextColor(false))
-                                        }
-                                    }
-                                    if (isMiuix) {
-                                        top.yukonga.miuix.kmp.basic.IconButton(onClick = { performCorrectionHaptic(); onDelete(item) }) {
-                                            top.yukonga.miuix.kmp.basic.Icon(top.yukonga.miuix.kmp.icon.MiuixIcons.Regular.Delete, contentDescription = "删除", tint = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.error)
-                                        }
-                                    } else {
-                                        IconButton(onClick = { performCorrectionHaptic(); onDelete(item) }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                val previewText = item.fullText.orEmpty().lineSequence()
-                                    .filter(String::isNotBlank)
-                                    .take(4)
-                                    .joinToString("\n")
-                                if (isMiuix) {
-                                    top.yukonga.miuix.kmp.basic.Text(
-                                        previewText,
-                                        style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body1,
-                                        maxLines = 4,
-                                        color = ruleTextColor(true),
-                                    )
-                                    Spacer(Modifier.height(10.dp))
-                                    top.yukonga.miuix.kmp.basic.Text(
-                                        "点击使用原文创建规则",
-                                        style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body1,
-                                        color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Medium,
-                                    )
-                                } else {
-                                    Text(previewText, maxLines = 4, color = ruleTextColor(false))
-                                    Spacer(Modifier.height(10.dp))
-                                    Text("点击使用原文创建规则", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            RecognitionCorrectionEditor(
-                draft = draft,
-                isMiuix = isMiuix,
-                performHaptic = performCorrectionHaptic,
-                resetKey = editorRevision,
-                targetCode = targetCorrectionCode,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val direction = if (editorBackEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
-                        translationX = editorBackProgress * 96.dp.toPx() * direction
-                        val scale = 1f - editorBackProgress * 0.08f
-                        scaleX = scale
-                        scaleY = scale
-                        clip = editorBackProgress > 0f
-                        shape = RoundedCornerShape((editorBackProgress * 32f).dp)
-                    }
-                    .background(
-                        if (isMiuix) top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.surface
-                        else MaterialTheme.colorScheme.background,
-                    ),
-                onSave = { brandName, keyword, category, template, templateName, codeDigitsOnly ->
-                    scope.launch {
-                        runCatching {
-                            val rawText = draft.fullText.orEmpty()
-                            val ruleSource = correctionRuleSource(draft)
-                            require(rawText.contains(keyword, ignoreCase = true)) { "品牌关键词必须存在于本次 OCR 原文中" }
-                            val normalized = rawText.lineSequence().map(String::trim).filter(String::isNotBlank).joinToString(" ")
-                            require(SimpleRuleTemplateCompiler.compile(template, codeDigitsOnly).containsMatchIn(normalized)) { "当前模板无法匹配这次 OCR 原文" }
-
-                            val previousCodes = mutableSetOf<String>().apply {
-                                addAll(
-                                    SimpleRuleRuntime.recognizeCurrent(
-                                        rawText = rawText,
-                                        source = ruleSource,
-                                        sourcePackage = draft.sourcePackage,
-                                        qrData = draft.qrCodeData,
-                                    ).map { it.code },
-                                )
-                                addAll(orderDao.getRecognizedCodesByText(rawText))
-                            }
-                            val current = repository.load()
-                            val existing = current.brands.firstOrNull { it.name.equals(brandName, true) }
-                            val newTemplate = SimpleTemplateRule(
-                                name = templateName.ifBlank { "${brandName}纠正规则" },
-                                template = template,
-                                codeDigitsOnly = codeDigitsOnly,
-                                sources = setOf(ruleSource),
-                            )
-                            val brand = if (existing == null) {
-                                SimpleBrandRule(
-                                    category = category,
-                                    name = brandName,
-                                    keywords = listOf(keyword),
-                                    templates = listOf(newTemplate),
-                                )
-                            } else {
-                                existing.copy(
-                                    category = category,
-                                    keywords = (existing.keywords + keyword).map(String::trim).filter(String::isNotBlank).distinct(),
-                                    templates = (existing.templates + newTemplate).distinctBy { it.template to it.sources },
-                                )
-                            }
-                            val updatedPack = if (existing == null) {
-                                current.copy(brands = current.brands + brand)
-                            } else {
-                                current.copy(brands = current.brands.map { if (it.id == existing.id) brand else it })
-                            }
-                            repository.save(updatedPack)
-                            val updatedMatches = SimpleRuleRuntime.recognizeCurrent(
-                                rawText = rawText,
-                                source = ruleSource,
-                                sourcePackage = draft.sourcePackage,
-                                qrData = draft.qrCodeData,
-                            )
-                            val newMatches = updatedMatches.filter { it.code !in previousCodes }
-                            require(newMatches.isNotEmpty()) { "规则已保存，但重新识别仍未得到新的取餐码" }
-                            CorrectionSaveResult(
-                                correctedOrders = buildCorrectedOrders(draft, newMatches),
-                                remainingCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
-                                    fullText = rawText,
-                                    recognizedCodes = previousCodes + updatedMatches.map { it.code },
-                                ),
-                            )
-                        }.onSuccess { result ->
-                            val keepDraft = result.remainingCodes.isNotEmpty()
-                            onCorrectionApplied(draft, result.correctedOrders, keepDraft)
-                            if (keepDraft) {
-                                targetCorrectionCode = result.remainingCodes.firstOrNull()
-                                editorRevision += 1
-                            } else {
-                                selectedDraft = null
-                            }
-                            Toast.makeText(
-                                context,
-                                if (keepDraft) "已新增${result.correctedOrders.size}个取件码，仍有${result.remainingCodes.size}个待纠正"
-                                else "规则已保存，新增${result.correctedOrders.size}个取件码",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }.onFailure {
-                            Toast.makeText(context, "保存失败：${it.message}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                },
-            )
-        }
-    }
-}
-
-@Composable
-fun RecognitionCorrectionEditorRouteContent(
-    orderId: String,
-    isMiuix: Boolean,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val orderViewModelFactory = remember(context) {
-        ViewModelProvider.AndroidViewModelFactory.getInstance(
-            context.applicationContext as android.app.Application,
-        )
-    }
-    val viewModel: com.Badnng.moe.viewmodel.OrderViewModel = viewModel(factory = orderViewModelFactory)
-    val orderDao = remember { OrderDatabase.getDatabase(context.applicationContext).orderDao() }
-    val drafts by viewModel.ruleCorrectionDrafts.collectAsStateWithLifecycle()
-    val draft = drafts.firstOrNull { it.id == orderId }
-    val scope = rememberCoroutineScope()
-    val repository = remember { SimpleRuleRepository(context.applicationContext) }
-    var editorRevision by remember(orderId) { mutableIntStateOf(0) }
-    var targetCorrectionCode by remember(orderId) { mutableStateOf<String?>(null) }
-    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
-    val performHaptic = {
-        if (prefs.getBoolean("haptic_enabled", true)) {
-            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+    fun save(newPack: PickupWordRulePack) {
+        pack = newPack
+        pendingSaveJob?.cancel()
+        pendingSaveJob = scope.launch {
+            kotlinx.coroutines.delay(250L)
+            runCatching { repo.save(newPack) }
+                .onFailure { Toast.makeText(context, "保存失败：${it.message}", Toast.LENGTH_LONG).show() }
         }
     }
 
-
-    LaunchedEffect(draft?.id) {
-        val currentDraft = draft ?: run {
-            targetCorrectionCode = null
-            return@LaunchedEffect
-        }
-        val rawText = currentDraft.fullText.orEmpty()
-        val source = correctionRuleSource(currentDraft)
-        val recognizedCodes = SimpleRuleRuntime.recognizeCurrent(
-            rawText = rawText,
-            source = source,
-            sourcePackage = currentDraft.sourcePackage,
-            qrData = currentDraft.qrCodeData,
-        ).map { it.code } + orderDao.getRecognizedCodesByText(rawText)
-        targetCorrectionCode = RecognitionCorrectionDetector.findUnrecognizedCodes(rawText, recognizedCodes).firstOrNull()
-        editorRevision += 1
+    val words = when (type) {
+        WordType.FOOD -> pack.foodKeywords
+        WordType.EXPRESS -> pack.expressKeywords
+        WordType.AUXILIARY -> pack.auxiliaryKeywords
     }
 
+    fun addWord() {
+        val trimmed = newWord.trim()
+        if (trimmed.isBlank()) return
+        if (words.any { it.word.equals(trimmed, ignoreCase = true) }) {
+            Toast.makeText(context, "该词汇已存在", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (words.size >= MAX_WORDS_PER_TYPE) {
+            Toast.makeText(context, "最多添加 $MAX_WORDS_PER_TYPE 条${type.displayName}", Toast.LENGTH_SHORT).show()
+            return
+        }
+        performHaptic()
+        val rule = PickupWordRule(word = trimmed)
+        val updated = when (type) {
+            WordType.FOOD -> pack.copy(foodKeywords = pack.foodKeywords + rule)
+            WordType.EXPRESS -> pack.copy(expressKeywords = pack.expressKeywords + rule)
+            WordType.AUXILIARY -> pack.copy(auxiliaryKeywords = pack.auxiliaryKeywords + rule)
+        }
+        save(updated)
+        newWord = ""
+    }
 
-    if (draft == null) {
+    fun removeWord(ruleId: String) {
+        performHaptic()
+        val updated = when (type) {
+            WordType.FOOD -> pack.copy(foodKeywords = pack.foodKeywords.filterNot { it.id == ruleId })
+            WordType.EXPRESS -> pack.copy(expressKeywords = pack.expressKeywords.filterNot { it.id == ruleId })
+            WordType.AUXILIARY -> pack.copy(auxiliaryKeywords = pack.auxiliaryKeywords.filterNot { it.id == ruleId })
+        }
+        save(updated)
+    }
+
+    LaunchedEffect(Unit) {
+        pack = repo.load()
+        loading = false
+    }
+
+    BackHandler(enabled = true) { onBack() }
+
+    if (loading) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            EmptyRuleHint("该待纠正记录已不存在", isMiuix)
+            Text("正在读取词汇…")
         }
         return
     }
 
-    RecognitionCorrectionEditor(
-        draft = draft,
-        isMiuix = isMiuix,
-        performHaptic = performHaptic,
-        resetKey = editorRevision,
-        targetCode = targetCorrectionCode,
-        modifier = modifier.fillMaxSize(),
-        onSave = { brandName, keyword, category, template, templateName, codeDigitsOnly ->
-            scope.launch {
-                runCatching {
-                    val rawText = draft.fullText.orEmpty()
-                    val ruleSource = correctionRuleSource(draft)
-                    require(rawText.contains(keyword, ignoreCase = true)) { "品牌关键词必须存在于本次 OCR 原文中" }
-                    val normalized = rawText.lineSequence().map(String::trim).filter(String::isNotBlank).joinToString(" ")
-                    require(SimpleRuleTemplateCompiler.compile(template, codeDigitsOnly).containsMatchIn(normalized)) { "当前模板无法匹配这次 OCR 原文" }
-                    val previousCodes = mutableSetOf<String>().apply {
-                        addAll(
-                            SimpleRuleRuntime.recognizeCurrent(
-                                rawText = rawText,
-                                source = ruleSource,
-                                sourcePackage = draft.sourcePackage,
-                                qrData = draft.qrCodeData,
-                            ).map { it.code },
-                        )
-                        addAll(orderDao.getRecognizedCodesByText(rawText))
-                    }
-                    val current = repository.load()
-                    val existing = current.brands.firstOrNull { it.name.equals(brandName, true) }
-                    val newTemplate = SimpleTemplateRule(
-                        name = templateName.ifBlank { "${brandName}纠正规则" },
-                        template = template,
-                        codeDigitsOnly = codeDigitsOnly,
-                        sources = setOf(ruleSource),
-                    )
-                    val brand = if (existing == null) {
-                        SimpleBrandRule(category = category, name = brandName, keywords = listOf(keyword), templates = listOf(newTemplate))
-                    } else {
-                        existing.copy(
-                            category = category,
-                            keywords = (existing.keywords + keyword).map(String::trim).filter(String::isNotBlank).distinct(),
-                            templates = (existing.templates + newTemplate).distinctBy { it.template to it.sources },
-                        )
-                    }
-                    val updatedPack = if (existing == null) {
-                        current.copy(brands = current.brands + brand)
-                    } else {
-                        current.copy(brands = current.brands.map { if (it.id == existing.id) brand else it })
-                    }
-                    repository.save(updatedPack)
-                    val updatedMatches = SimpleRuleRuntime.recognizeCurrent(
-                        rawText = rawText,
-                        source = ruleSource,
-                        sourcePackage = draft.sourcePackage,
-                        qrData = draft.qrCodeData,
-                    )
-                    val newMatches = updatedMatches.filter { it.code !in previousCodes }
-                    require(newMatches.isNotEmpty()) { "规则已保存，但重新识别仍未得到新的取餐码" }
-                    CorrectionSaveResult(
-                        correctedOrders = buildCorrectedOrders(draft, newMatches),
-                        remainingCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
-                            fullText = rawText,
-                            recognizedCodes = previousCodes + updatedMatches.map { it.code },
-                        ),
-                    )
-                }.onSuccess { result ->
-                    val keepDraft = result.remainingCodes.isNotEmpty()
-                    viewModel.applyRuleCorrection(draft, result.correctedOrders, keepDraft)
-                    Toast.makeText(
-                        context,
-                        if (keepDraft) "已新增${result.correctedOrders.size}个取件码，仍有${result.remainingCodes.size}个待纠正"
-                        else "规则已保存，新增${result.correctedOrders.size}个取件码",
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    if (keepDraft) {
-                        targetCorrectionCode = result.remainingCodes.firstOrNull()
-                        editorRevision += 1
-                    } else {
-                        onBack()
-                    }
-                }.onFailure {
-                    Toast.makeText(context, "保存失败：${it.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        },
-    )
-}
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun RecognitionCorrectionEditor(
-    draft: com.Badnng.moe.data.db.OrderEntity,
-    isMiuix: Boolean,
-    performHaptic: () -> Unit,
-    resetKey: Int,
-    targetCode: String?,
-    modifier: Modifier = Modifier,
-    onSave: (String, String, SimpleRuleCategory, String, String, Boolean) -> Unit,
-) {
-    val lines = remember(draft.id) { draft.fullText.orEmpty().lineSequence().map(String::trim).filter(String::isNotBlank).toList() }
-    fun initialCodeLine(): Int {
-        targetCode?.let { code ->
-            lines.indexOfFirst { it.contains(code) }.takeIf { it >= 0 }?.let { return it }
-        }
-        val keywordIndex = lines.indices.firstOrNull { index ->
-            index > 0 &&
-                lines[index - 1].contains(Regex("取(餐|茶|件|货)?(码|号)|取单口令|排队号")) &&
-                lines[index].any(Char::isDigit)
-        }
-        if (keywordIndex != null) return keywordIndex
-        return lines.indexOfFirst { line ->
-            line.length in 1..40 && line.any(Char::isDigit) &&
-                line.count { it.isLetterOrDigit() || it in ".#_-" } >= line.length * 0.7
-        }.coerceAtLeast(0)
-    }
-    val initialLine = initialCodeLine()
-    val initialBrandSuggestion = remember(draft.id, resetKey, targetCode) {
-        findCorrectionBrandSuggestion(lines, initialLine)
-    }
-    var category by rememberSaveable(draft.id, resetKey) {
-        mutableStateOf(initialBrandSuggestion?.category ?: SimpleRuleCategory.entries.firstOrNull { it.resultType == draft.orderType } ?: SimpleRuleCategory.FOOD)
-    }
-    var brandName by rememberSaveable(draft.id, resetKey) { mutableStateOf(initialBrandSuggestion?.brandName ?: draft.brandName.orEmpty()) }
-    var keyword by rememberSaveable(draft.id, resetKey) { mutableStateOf(initialBrandSuggestion?.keyword ?: draft.brandName.orEmpty()) }
-    var selectedLine by rememberSaveable(draft.id, resetKey) { mutableIntStateOf(initialLine) }
-    fun suggestedCodeSample(index: Int): String = lines.getOrNull(index)
-        ?.let { line -> Regex("[A-Za-z0-9][A-Za-z0-9.#_-]{0,39}").findAll(line).map { it.value }.filter { value -> value.any(Char::isDigit) }.maxByOrNull(String::length) }
-        .orEmpty()
-    var codeSample by rememberSaveable(draft.id, resetKey) { mutableStateOf(targetCode ?: suggestedCodeSample(selectedLine)) }
-    var useBrandAnchor by rememberSaveable(draft.id, resetKey) { mutableStateOf(true) }
-    var templateName by rememberSaveable(draft.id, resetKey) { mutableStateOf("纠正规则") }
-    var codeDigitsOnly by rememberSaveable(draft.id, resetKey) { mutableStateOf(codeSample.isNotBlank() && codeSample.all(Char::isDigit)) }
-    var template by rememberSaveable(draft.id, resetKey) { mutableStateOf("") }
-
-    fun suggestedTemplate(index: Int): String {
-        val placeholder = correctionCodePlaceholder(codeSample, codeDigitsOnly)
-        if (lines.isEmpty() || !useBrandAnchor || keyword.isBlank()) return placeholder
-        val keywordLine = findNearestKeywordLine(lines, index, keyword) ?: return placeholder
-        if (keywordLine < index) return "$keyword\n{{any}}\n$placeholder"
-        if (keywordLine > index) return "$placeholder\n{{any}}\n$keyword"
-        val sourceLine = lines[index]
-        val keywordBeforeCode = sourceLine.indexOf(keyword, ignoreCase = true) <= sourceLine.indexOf(codeSample)
-        return if (keywordBeforeCode) "$keyword{{any}}$placeholder" else "$placeholder{{any}}$keyword"
-    }
-    LaunchedEffect(selectedLine, resetKey) {
-        codeSample = suggestedCodeSample(selectedLine)
-    }
-    LaunchedEffect(selectedLine, codeSample, useBrandAnchor, codeDigitsOnly, keyword, resetKey) {
-        template = suggestedTemplate(selectedLine)
-    }
-
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = if (isMiuix) PaddingValues(top = 12.dp) else PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+        contentPadding = contentPadding,
         verticalArrangement = if (isMiuix) Arrangement.Top else Arrangement.spacedBy(12.dp),
     ) {
         item {
-            RuleSectionTitle("规则归属", isMiuix)
-            if (isMiuix) {
-                RuleTextField(
-                    "品牌名称",
-                    brandName,
-                    true,
-                    Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
-                ) { brandName = it }
-                RuleTextField(
-                    "品牌关键词",
-                    keyword,
-                    true,
-                    Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
-                ) { keyword = it }
-                RuleHelp(
-                    "关键词必须出现在原文中，例如茶百道、ChaPanda、熊猫币。后续检测到该词即可锁定品牌。",
-                    true,
-                    Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp),
-                )
-                FlowRow(
-                    Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    SimpleRuleCategory.entries.forEach { item ->
-                        LocalAppUi.current.choiceChip(
-                            item.displayName,
-                            category == item,
-                            { performHaptic(); category = item },
-                            Modifier.weight(1f),
-                        )
-                    }
-                }
-            } else {
-                CorrectionSurface(false, Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(vertical = 12.dp)) {
-                        RuleTextField("品牌名称", brandName, false) { brandName = it }
-                        RuleTextField("品牌关键词", keyword, false) { keyword = it }
-                        RuleHelp("关键词必须出现在原文中，例如茶百道、ChaPanda、熊猫币。后续检测到该词即可锁定品牌。", false)
-                        FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SimpleRuleCategory.entries.forEach { item ->
-                                LocalAppUi.current.choiceChip(item.displayName, category == item, { performHaptic(); category = item }, Modifier)
+            RuleSectionTitle(type.displayName, isMiuix)
+            Box(Modifier.padding(horizontal = 12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (words.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            words.forEach { rule ->
+                                if (isMiuix) {
+                                    MiuixWordChip(rule.word) { removeWord(rule.id) }
+                                } else {
+                                    Md3eWordChip(rule.word) { removeWord(rule.id) }
+                                }
                             }
                         }
                     }
-                }
-            }
-        }
-        item {
-            RuleSectionTitle("选择取餐码所在行", isMiuix)
-            RuleHelp("点击实际码值所在行。系统会提取行内数字作为建议，也可以在下方手动指定正确码值。", isMiuix, if (isMiuix) Modifier.padding(horizontal = 24.dp, vertical = 8.dp) else Modifier)
-        }
-        items(lines.indices.toList(), key = { it }) { index ->
-            val selected = index == selectedLine
-            val selectLine = { performHaptic(); selectedLine = index }
-            CorrectionSurface(
-                isMiuix = isMiuix,
-                modifier = if (isMiuix) {
-                    Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()
-                } else {
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).clickable(onClick = selectLine)
-                },
-                onClick = if (isMiuix) selectLine else null,
-            ) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (isMiuix) {
-                        top.yukonga.miuix.kmp.basic.Text(
-                            "${index + 1}",
-                            color = ruleSecondaryTextColor(true),
-                            modifier = Modifier.width(36.dp),
-                        )
-                        top.yukonga.miuix.kmp.basic.Text(
-                            lines[index],
-                            modifier = Modifier.weight(1f),
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        )
-                        if (selected) {
-                            top.yukonga.miuix.kmp.basic.Text(
-                                "{{code}}",
-                                color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.primary,
+                    Column {
+                        if (isMiuix) {
+                            MiuixTextField(
+                                value = newWord,
+                                onValueChange = { newWord = it.replace("\n", "") },
+                                label = "添加${type.displayName}（${words.size}/$MAX_WORDS_PER_TYPE）",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type == KeyEventType.KeyUp && event.key == Key.Enter) {
+                                            addWord()
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    },
+                                trailingIcon = {
+                                    MiuixIconButton(onClick = { addWord() }) {
+                                        MiuixIcon(
+                                            imageVector = top.yukonga.miuix.kmp.icon.MiuixIcons.Regular.Add,
+                                            contentDescription = "添加${type.displayName}",
+                                        )
+                                    }
+                                },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { addWord() }),
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = newWord,
+                                onValueChange = { newWord = it.replace("\n", "") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type == KeyEventType.KeyUp && event.key == Key.Enter) {
+                                            addWord()
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    },
+                                label = { Text("添加${type.displayName}") },
+                                supportingText = {
+                                    Text("${words.size}/$MAX_WORDS_PER_TYPE")
+                                },
+                                trailingIcon = {
+                                    IconButton(onClick = { addWord() }) {
+                                        Icon(Icons.Default.Add, contentDescription = "添加${type.displayName}")
+                                    }
+                                },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { addWord() }),
+                                shape = RoundedCornerShape(15.dp),
                             )
                         }
-                    } else {
-                        Text("${index + 1}", color = ruleSecondaryTextColor(false), modifier = Modifier.width(36.dp))
-                        Text(lines[index], Modifier.weight(1f), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-                        if (selected) Text("{{code}}", color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            text = when (type) {
+                                WordType.FOOD -> "添加餐食定位词，识别文本中包含这些词时作为锚点定位取餐码区域。点击标签可删除。"
+                                WordType.EXPRESS -> "添加快递定位词，识别文本中包含这些词时作为锚点定位取件码区域。点击标签可删除。"
+                                WordType.AUXILIARY -> "添加辅助锚点词，识别时命中这些词会扩大框选范围。点击标签可删除。"
+                            },
+                            style = if (isMiuix) top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body2 else MaterialTheme.typography.bodySmall,
+                            color = ruleSecondaryTextColor(isMiuix),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
                     }
                 }
             }
         }
-        item {
-            RuleSectionTitle("本次正确结果", isMiuix)
-            if (isMiuix) {
-                RuleTextField(
-                    "正确取餐码/取件码",
-                    codeSample,
-                    true,
-                    Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
-                    singleLine = true,
-                ) { codeSample = it }
-                RuleHelp(
-                    "如果码值嵌在同一行，例如“取餐号2”，填写 2 后会生成“取餐号{{code}}”。",
-                    true,
-                    Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp),
-                )
-            } else {
-                CorrectionSurface(false, Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(vertical = 12.dp)) {
-                        RuleTextField("正确取餐码/取件码", codeSample, false, singleLine = true) { codeSample = it }
-                        RuleHelp("如果码值嵌在同一行，例如“取餐号2”，填写 2 后会生成“取餐号{{code}}”。", false)
-                    }
-                }
-            }
-        }
-        item {
-            RuleSectionTitle("模板", isMiuix)
-            if (isMiuix) {
-                CorrectionSurface(true, Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                    Column(Modifier.padding(vertical = 4.dp)) {
-                        LocalAppUi.current.preferenceSwitchItem("使用品牌锚点", "只保存品牌关键词与码值相对位置，不复制原文", useBrandAnchor) { performHaptic(); useBrandAnchor = it }
-                        LocalAppUi.current.preferenceSwitchItem("仅识别数字", "开启后 {{code}} 不会匹配文字或字母", codeDigitsOnly) { performHaptic(); codeDigitsOnly = it }
-                    }
-                }
-                RuleTextField(
-                    "模板名称",
-                    templateName,
-                    true,
-                    Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
-                ) { templateName = it }
-                RuleTextField(
-                    "匹配模板",
-                    template,
-                    true,
-                    Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
-                    minLines = 4,
-                ) { template = it }
-                RuleHelp(
-                    "可使用 {{code:digits:4}} 限定 4 位数字；用 {{any}} 跳过链接等变化内容。例如：已放{{location}}，点击{{any}}或使用{{code:digits:4}}取件。",
-                    true,
-                    Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp),
-                )
-            } else {
-                CorrectionSurface(false, Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(vertical = 12.dp)) {
-                        LocalAppUi.current.preferenceSwitchItem("使用品牌锚点", "只保存品牌关键词与码值相对位置，不复制原文", useBrandAnchor) { performHaptic(); useBrandAnchor = it }
-                        LocalAppUi.current.preferenceSwitchItem("仅识别数字", "开启后 {{code}} 不会匹配文字或字母", codeDigitsOnly) { performHaptic(); codeDigitsOnly = it }
-                        RuleTextField("模板名称", templateName, false) { templateName = it }
-                        RuleTextField("匹配模板", template, false, minLines = 4) { template = it }
-                        RuleHelp("可使用 {{code:digits:4}} 限定 4 位数字；用 {{any}} 跳过链接等变化内容。例如：已放{{location}}，点击{{any}}或使用{{code:digits:4}}取件。", false)
-                    }
-                }
-            }
-        }
-        item {
-            LocalAppUi.current.primaryActionButton(
-                "保存规则并重新识别",
-                brandName.isNotBlank() && keyword.isNotBlank() && codeSample.isNotBlank() &&
-                    SimpleRuleTemplateCompiler.hasCodePlaceholder(template) &&
-                    runCatching { SimpleRuleTemplateCompiler.compile(template, codeDigitsOnly) }.isSuccess,
-            ) { performHaptic(); onSave(brandName.trim(), keyword.trim(), category, template.trim(), templateName.trim(), codeDigitsOnly) }
-        }
-        item { Spacer(if (isMiuix) Modifier.height(24.dp).navigationBarsPadding() else Modifier.height(24.dp)) }
+        item { Spacer(Modifier.height(24.dp)) }
     }
 }
+
+/** 词汇标签（MD3E）：点击即删除，样式与「自定义取件地点」一致。 */
+@Composable
+private fun Md3eWordChip(
+    word: String,
+    onRemove: () -> Unit,
+) {
+    InputChip(
+        selected = false,
+        onClick = onRemove,
+        label = {
+            Text(
+                text = word,
+                modifier = Modifier.widthIn(max = 240.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        trailingIcon = {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "删除词汇 $word",
+                modifier = Modifier.size(16.dp),
+            )
+        },
+        shape = RoundedCornerShape(15.dp),
+    )
+}
+
+/** 词汇标签（Miuix）：点击即删除，样式与「自定义取件地点」一致。 */
+@Composable
+private fun MiuixWordChip(
+    word: String,
+    onRemove: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val indicationColor = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.onSurface
+    val indication = remember(indicationColor) { MiuixIndication(color = indicationColor) }
+    Row(
+        modifier = Modifier
+            .squircleSurface(top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.surfaceContainer, 15.dp)
+            .squircleClip(15.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = indication,
+                role = Role.Button,
+                onClick = onRemove,
+            )
+            .semantics {
+                role = Role.Button
+                contentDescription = "删除词汇 $word"
+            }
+            .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MiuixText(
+            text = word,
+            modifier = Modifier.widthIn(max = 240.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body2,
+            color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.width(6.dp))
+        MiuixIcon(
+            imageVector = top.yukonga.miuix.kmp.icon.MiuixIcons.Regular.Close,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+/** 每个分类最多可添加的词汇条数（与「自定义取件地点」上限一致）。 */
+private const val MAX_WORDS_PER_TYPE = 50

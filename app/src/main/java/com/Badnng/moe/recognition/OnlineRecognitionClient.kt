@@ -16,6 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class OnlineRecognitionClient(context: Context) {
@@ -144,6 +145,15 @@ class OnlineRecognitionClient(context: Context) {
                 .url(requestUrl)
                 .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .header("Content-Type", "application/json")
+                .apply {
+                    // OpenCode 要求客户端用自身专属 UA 标识，并在每段对话携带稳定的
+                    // 会话 ID，否则会被当作通用 SDK 流量，路由与提示词缓存都无法优化。
+                    // 三种端点（chat/completions、responses、messages）共用同一网关，统一下发。
+                    if (provider.isOpenCode()) {
+                        header("User-Agent", openCodeUserAgent())
+                        header("x-opencode-session", openCodeSessionId())
+                    }
+                }
                 .apply {
                     if (kind == ApiKind.ANTHROPIC) {
                         header("x-api-key", apiKey)
@@ -437,6 +447,34 @@ class OnlineRecognitionClient(context: Context) {
         }
     }
 
+    /**
+     * OpenCode（Go 与 Zen 共用 opencode.ai 网关）要求客户端用自身专属 UA 标识，
+     * 并在每段对话中携带稳定的会话 ID，用于路由优化与提示词缓存。
+     */
+    private fun OnlineRecognitionProvider.isOpenCode(): Boolean =
+        this == OnlineRecognitionProvider.OPENCODE_GO ||
+            this == OnlineRecognitionProvider.OPENCODE_ZEN
+
+    private fun openCodeUserAgent(): String = OPENCODE_USER_AGENT
+
+    /**
+     * 会话 ID 首次生成后持久化，保证同一安装的所有请求都携带同一个稳定值。
+     * 读取命中内存缓存后无磁盘 IO；仅首次在 IO 线程写一次。
+     */
+    private fun openCodeSessionId(): String {
+        val preferences = appContext.getSharedPreferences(
+            OPENCODE_SESSION_PREFS,
+            Context.MODE_PRIVATE,
+        )
+        preferences.getString(OPENCODE_SESSION_KEY, null)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+        val generated = UUID.randomUUID().toString()
+        preferences.edit().putString(OPENCODE_SESSION_KEY, generated).apply()
+        Log.i(TAG, "generated OpenCode session id: $generated")
+        return generated
+    }
+
     private fun normalizeCustomBaseUrl(value: String): String {
         val normalized = value.trim().trimEnd('/')
         if (!normalized.startsWith("https://", ignoreCase = true) &&
@@ -666,9 +704,15 @@ class OnlineRecognitionClient(context: Context) {
         private const val MAX_LOG_TEXT_LENGTH = 2_000
         private const val MAX_LOG_CHUNK_LENGTH = 3_000
         private const val MAX_LONG_EDGE = 2048
-        private const val JPEG_QUALITY = 85
+        private const val JPEG_QUALITY = 60
         private const val MAX_BARCODE_BRAND_HINT_LENGTH = 40
         private const val ANTHROPIC_VERSION = "2023-06-01"
+
+        // OpenCode 要求客户端提供自身专属的 user agent（不能用通用 SDK/HTTP 库名），
+        // 并随每段对话发送稳定的 x-opencode-session。
+        private const val OPENCODE_USER_AGENT = "HyperNote/1.0 (Android)"
+        private const val OPENCODE_SESSION_PREFS = "opencode_session"
+        private const val OPENCODE_SESSION_KEY = "session_id"
         private val HTTP_CLIENT = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)

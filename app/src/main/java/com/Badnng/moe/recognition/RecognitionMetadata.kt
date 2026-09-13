@@ -82,27 +82,6 @@ object RecognizedOrderFactory {
         )
     }
 
-    fun correctionDraft(
-        result: RecognitionResult,
-        metadata: RecognitionExecutionMetadata,
-        screenshotPath: String,
-        recognizedText: String,
-        sourceApp: String? = null,
-        sourcePackage: String? = null,
-    ): OrderEntity = fromValues(
-        takeoutCode = "",
-        qrCodeData = result.qr,
-        screenshotPath = screenshotPath,
-        recognizedText = recognizedText,
-        orderType = result.type,
-        brandName = result.brand,
-        sourceApp = sourceApp,
-        sourcePackage = sourcePackage,
-        fullText = result.fullText,
-        pickupLocation = result.pickupLocation,
-        metadata = metadata,
-        needsRuleCorrection = true,
-    )
     fun fromValues(
         takeoutCode: String,
         metadata: RecognitionExecutionMetadata,
@@ -116,7 +95,6 @@ object RecognizedOrderFactory {
         fullText: String? = null,
         pickupLocation: String? = null,
         groupId: Long? = null,
-        needsRuleCorrection: Boolean = false,
     ): OrderEntity = OrderEntity(
             takeoutCode = takeoutCode,
             qrCodeData = qrCodeData,
@@ -139,7 +117,6 @@ object RecognizedOrderFactory {
             recognitionErrorDetail = metadata.errorDetail,
             recognitionDurationMs = metadata.durationMs,
             ocrDiagnosticData = metadata.ocrDiagnosticData,
-            needsRuleCorrection = needsRuleCorrection,
         )
 
     fun manual(

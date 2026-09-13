@@ -110,7 +110,6 @@ fun CaptureScreen(
     val completedOrders by viewModel.completedOrders.collectAsStateWithLifecycle()
     val incompleteGroups by viewModel.incompleteGroups.collectAsStateWithLifecycle()
     val completedGroups by viewModel.completedGroups.collectAsStateWithLifecycle()
-    val ruleCorrectionDrafts by viewModel.ruleCorrectionDrafts.collectAsStateWithLifecycle()
 
     // 🚀 监听分享识别完成的广播，刷新数据
     val context = LocalContext.current
@@ -134,7 +133,6 @@ fun CaptureScreen(
         completedOrders = completedOrders,
         incompleteOrderGroups = incompleteGroups,
         completedOrderGroups = completedGroups,
-        ruleCorrectionDrafts = ruleCorrectionDrafts,
         onMarkCompleted = { viewModel.markAsCompleted(it) },
         onMarkMultipleCompleted = { ids ->
             ids.forEach { viewModel.markAsCompleted(it) }
@@ -173,7 +171,6 @@ fun CaptureScreenContent(
     completedOrders: List<OrderEntity>,
     incompleteOrderGroups: List<OrderGroup>,
     completedOrderGroups: List<OrderGroup>,
-    ruleCorrectionDrafts: List<OrderEntity>,
     onMarkCompleted: (String) -> Unit,
     onMarkMultipleCompleted: (Set<String>) -> Unit,
     onDeleteOrder: (OrderEntity) -> Unit,
@@ -360,20 +357,6 @@ fun CaptureScreenContent(
                             fontWeight = FontWeight.ExtraBold,
                         )
                         Spacer(modifier = Modifier.weight(1f))
-                        IconButton(onClick = {
-                            performHaptic()
-                            onNavigateToDetail(SettingsPage.RecognitionCorrection)
-                        }) {
-                            BadgedBox(
-                                badge = {
-                                    if (ruleCorrectionDrafts.isNotEmpty()) {
-                                        Badge { Text(ruleCorrectionDrafts.size.toString()) }
-                                    }
-                                },
-                            ) {
-                                Icon(Icons.Default.Rule, contentDescription = "纠正识别", tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
                         IconButton(onClick = {
                             performHaptic()
                             isEditMode = !isEditMode
@@ -1458,6 +1441,9 @@ fun OrderGroupCard(
                                                 sourceApp = group.sourceApp
                                             )
                                             NotificationHelper(context).showGroupNotification(notificationGroup, groupOrders)
+                                            com.Badnng.moe.wearable.WearableSyncManager
+                                                .getInstance(context)
+                                                .resendGroupToWatch(notificationGroup, groupOrders)
                                         },
                                         modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(16.dp),
@@ -1786,7 +1772,12 @@ fun OrderCard(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 FilledTonalButton(
-                                    onClick = { NotificationHelper(context).showPromotedLiveUpdate(order) },
+                                    onClick = {
+                                            NotificationHelper(context).showPromotedLiveUpdate(order)
+                                            com.Badnng.moe.wearable.WearableSyncManager
+                                                .getInstance(context)
+                                                .resendOrderToWatch(order)
+                                        },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(16.dp),
                                     colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)

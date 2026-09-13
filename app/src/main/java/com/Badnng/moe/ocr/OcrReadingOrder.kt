@@ -4,7 +4,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-internal const val OCR_MIN_CONFIDENCE = 0.93f
+internal const val OCR_MIN_CONFIDENCE = 0.90f
 
 internal data class OcrTextRegion(
     val text: String,

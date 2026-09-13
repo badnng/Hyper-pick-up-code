@@ -39,10 +39,14 @@ class ScheduledNotificationReceiver : BroadcastReceiver() {
                                 it.groupId == groupId && !it.isCompleted
                             }
                             if (orders.isNotEmpty() && !group.isCompleted) {
+                                val groupForNotify = group.copy(orderCount = orders.size)
                                 NotificationHelper(context).showGroupNotification(
-                                    group.copy(orderCount = orders.size),
+                                    groupForNotify,
                                     orders,
                                 )
+                                com.Badnng.moe.wearable.WearableSyncManager
+                                    .getInstance(context)
+                                    .resendGroupToWatch(groupForNotify, orders)
                             } else {
                                 NotificationHelper(context).cancelGroupNotification(groupId)
                             }
@@ -53,6 +57,9 @@ class ScheduledNotificationReceiver : BroadcastReceiver() {
                     val order = db.orderDao().getOrderById(orderId)
                     if (order != null && !order.isCompleted) {
                         NotificationHelper(context).showPromotedLiveUpdate(order)
+                        com.Badnng.moe.wearable.WearableSyncManager
+                            .getInstance(context)
+                            .resendOrderToWatch(order)
                     } else {
                         NotificationHelper(context).cancelNotification(orderId)
                     }

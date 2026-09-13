@@ -12,7 +12,6 @@ import com.Badnng.moe.data.repository.OrderGroupRepository
 import com.Badnng.moe.data.repository.OrderRepository
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.NotificationScheduler
-import com.Badnng.moe.helper.DailyExpressGroupingHelper
 import com.Badnng.moe.wearable.WearableSyncManager
 import com.Badnng.moe.wearable.WearableSyncSource
 import kotlinx.coroutines.Dispatchers
@@ -37,9 +36,6 @@ class OrderViewModel(application: Application) : AndroidViewModel(application), 
 
     private val _completedOrders = MutableStateFlow<List<OrderEntity>>(emptyList())
     override val completedOrders: StateFlow<List<OrderEntity>> = _completedOrders.asStateFlow()
-
-    private val _ruleCorrectionDrafts = MutableStateFlow<List<OrderEntity>>(emptyList())
-    val ruleCorrectionDrafts: StateFlow<List<OrderEntity>> = _ruleCorrectionDrafts.asStateFlow()
 
     private val _orderGroups = MutableStateFlow<List<OrderGroup>>(emptyList())
     val orderGroups: StateFlow<List<OrderGroup>> = _orderGroups.asStateFlow()
@@ -72,12 +68,6 @@ class OrderViewModel(application: Application) : AndroidViewModel(application), 
         viewModelScope.launch {
             repository.getCompletedOrders().collect { orders ->
                 _completedOrders.value = orders
-            }
-        }
-
-        viewModelScope.launch {
-            orderDao.getRuleCorrectionDrafts().collect { drafts ->
-                _ruleCorrectionDrafts.value = drafts
             }
         }
 
@@ -165,46 +155,6 @@ class OrderViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
-    fun applyRuleCorrection(
-        draft: OrderEntity,
-        correctedOrders: List<OrderEntity>,
-        keepDraft: Boolean,
-    ) {
-        viewModelScope.launch {
-            for (order in correctedOrders) {
-                repository.insertOrder(order)
-            }
-            if (!keepDraft) {
-                repository.deleteOrder(draft)
-            }
-            DailyExpressGroupingHelper.regroupPendingExpressByDay(
-                orderDao,
-                orderGroupDao,
-                getApplication(),
-            )
-            for (order in correctedOrders) {
-                val refreshed = orderDao.getOrderById(order.id) ?: order
-                if (refreshed.groupId == null) {
-                    notificationHelper.showPromotedLiveUpdate(refreshed, refreshed.brandName)
-                }
-            }
-        }
-    }
-
-    fun resolveRuleCorrection(order: OrderEntity) {
-        viewModelScope.launch {
-            repository.updateOrder(order.copy(needsRuleCorrection = false))
-            DailyExpressGroupingHelper.regroupPendingExpressByDay(
-                orderDao,
-                orderGroupDao,
-                getApplication(),
-            )
-            val refreshed = orderDao.getOrderById(order.id) ?: order
-            if (refreshed.groupId == null) {
-                notificationHelper.showPromotedLiveUpdate(refreshed, refreshed.brandName)
-            }
-        }
-    }
     fun updateOrder(order: OrderEntity) {
         viewModelScope.launch {
             repository.updateOrder(order)

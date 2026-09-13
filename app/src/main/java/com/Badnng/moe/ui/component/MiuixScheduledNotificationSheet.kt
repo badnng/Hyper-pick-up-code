@@ -2,6 +2,8 @@ package com.Badnng.moe.ui.component
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,14 +20,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,20 +64,80 @@ fun MiuixScheduledNotificationSheet(
         }
     }
 
+    var showSheet by remember { mutableStateOf(show) }
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val sheetHeightPx = remember { with(density) { configuration.screenHeightDp.dp.toPx() } }
+    val blurProgress = remember { Animatable(0f) }
+    var dragProgress by remember { mutableFloatStateOf(-1f) }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { blurProgress.value }
+            .collect { BlurState.updateProgress(it) }
+    }
+
+    LaunchedEffect(show) {
+        if (show) {
+            showSheet = true
+            BlurState.show()
+            dragProgress = -1f
+            blurProgress.snapTo(0f)
+            blurProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f),
+            )
+        } else {
+            showSheet = false
+        }
+    }
+
+    LaunchedEffect(dragProgress) {
+        if (dragProgress in 0f..1f) {
+            blurProgress.snapTo(dragProgress)
+        }
+    }
+
+    LaunchedEffect(showSheet) {
+        if (!showSheet) {
+            blurProgress.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f),
+            )
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { BlurState.hide() }
+    }
+
     var showCustomTimePicker by remember { mutableStateOf(false) }
     var selectedHour by remember { mutableIntStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) }
     var selectedMinute by remember { mutableIntStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.MINUTE)) }
 
-    if (show) com.Badnng.moe.ui.component.BlurState.show()
     WindowBottomSheet(
-        show = show,
+        show = showSheet,
         title = "选择推送时间",
         enableWindowDim = false,
         allowDismiss = true,
         enableNestedScroll = true,
-        onDismissRequest = { com.Badnng.moe.ui.component.BlurState.hide(); onDismiss() }
+        onDismissRequest = { showSheet = false },
+        onDismissFinished = {
+            BlurState.hide()
+            onDismiss()
+        },
     ) {
         NonPredictiveBackInterceptor()
+        if (showSheet) {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.dp)
+                    .onGloballyPositioned { coordinates ->
+                        val sheetTop = coordinates.positionInWindow().y
+                        dragProgress = 1f - (sheetTop / sheetHeightPx).coerceIn(0f, 1f)
+                    },
+            )
+        }
         val dismiss = LocalDismissState.current
 
         Column(

@@ -186,14 +186,19 @@ fun MiuixGroupDetailScreen(
                     }
                 } else {
                     items(orders, key = OrderEntity::id) { order ->
-                        MiuixGroupOrderItem(
-                            order = order,
-                            onClick = { performHaptic(); onOpenOrder(order) },
-                            onMarkCompleted = {
-                                performHaptic()
-                                onMarkOrderCompleted(order)
-                            },
-                        )
+                        // 子订单卡片同样登记一镜到底：这一页可能正由叠加层绘制（组卡片铺开后落在这里），
+                        // 点开后是叠在它上面的第二条会话。点击本身仍走 onOpenOrder，由调用方决定
+                        // 「能 morph 就 morph、否则按原来的方式开详情」。
+                        CardMorphCard(morphKey = orderMorphKey(order.id)) {
+                            MiuixGroupOrderItem(
+                                order = order,
+                                onClick = { performHaptic(); onOpenOrder(order) },
+                                onMarkCompleted = {
+                                    performHaptic()
+                                    onMarkOrderCompleted(order)
+                                },
+                            )
+                        }
                     }
                 }
                 if (group.orderType == "快递") {

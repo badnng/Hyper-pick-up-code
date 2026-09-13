@@ -43,6 +43,11 @@ fun OrderDetailHost(
     order: OrderEntity,
     bottomSpacing: Dp,
     modifier: Modifier = Modifier,
+    /**
+     * 顶栏占用的高度。必须由列表的 contentPadding 让出来（见 [OrderDetailUiState.topSpacing]），
+     * 传进来后内容才能滑到顶栏下面并被顶栏的 ProgressiveBlur 采样。
+     */
+    topSpacing: Dp = 0.dp,
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
@@ -124,6 +129,7 @@ fun OrderDetailHost(
             screenshotPreviewMaxHeight = screenshotPreviewMaxHeight,
             screenshotCornerPercents = screenshotCornerPercents,
             bottomSpacing = bottomSpacing,
+            topSpacing = topSpacing,
             ocrDebugState = ocrDebugState,
             hideLowConfidenceOcr = hideLowConfidenceOcr,
         ),

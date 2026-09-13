@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import com.Badnng.moe.ocr.MultiRecognitionResult
+import com.Badnng.moe.ocr.EngineRecognitionSummary
 import com.Badnng.moe.ocr.OcrDiagnosticSnapshotCodec
 import com.Badnng.moe.ocr.OcrDiagnosticsPreferences
 import com.Badnng.moe.ocr.RecognitionResult
@@ -247,36 +248,66 @@ class RecognitionRouter(context: Context) {
         return try {
             if (!helper.paddleOcr.isInitialized) helper.initOcr()
             val (singleResult, ocrResult) = helper.recognizeAll(recognitionBitmap, sourceApp, sourcePackage)
-            val hasExpressKeyword = singleResult.fullText.contains("取件") ||
-                singleResult.fullText.contains("取货") ||
-                singleResult.fullText.contains("快递") ||
-                singleResult.fullText.contains("驿站") ||
-                singleResult.fullText.contains("菜鸟")
-            val usesSimpleRulePack = com.Badnng.moe.rules.SimpleRuleRuntime.current().schemaVersion ==
-                com.Badnng.moe.rules.SimpleRulePack.SCHEMA_VERSION
-            val multiResult = if (usesSimpleRulePack || hasExpressKeyword || singleResult.type == "快递") {
-                helper.recognizeMultipleCodesFromResult(
-                    rawFullText = ocrResult.rawFullText,
-                    textBlocks = ocrResult.textBlocks,
-                    mergedText = ocrResult.mergedText,
-                    sourceApp = sourceApp,
-                    sourcePkg = sourcePackage,
-                    qrData = singleResult.qr,
-                    simpleRuleMatches = ocrResult.simpleRuleMatches,
+            // 词汇引擎优先：引擎识别出多个码时（分享快递列表图等），直接生成多订单，
+            // 不再被 SimpleRule 模板结果覆盖（模板只在引擎无结果时兜底）。
+            val engineResult = ocrResult.engineResult
+            // 页面级裁决：只把引擎选中的候选建成订单（默认单码），避免「数据一杂就多框」；
+            // 全部候选仍写进诊断摘要（codeCount / codes）便于排查。
+            val selectedEngineCodes = engineResult?.let { er -> er.selectedCodes.ifEmpty { er.codes } }.orEmpty()
+            val orders = if (engineResult != null && selectedEngineCodes.isNotEmpty()) {
+                selectedEngineCodes.map { code ->
+                    RecognitionResult(
+                        code = code.code,
+                        qr = singleResult.qr,
+                        type = engineResult.pageType,
+                        brand = engineResult.brand?.name,
+                        fullText = ocrResult.rawFullText,
+                        pickupLocation = null,
+                    )
+                }
+            } else {
+                val hasExpressKeyword = singleResult.fullText.contains("取件") ||
+                    singleResult.fullText.contains("取货") ||
+                    singleResult.fullText.contains("快递") ||
+                    singleResult.fullText.contains("驿站") ||
+                    singleResult.fullText.contains("菜鸟")
+                val usesSimpleRulePack = com.Badnng.moe.rules.SimpleRuleRuntime.current().schemaVersion ==
+                    com.Badnng.moe.rules.SimpleRulePack.SCHEMA_VERSION
+                val multiResult = if (usesSimpleRulePack || hasExpressKeyword || singleResult.type == "快递") {
+                    helper.recognizeMultipleCodesFromResult(
+                        rawFullText = ocrResult.rawFullText,
+                        textBlocks = ocrResult.textBlocks,
+                        mergedText = ocrResult.mergedText,
+                        sourceApp = sourceApp,
+                        sourcePkg = sourcePackage,
+                        qrData = singleResult.qr,
+                        simpleRuleMatches = ocrResult.simpleRuleMatches,
+                    )
+                } else {
+                    MultiRecognitionResult(emptyList(), false)
+                }
+                when {
+                    multiResult.orders.isNotEmpty() -> multiResult.orders
+                    singleResult.code != null -> listOf(singleResult)
+                    else -> listOf(singleResult)
+                }
+            }
+            val engineSummary = engineResult?.let {
+                EngineRecognitionSummary(
+                    pageType = it.pageType,
+                    brand = it.brand?.name,
+                    keywordHitCount = it.keywordHits.size,
+                    cropCount = it.crops.size,
+                    codeCount = it.codes.size,
+                    codes = it.codes.map { c -> c.code },
+                    totalMs = it.totalMs,
                 )
-            } else {
-                MultiRecognitionResult(emptyList(), false)
             }
-            val orders = when {
-                multiResult.orders.isNotEmpty() -> multiResult.orders
-                singleResult.code != null -> listOf(singleResult)
-                else -> listOf(singleResult)
-            }
-            val diagnosticData = if (OcrDiagnosticsPreferences.shouldCapture(appContext)) {
-                ocrResult.diagnosticResult?.let(OcrDiagnosticSnapshotCodec::encode)
-            } else {
-                null
-            }
+            // 引擎摘要总是保存（诊断可见提取了哪些码）；OCR 明细仍受「识别详情」开关控制
+            val diagnosticData = OcrDiagnosticSnapshotCodec.encodeWithEngine(
+                ocr = if (OcrDiagnosticsPreferences.shouldCapture(appContext)) ocrResult.diagnosticResult else null,
+                engine = engineSummary,
+            )
             OfflineImageRecognition(orders, diagnosticData)
         } finally {
             helper.close()

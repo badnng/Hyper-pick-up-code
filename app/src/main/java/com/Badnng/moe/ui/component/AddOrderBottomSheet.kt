@@ -48,8 +48,6 @@ import com.Badnng.moe.ocr.RecognitionResult
 import com.Badnng.moe.recognition.RecognizedOrderFactory
 import com.Badnng.moe.recognition.RecognitionExecutionMetadata
 import com.Badnng.moe.recognition.RecognitionRouter
-import com.Badnng.moe.recognition.RecognitionCorrectionDetector
-import com.Badnng.moe.recognition.RecognitionCorrectionStore
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.recognition.RecognitionTrigger
 import com.Badnng.moe.viewmodel.OrderViewModel
@@ -215,50 +213,12 @@ fun AddOrderBottomSheet(
                             namePrefix = "导入图片",
                         )
                         screenshotPath = savedScreenshotPath
-                        val unrecognizedExplicitCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
-                            fullText = result.fullText,
-                            recognizedCodes = successfulResults.mapNotNull { it.code },
-                        )
-                        val partialDraftSaved = if (unrecognizedExplicitCodes.isNotEmpty()) {
-                            RecognitionCorrectionStore.saveImageDraft(
-                                context = context,
-                                bitmap = originalBitmap,
-                                result = result.copy(code = null, brand = null, pickupLocation = null),
-                                metadata = routedResult.metadata,
-                                recognizedText = "导入图片（部分待纠正）",
-                                sourceApp = imageSourceApp,
-                                sourcePackage = imageSourcePackage,
-                                screenshotPrefix = "导入待纠正",
-                                existingScreenshotPath = savedScreenshotPath,
-                            )
-                        } else {
-                            false
-                        }
-                        when {
-                            partialDraftSaved -> Toast.makeText(
-                                context,
-                                "部分取件码未识别，已加入纠正识别",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                            successfulResults.size > 1 -> Toast.makeText(
+                        if (successfulResults.size > 1) {
+                            Toast.makeText(
                                 context,
                                 "识别到 ${successfulResults.size} 个取件码，添加时将一并保存",
                                 Toast.LENGTH_SHORT,
                             ).show()
-                        }
-                    } else if (result != null) {
-                        val saved = RecognitionCorrectionStore.saveImageDraft(
-                            context = context,
-                            bitmap = originalBitmap,
-                            result = result,
-                            metadata = routedResult.metadata,
-                            recognizedText = "导入图片（待纠正）",
-                            sourceApp = imageSourceApp,
-                            sourcePackage = imageSourcePackage,
-                            screenshotPrefix = "导入待纠正",
-                        )
-                        if (saved) {
-                            Toast.makeText(context, "识别失败，已加入纠正识别", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }

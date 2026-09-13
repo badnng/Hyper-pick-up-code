@@ -21,6 +21,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
+import androidx.navigationevent.NavigationEventDispatcher
+import androidx.navigationevent.NavigationEventInput
 import androidx.navigationevent.OnBackInvokedDefaultInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
@@ -289,17 +293,29 @@ private fun AppBackGestureHost(
     predictiveBackEnabled: Boolean,
     content: @Composable () -> Unit,
 ) {
-    val dispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
-    val view = LocalView.current
-    MiuixNavigationEventHost {
-        androidx.compose.foundation.layout.Box {
-            content()
-            NonPredictiveBackInterceptor(
-                enabled = !predictiveBackEnabled,
-                dispatcher = dispatcher,
-                view = view,
-            )
-        }
+    MiuixNavigationEventHost(predictiveBackEnabled = predictiveBackEnabled) {
+        content()
+    }
+}
+
+private class NonPredictiveOnBackInvokedInput(
+    private val onBackInvokedDispatcher: OnBackInvokedDispatcher,
+) : NavigationEventInput() {
+    private val callback = OnBackInvokedCallback {
+        dispatchOnBackCompleted()
+    }
+
+    override fun onAdded(dispatcher: NavigationEventDispatcher) {
+        super.onAdded(dispatcher)
+        onBackInvokedDispatcher.registerOnBackInvokedCallback(
+            OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+            callback,
+        )
+    }
+
+    override fun onRemoved() {
+        onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback)
+        super.onRemoved()
     }
 }
 
@@ -310,6 +326,7 @@ private fun AppBackGestureHost(
  */
 @Composable
 internal fun MiuixNavigationEventHost(
+    predictiveBackEnabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val activity = LocalContext.current as? Activity
@@ -318,8 +335,12 @@ internal fun MiuixNavigationEventHost(
         parent = null,
     )
     val onBackInvokedDispatcher = activity?.onBackInvokedDispatcher
-    val navigationEventInput = remember(onBackInvokedDispatcher) {
-        onBackInvokedDispatcher?.let(::OnBackInvokedDefaultInput)
+    val navigationEventInput = remember(onBackInvokedDispatcher, predictiveBackEnabled) {
+        when {
+            onBackInvokedDispatcher == null -> null
+            predictiveBackEnabled -> OnBackInvokedDefaultInput(onBackInvokedDispatcher)
+            else -> NonPredictiveOnBackInvokedInput(onBackInvokedDispatcher)
+        }
     }
 
     // miuix-nav 0.9.4 and Miuix popup components use NavigationEventDispatcher
@@ -348,9 +369,20 @@ internal fun MiuixNavigationEventHost(
 @Composable
 fun NonPredictiveBackInterceptor() {
     val context = LocalContext.current
-    val predictiveBackEnabled = remember(context) {
+    val prefs = remember {
         context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-            .getBoolean("predictive_back_enabled", true)
+    }
+    var predictiveBackEnabled by remember {
+        mutableStateOf(prefs.getBoolean("predictive_back_enabled", true))
+    }
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "predictive_back_enabled") {
+                predictiveBackEnabled = p.getBoolean(key, true)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
     NonPredictiveBackInterceptor(
         enabled = !predictiveBackEnabled,

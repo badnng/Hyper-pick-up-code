@@ -74,7 +74,8 @@ fun MiuixOrderDetailContent(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            top = 12.dp,
+            // 顶栏高度走 contentPadding：列表视口仍是整屏，内容能滑进顶栏下面被 ProgressiveBlur 采样。
+            top = 12.dp + state.topSpacing,
             bottom = state.bottomSpacing,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),

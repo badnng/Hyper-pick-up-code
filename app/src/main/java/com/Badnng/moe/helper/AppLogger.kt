@@ -38,7 +38,8 @@ object AppLogger {
     private val RECOGNITION_TAGS = setOf(
         "ExpressExtract", "ProcessTextActivity", "ProcessTextRecognition",
         "RecognitionMonitor", "ShareReceiver", "ShareRecognition",
-        "SmsRecognition", "PaddleOcrHelper"
+        "SmsRecognition", "PaddleOcrHelper",
+        "PickupTwoPassEngine", "PickupWordRuleRepo"
     )
     // 更新相关 tag，匹配的行写入 update.log
     private val UPDATE_TAGS = setOf(

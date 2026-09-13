@@ -71,8 +71,6 @@ import com.Badnng.moe.ocr.RecognitionResult
 import com.Badnng.moe.recognition.RecognizedOrderFactory
 import com.Badnng.moe.recognition.RecognitionExecutionMetadata
 import com.Badnng.moe.recognition.RecognitionRouter
-import com.Badnng.moe.recognition.RecognitionCorrectionDetector
-import com.Badnng.moe.recognition.RecognitionCorrectionStore
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.recognition.RecognitionTrigger
 import com.Badnng.moe.viewmodel.OrderViewModel
@@ -147,6 +145,7 @@ fun HomeScreen(
     var detailOrder by remember { mutableStateOf<OrderEntity?>(null) }
     var detailGroup by remember { mutableStateOf<OrderGroup?>(null) }
     var settingsDetailStack by remember { mutableStateOf<List<SettingsPage>>(emptyList()) }
+    var rulesSubPageOpen by remember { mutableStateOf(false) }
     var isFromNotification by rememberSaveable { mutableStateOf(false) }
     var isManaging by rememberSaveable { mutableStateOf(false) }
     var groupOrders by remember { mutableStateOf<List<OrderEntity>>(emptyList()) }
@@ -166,8 +165,19 @@ fun HomeScreen(
         mutableStateOf(prefs.getBoolean("use_floating_nav_bar", false))
     }
     val configuration = LocalConfiguration.current
-    val isLargeScreen = configuration.screenWidthDp >= 700
-    val compactNavigationRail = isLargeScreen &&
+    val isPortrait = configuration.screenHeightDp > configuration.screenWidthDp
+
+    // 折叠屏开合检测
+    val windowInfoTracker = remember(context) { WindowInfoTracker.getOrCreate(context) }
+    val layoutInfo by windowInfoTracker.windowLayoutInfo(context)
+        .collectAsStateWithLifecycle(initialValue = null)
+    val foldingFeature = layoutInfo?.displayFeatures?.filterIsInstance<FoldingFeature>()?.firstOrNull()
+    val isFolded = foldingFeature?.state == FoldingFeature.State.HALF_OPENED
+    // 折叠屏展开后即使竖屏也按大屏处理；普通平板竖屏仍走手机逻辑。
+    val isFoldableExpanded = foldingFeature != null && !isFolded
+    val isLargeScreen = configuration.screenWidthDp >= 700 && (!isPortrait || isFoldableExpanded)
+    val useSideNavigation = isLargeScreen
+    val compactNavigationRail = useSideNavigation &&
         configuration.screenWidthDp < MD3E_FIXED_NAVIGATION_RAIL_MIN_WIDTH_DP
     val navigationRailState = rememberWideNavigationRailState(
         initialValue = if (compactNavigationRail) {
@@ -188,9 +198,9 @@ fun HomeScreen(
     }
     val directTopLevelTransitionProgress = remember { Animatable(0f) }
 
-    LaunchedEffect(isLargeScreen, compactNavigationRail) {
+    LaunchedEffect(useSideNavigation, compactNavigationRail) {
         when {
-            !isLargeScreen -> navigationRailState.collapse()
+            !useSideNavigation -> navigationRailState.collapse()
             compactNavigationRail -> navigationRailState.collapse()
             else -> navigationRailState.expand()
         }
@@ -205,13 +215,6 @@ fun HomeScreen(
             selectedTopLevelPage = pagerState.currentPage
         }
     }
-
-    // 折叠屏开合检测
-    val windowInfoTracker = remember(context) { WindowInfoTracker.getOrCreate(context) }
-    val layoutInfo by windowInfoTracker.windowLayoutInfo(context)
-        .collectAsStateWithLifecycle(initialValue = null)
-    val foldingFeature = layoutInfo?.displayFeatures?.filterIsInstance<FoldingFeature>()?.firstOrNull()
-    val isFolded = foldingFeature?.state == FoldingFeature.State.HALF_OPENED
     val imeBottomPadding = WindowInsets.ime.getBottom(LocalDensity.current)
     val isImeVisible = imeBottomPadding > 0 && LocalWindowInfo.current.isWindowFocused
 
@@ -318,11 +321,11 @@ fun HomeScreen(
 
     // 主页面按返回键时，从最近任务移除卡片
     BackHandler(
-        enabled = settingsDetailStack.isEmpty() && detailOrder == null && detailGroup == null,
+        enabled = settingsDetailStack.isEmpty() && !rulesSubPageOpen && detailOrder == null && detailGroup == null,
     ) {
         activity?.finishAndRemoveTask()
     }
-    BackHandler(enabled = compactNavigationRail && navigationRailExpanded) {
+    BackHandler(enabled = compactNavigationRail && navigationRailExpanded && !rulesSubPageOpen) {
         coroutineScope.launch { navigationRailState.collapse() }
     }
 
@@ -402,6 +405,7 @@ fun HomeScreen(
 
     var isScrollingDown by remember { mutableStateOf(false) }
     val isUiHidden = settingsDetailStack.isNotEmpty() ||
+        rulesSubPageOpen ||
         detailOrder != null ||
         detailGroup != null ||
         isManaging
@@ -494,6 +498,7 @@ fun HomeScreen(
             1 -> RulesScreen(
                 modifier = Modifier.fillMaxSize(),
                 onExpandNavigationRail = onExpandNavigationRail,
+                onSubPageChange = { rulesSubPageOpen = it },
                 onShowMenu = { position, rename, delete, export ->
                     menuPosition = position
                     menuRename = rename
@@ -537,7 +542,7 @@ fun HomeScreen(
         Md3eHomeDetailContent(
             target = target,
             groupOrders = groupOrders,
-            supportingPane = isLargeScreen,
+            supportingPane = useSideNavigation,
             performHaptic = performHaptic,
             onSettingsBack = {
                 performHaptic()
@@ -576,7 +581,7 @@ fun HomeScreen(
 
     Box(modifier = modifier.fillMaxSize().background(homeBackgroundColor)) {
     Row(modifier = Modifier.fillMaxSize()) {
-        if (isLargeScreen && !compactNavigationRail) {
+        if (useSideNavigation && !compactNavigationRail) {
             Md3eHomeNavigationRail(
                 state = navigationRailState,
                 selectedPage = selectedTopLevelPage,
@@ -596,7 +601,7 @@ fun HomeScreen(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = !isLargeScreen &&
+                    visible = !useSideNavigation &&
                         !isUiHidden &&
                         !isFolded &&
                         !isImeVisible &&
@@ -644,7 +649,7 @@ fun HomeScreen(
                 },
         ) { _ ->
             Md3eSupportingPaneLayout(
-                detailTarget = if (isLargeScreen) currentDetailTarget else null,
+                detailTarget = if (useSideNavigation) currentDetailTarget else null,
                 detailContent = homeDetailContent,
             ) {
                 if (isLargeScreen) {
@@ -925,7 +930,7 @@ fun HomeScreen(
         }
 
         Md3eMobileDetailOverlay(
-            visible = !isLargeScreen && currentDetailTarget != null,
+            visible = !useSideNavigation && currentDetailTarget != null,
             detailTarget = currentDetailTarget,
             scale = currentScale,
             translationX = currentTranslationX,
@@ -1025,50 +1030,12 @@ fun HomeScreen(
                                     namePrefix = "导入图片",
                                 )
                                 screenshotPath = savedScreenshotPath
-                                val unrecognizedExplicitCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
-                                    fullText = result.fullText,
-                                    recognizedCodes = successfulResults.mapNotNull { it.code },
-                                )
-                                val partialDraftSaved = if (unrecognizedExplicitCodes.isNotEmpty()) {
-                                    RecognitionCorrectionStore.saveImageDraft(
-                                        context = context,
-                                        bitmap = originalBitmap,
-                                        result = result.copy(code = null, brand = null, pickupLocation = null),
-                                        metadata = routedResult.metadata,
-                                        recognizedText = "导入图片（部分待纠正）",
-                                        sourceApp = imageSourceApp,
-                                        sourcePackage = imageSourcePackage,
-                                        screenshotPrefix = "导入待纠正",
-                                        existingScreenshotPath = savedScreenshotPath,
-                                    )
-                                } else {
-                                    false
-                                }
-                                when {
-                                    partialDraftSaved -> Toast.makeText(
-                                        context,
-                                        "部分取件码未识别，已加入纠正识别",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                    successfulResults.size > 1 -> Toast.makeText(
+                                if (successfulResults.size > 1) {
+                                    Toast.makeText(
                                         context,
                                         "识别到 ${successfulResults.size} 个取件码，添加时将一并保存",
                                         Toast.LENGTH_SHORT,
                                     ).show()
-                                }
-                            } else if (result != null) {
-                                val saved = RecognitionCorrectionStore.saveImageDraft(
-                                    context = context,
-                                    bitmap = originalBitmap,
-                                    result = result,
-                                    metadata = routedResult.metadata,
-                                    recognizedText = "导入图片（待纠正）",
-                                    sourceApp = imageSourceApp,
-                                    sourcePackage = imageSourcePackage,
-                                    screenshotPrefix = "导入待纠正",
-                                )
-                                if (saved) {
-                                    Toast.makeText(context, "识别失败，已加入纠正识别", Toast.LENGTH_SHORT).show()
                                 }
                             }
 
@@ -1702,7 +1669,6 @@ private fun SettingsPage.md3eTitle(): String = when (this) {
     SettingsPage.Screenshot -> "截图方式"
     SettingsPage.Recognition -> "识别方式"
     SettingsPage.CustomPrompt -> "自定义 Prompt"
-    SettingsPage.RecognitionCorrection -> "纠正识别"
     SettingsPage.KeepAlive -> "保活设置"
     SettingsPage.WearableSync -> "手表同步"
     SettingsPage.Storage -> "清理空间"

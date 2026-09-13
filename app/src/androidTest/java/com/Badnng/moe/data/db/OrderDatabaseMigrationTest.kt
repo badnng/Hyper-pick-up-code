@@ -6,6 +6,8 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -128,12 +130,23 @@ class OrderDatabaseMigrationTest {
     }
 
     @Test
-    fun migrationEightToNineAddsRuleCorrectionFlag() {
+    fun migrationNineToTenDropsRuleCorrectionFlagAndDrafts() {
         val database = openHelper.writableDatabase
 
         OrderDatabase.MIGRATION_6_7.migrate(database)
         OrderDatabase.MIGRATION_7_8.migrate(database)
         OrderDatabase.MIGRATION_8_9.migrate(database)
+        // v9 里草稿与正常订单同表，仅靠 needsRuleCorrection=1 区分。
+        database.execSQL(
+            "INSERT INTO orders (id, takeoutCode, screenshotPath, recognizedText, isCompleted, createdAt, orderType, needsRuleCorrection) " +
+                "VALUES ('draft-1', '', '', '待纠正', 0, 1, '餐食', 1)"
+        )
+        database.execSQL(
+            "INSERT INTO orders (id, takeoutCode, screenshotPath, recognizedText, isCompleted, createdAt, orderType, needsRuleCorrection) " +
+                "VALUES ('order-1', 'A123', '', '正常', 0, 2, '餐食', 0)"
+        )
+
+        OrderDatabase.MIGRATION_9_10.migrate(database)
 
         val columns = database.query("PRAGMA table_info(`orders`)").use { cursor ->
             val nameIndex = cursor.getColumnIndexOrThrow("name")
@@ -141,8 +154,18 @@ class OrderDatabaseMigrationTest {
                 while (cursor.moveToNext()) add(cursor.getString(nameIndex))
             }
         }
-        assertTrue(columns.contains("needsRuleCorrection"))
+        assertFalse(columns.contains("needsRuleCorrection"))
+
+        val remainingIds = database.query("SELECT id FROM orders").use { cursor ->
+            val idIndex = cursor.getColumnIndexOrThrow("id")
+            buildList {
+                while (cursor.moveToNext()) add(cursor.getString(idIndex))
+            }
+        }
+        // 草稿必须随迁移清掉，否则主页会出现空码订单；正常订单保留。
+        assertEquals(listOf("order-1"), remainingIds)
     }
+
     private companion object {
         const val DATABASE_NAME = "migration-v6-v7-test.db"
     }

@@ -1,6 +1,112 @@
 {
   "schema_version": 4,
-  "name": "我的识别规则",
-  "updated_at": 1786251677980,
-  "brands": []
+  "name": "内置识别规则",
+  "updated_at": 1789257600000,
+  "brands": [
+    {
+      "id": "builtin-express",
+      "category": "EXPRESS",
+      "name": "快递",
+      "enabled": true,
+      "keywords": ["取件", "取货", "到站", "驿站", "快递柜", "自提", "快递"],
+      "package_names": [],
+      "qr_patterns": [],
+      "templates": [
+        {
+          "id": "builtin-express-t1",
+          "name": "取件码标签",
+          "enabled": true,
+          "template": "取件码{{code:alnum:1-40}}",
+          "code_digits_only": false,
+          "excluded_words": [],
+          "sources": ["TEXT", "SMS", "NOTIFICATION"]
+        },
+        {
+          "id": "builtin-express-t2",
+          "name": "凭码取件",
+          "enabled": true,
+          "template": "凭{{code:alnum:1-40}}取件",
+          "code_digits_only": false,
+          "excluded_words": [],
+          "sources": ["TEXT", "SMS", "NOTIFICATION"]
+        },
+        {
+          "id": "builtin-express-t2",
+          "name": "凭码领取",
+          "enabled": true,
+          "template": "凭{{code:alnum:1-40}}领取",
+          "code_digits_only": false,
+          "excluded_words": [],
+          "sources": ["TEXT", "SMS", "NOTIFICATION"]
+        }
+      ]
+    },
+    {
+      "id": "builtin-food",
+      "category": "FOOD",
+      "name": "餐食",
+      "enabled": true,
+      "keywords": ["取餐", "取餐号", "出餐", "备餐", "叫号", "餐号"],
+      "package_names": [],
+      "qr_patterns": [],
+      "templates": [
+        {
+          "id": "builtin-food-t1",
+          "name": "取餐码标签",
+          "enabled": true,
+          "template": "取餐码{{code:alnum:1-40}}",
+          "code_digits_only": false,
+          "excluded_words": [],
+          "sources": ["TEXT", "SMS", "NOTIFICATION"]
+        },
+        {
+          "id": "builtin-food-t2",
+          "name": "取餐号标签",
+          "enabled": true,
+          "template": "取餐号{{code:alnum:1-40}}",
+          "code_digits_only": false,
+          "excluded_words": [],
+          "sources": ["TEXT", "SMS", "NOTIFICATION"]
+        },
+        {
+          "id": "builtin-food-t3",
+          "name": "取餐码口令",
+          "enabled": true,
+          "template": "取餐码{{any}}码{{code:alnum:1-40}}",
+          "code_digits_only": false,
+          "excluded_words": [],
+          "sources": ["TEXT", "SMS", "NOTIFICATION"]
+        }
+      ]
+    },
+    {
+      "id": "builtin-drink",
+      "category": "DRINK",
+      "name": "饮品",
+      "enabled": true,
+      "keywords": ["取茶", "取茶码", "奶茶", "咖啡"],
+      "package_names": [],
+      "qr_patterns": [],
+      "templates": [
+        {
+          "id": "builtin-drink-t1",
+          "name": "取茶码标签",
+          "enabled": true,
+          "template": "取茶码{{code:alnum:1-40}}",
+          "code_digits_only": false,
+          "excluded_words": [],
+          "sources": ["TEXT", "SMS", "NOTIFICATION"]
+        },
+        {
+          "id": "builtin-drink-t2",
+          "name": "取餐码标签",
+          "enabled": true,
+          "template": "取餐码{{code:alnum:1-40}}",
+          "code_digits_only": false,
+          "excluded_words": [],
+          "sources": ["TEXT", "SMS", "NOTIFICATION"]
+        }
+      ]
+    }
+  ]
 }

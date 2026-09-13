@@ -101,6 +101,7 @@ object OnlineRecognitionCatalog {
             OnlineRecognitionModel("MiniMax-M3", "MiniMax M3", ReasoningControl.MINIMAX_EFFORT_NONE),
         ),
         OnlineRecognitionProvider.OPENCODE_GO to listOf(
+            OnlineRecognitionModel("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", ReasoningControl.OPENCODE_COMBINED),
             OnlineRecognitionModel("deepseek-v4-flash-vision-exp", "DeepSeek V4 Flash Vision Exp", ReasoningControl.OPENCODE_COMBINED),
             OnlineRecognitionModel("gpt-5.6-luna", "GPT 5.6 Luna", ReasoningControl.OPENAI_EFFORT_NONE),
             OnlineRecognitionModel("kimi-k2.6", "Kimi K2.6", ReasoningControl.OPENCODE_COMBINED),
@@ -114,7 +115,7 @@ object OnlineRecognitionCatalog {
             OnlineRecognitionModel("mimo-v2.5-free", "MiMo-V2.5 Free", ReasoningControl.OPENCODE_COMBINED),
         ),
         OnlineRecognitionProvider.DEEPSEEK to listOf(
-            OnlineRecognitionModel("deepseek-v4-flash-vision-exp", "DeepSeek V4 Flash Vision Exp", ReasoningControl.THINKING_DISABLED),
+            OnlineRecognitionModel("deepseek-flash", "DeepSeek V4.1 Flash", ReasoningControl.THINKING_DISABLED),
         ),
         OnlineRecognitionProvider.CUSTOM to listOf(
             OnlineRecognitionModel("", "等待获取模型", ReasoningControl.NONE),

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -77,10 +76,13 @@ fun MiuixOrderDetailScreen(
             OrderDetailHost(
                 order = order,
                 bottomSpacing = navigationBarPadding + if (supportingPane) 24.dp else 32.dp,
+                // 顶栏高度交给列表的 contentPadding，不能写成 Modifier.padding(top = ...)：
+                // 后者会把列表视口压到顶栏下沿，内容滑到那里就被裁掉、永远进不到顶栏下面，
+                // 顶栏那层 ProgressiveBlur 也就一直是空的（用户报的「往上滑没有被模糊」）。
+                topSpacing = innerPadding.calculateTopPadding(),
                 modifier = Modifier
                     .fillMaxSize()
-                    .miuixScrollModifiers(topAppBarScrollBehavior)
-                    .padding(top = innerPadding.calculateTopPadding()),
+                    .miuixScrollModifiers(topAppBarScrollBehavior),
             )
         }
     }

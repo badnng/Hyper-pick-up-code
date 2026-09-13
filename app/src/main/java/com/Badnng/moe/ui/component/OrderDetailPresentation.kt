@@ -3,7 +3,10 @@ package com.Badnng.moe.ui.component
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.Badnng.moe.data.db.OrderEntity
+import com.Badnng.moe.ocr.EngineRecognitionSummary
+import com.Badnng.moe.ocr.OcrDiagnosticSnapshotCodec
 import com.Badnng.moe.recognition.OnlineRecognitionCatalog
 import com.Badnng.moe.recognition.OnlineRecognitionProvider
 import com.Badnng.moe.recognition.RecognitionInputType
@@ -28,6 +31,12 @@ data class OrderDetailUiState(
     val screenshotPreviewMaxHeight: Dp,
     val screenshotCornerPercents: ScreenshotCornerPercents,
     val bottomSpacing: Dp,
+    /**
+     * 顶栏高度：必须以 LazyColumn 的 contentPadding 让出来，不能当作外补边压在下层容器上。
+     * 压在外层会让列表视口从顶栏下沿开始，内容滑到那里就被裁掉、永远进不到顶栏下面，
+     * 顶栏的 ProgressiveBlur 也就没东西可模糊（表现为「往上滑的信息没有被模糊」）。
+     */
+    val topSpacing: Dp = 0.dp,
     val ocrDebugState: OcrDebugUiState? = null,
     val hideLowConfidenceOcr: Boolean = true,
 )
@@ -176,6 +185,18 @@ object OrderDiagnosticReportFormatter {
             appendLine("错误摘要: ${recognitionErrorSummaryLabel(order)}")
             appendLine("错误详情:")
             appendLine(recognitionErrorDetailLabel(order))
+            val engine = OcrDiagnosticSnapshotCodec.decodeEngine(order.ocrDiagnosticData)
+            if (engine != null) {
+                appendLine()
+                appendLine("[词汇引擎]")
+                appendLine("页面类型: ${engine.pageType.ifBlank { UNRECORDED_VALUE }}")
+                appendLine("品牌: ${engine.brand.orUnrecordedValue()}")
+                appendLine("关键词命中: ${engine.keywordHitCount}")
+                appendLine("裁剪区: ${engine.cropCount}")
+                appendLine("识别码数: ${engine.codeCount}")
+                appendLine("识别码: ${engine.codes.joinToString("、").ifBlank { "无" }}")
+                appendLine("引擎耗时: ${engine.totalMs} ms")
+            }
             appendLine()
             appendLine("[二维码原始数据]")
             appendLine(order.qrCodeData.orUnrecordedValue())

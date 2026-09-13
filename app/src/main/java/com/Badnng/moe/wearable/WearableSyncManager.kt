@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import com.Badnng.moe.data.db.OrderDatabase
 import com.Badnng.moe.data.db.OrderEntity
+import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.NotificationScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -79,8 +80,9 @@ class WearableSyncManager private constructor(
     private var watchdogJob: Job? = null
     private var pushing = AtomicBoolean(false)
     /** 最近一次未完成订单快照的 orderId 集合；用于识别“新加入的取餐码”。 */
+    /** 已知的不完整订单 ID。启动时从数据库预置，收集过程中只增不减，
+     *  避免 App 重新打开/进程重启后把已存在订单误判为新订单重复推送。 */
     private var lastKnownIncompleteIds: Set<String> = emptySet()
-    private var orderSnapshotInitialized = false
     /** 已发送过系统通知的订单，防止多个识别入口（通知/截图/短信等）重复弹。 */
     private val notifiedOrderIds = HashSet<String>()
     /** interconnect 是单一顺序通道；快照、心跳、ready、done_result 必须串行提交。 */
@@ -240,6 +242,19 @@ class WearableSyncManager private constructor(
         ordersJob?.cancel()
         val source = dataSource ?: return
         ordersJob = scope.launch {
+            // 启动时把数据库里的现有未完成订单预置为“已知”，避免 Room 流先发出空/部分
+            // 快照时，把已存在订单误判成新订单并向手表重复推送通知。
+            val existingIncompleteIds = runCatching {
+                OrderDatabase.getDatabase(appContext).orderDao().getAllOrdersList()
+                    .filter { !it.isCompleted }
+                    .map { it.id }
+                    .toSet()
+            }.getOrDefault(emptySet())
+            lastKnownIncompleteIds = existingIncompleteIds
+            synchronized(notifiedOrderIds) {
+                notifiedOrderIds.addAll(existingIncompleteIds)
+            }
+
             combine(source.incompleteOrders, source.completedOrders) { incomplete, completed ->
                 OrdersSnapshot(incomplete, completed)
             }
@@ -248,40 +263,37 @@ class WearableSyncManager private constructor(
                     latestSnapshotDirty = true
                     pendingOrdersForPush = snapshot
 
-                    // 第一次快照只作为基线，不给历史订单补弹通知；
-                    // 后续快照中新出现的 orderId 才触发系统通知。
-                    if (!orderSnapshotInitialized) {
-                        orderSnapshotInitialized = true
-                        lastKnownIncompleteIds = snapshot.incomplete.map { it.id }.toSet()
-                    } else {
-                        val newOrders = snapshot.incomplete.filter { it.id !in lastKnownIncompleteIds }
-                        lastKnownIncompleteIds = snapshot.incomplete.map { it.id }.toSet()
-                        newOrders.groupBy { it.groupId }.forEach { (groupId, orders) ->
-                            if (groupId != null && orders.size >= 2) {
-                                val type = orders.first().orderType.takeIf { it.isNotBlank() } ?: "取餐码"
-                                val brand = orders.first().brandName?.takeIf { it.isNotBlank() }
-                                val groupTitle = brand ?: "新的${type}通知"
-                                val hasQr = orders.any { !it.qrCodeData.isNullOrBlank() }
-                                val groupMessage = buildString {
-                                    append("${orders.size}个$type")
-                                    if (hasQr) append("，可到手表端查看二维码")
-                                }
-                                sendNewOrderNotify(
-                                    orders.first().id,
-                                    groupTitle,
-                                    groupMessage
-                                )
-                            } else {
-                                orders.forEach { order ->
-                                    val title = order.brandName?.takeIf { it.isNotBlank() } ?: "新的取餐码"
-                                    val message = buildString {
-                                        append(order.takeoutCode)
-                                        if (!order.qrCodeData.isNullOrBlank()) {
-                                            append("，二维码已同步，可到手表端查看")
-                                        }
+                    // 只把“已知集合”里没有的订单视为新增；已知集合只增不减，
+                    // 防止中间出现空快照清空基线后，旧订单又被当成新订单。
+                    val newOrders = snapshot.incomplete.filter { it.id !in lastKnownIncompleteIds }
+                    lastKnownIncompleteIds =
+                        lastKnownIncompleteIds + snapshot.incomplete.map { it.id }.toSet()
+
+                    newOrders.groupBy { it.groupId }.forEach { (groupId, orders) ->
+                        if (groupId != null && orders.size >= 2) {
+                            val type = orders.first().orderType.takeIf { it.isNotBlank() } ?: "取餐码"
+                            val brand = orders.first().brandName?.takeIf { it.isNotBlank() }
+                            val groupTitle = brand ?: "新的${type}通知"
+                            val hasQr = orders.any { !it.qrCodeData.isNullOrBlank() }
+                            val groupMessage = buildString {
+                                append("${orders.size}个$type")
+                                if (hasQr) append("，可到手表端查看二维码")
+                            }
+                            sendNewOrderNotify(
+                                orders.first().id,
+                                groupTitle,
+                                groupMessage
+                            )
+                        } else {
+                            orders.forEach { order ->
+                                val title = order.brandName?.takeIf { it.isNotBlank() } ?: "新的取餐码"
+                                val message = buildString {
+                                    append(order.takeoutCode)
+                                    if (!order.qrCodeData.isNullOrBlank()) {
+                                        append("，二维码已同步，可到手表端查看")
                                     }
-                                    sendNewOrderNotify(order.id, title, message)
                                 }
+                                sendNewOrderNotify(order.id, title, message)
                             }
                         }
                     }
@@ -592,6 +604,25 @@ class WearableSyncManager private constructor(
         pushLatestIfReady()
     }
 
+    /**
+     * 组通知：同一分组（组卡片）的多个订单合并成一条手表通知。
+     * 文案里的数量用组内未完成总数 [totalCount]（不是本次入库数），与订单流观察者、
+     * “再次推送”和通知监听识别三处保持一致。
+     * 发送前把本次入库订单全部标记为已通知，避免订单流观察者或其它入口为此组再补一条。
+     */
+    private fun sendGroupNotify(orders: List<OrderEntity>, totalCount: Int) {
+        val type = orders.first().orderType.takeIf { it.isNotBlank() } ?: "取餐码"
+        val title = orders.first().brandName?.takeIf { it.isNotBlank() } ?: "新的${type}通知"
+        val hasQr = orders.any { !it.qrCodeData.isNullOrBlank() }
+        val message = buildString {
+            append("${totalCount}个$type")
+            if (hasQr) append("，可到手表端查看二维码")
+        }
+        synchronized(notifiedOrderIds) { notifiedOrderIds.addAll(orders.map { it.id }) }
+        log("发送组通知: 组内${totalCount}单合并为一条, title=$title, message=$message")
+        sendSystemNotify(title, message)
+    }
+
     /** 新订单通知入口：同一 orderId 去重，避免截图/通知/短信等多个识别入口重复弹。 */
     fun sendNewOrderNotify(orderId: String, title: String, message: String) {
         if (orderId.isBlank()) {
@@ -605,6 +636,40 @@ class WearableSyncManager private constructor(
             }
         }
         sendSystemNotify(title, message)
+    }
+
+    /** “再次推送实时通知”使用：显式重新向手表推送单条订单，不走内存去重。 */
+    fun resendOrderToWatch(order: OrderEntity) {
+        val title = order.brandName?.takeIf { it.isNotBlank() } ?: "新的取餐码"
+        val message = buildString {
+            append(order.takeoutCode)
+            if (!order.qrCodeData.isNullOrBlank()) {
+                append("，二维码已同步，可到手表端查看")
+            }
+        }
+        sendSystemNotify(title, message)
+    }
+
+    /** “再次推送实时通知”使用：显式重新向手表推送一组订单，不走内存去重。 */
+    fun resendGroupToWatch(group: OrderGroup, orders: List<OrderEntity>) {
+        val activeOrders = orders.filter { !it.isCompleted }
+        if (activeOrders.isEmpty()) return
+        if (activeOrders.size < 2) {
+            resendOrderToWatch(activeOrders.first())
+            return
+        }
+        val type = group.orderType.takeIf { it.isNotBlank() }
+            ?: activeOrders.first().orderType.takeIf { it.isNotBlank() }
+            ?: "取餐码"
+        val brand = group.brandName?.takeIf { it.isNotBlank() }
+            ?: activeOrders.firstOrNull()?.brandName?.takeIf { it.isNotBlank() }
+        val groupTitle = brand ?: "新的${type}通知"
+        val hasQr = activeOrders.any { !it.qrCodeData.isNullOrBlank() }
+        val groupMessage = buildString {
+            append("${activeOrders.size}个$type")
+            if (hasQr) append("，可到手表端查看二维码")
+        }
+        sendSystemNotify(groupTitle, groupMessage)
     }
 
     /**
@@ -843,7 +908,7 @@ class WearableSyncManager private constructor(
                         val dao = OrderDatabase.getDatabase(appContext).orderDao()
                         val all = dao.getAllOrdersList()
                         OrdersSnapshot(
-                            incomplete = all.filter { !it.isCompleted && !it.needsRuleCorrection },
+                            incomplete = all.filter { !it.isCompleted },
                             completed = all.filter { it.isCompleted },
                         )
                     }
@@ -1224,6 +1289,31 @@ class WearableSyncManager private constructor(
                 if (!order.qrCodeData.isNullOrBlank()) append("，二维码已同步，可到手表端查看")
             }
             getInstance(context).sendNewOrderNotify(order.id, title, message)
+        }
+
+        /**
+         * 识别入库后的统一手表通知入口（多单合并）：任何识别方式保存订单后调用。
+         *
+         * 必须在分组整理（[com.Badnng.moe.helper.DailyExpressGroupingHelper.regroupPendingExpressByDay]）
+         * 之后调用——分组完成后订单才带 groupId：同一分组（组卡片）只发一条「N个快递」通知，
+         * 不再每个取件码各发一条；未成组的订单仍是一条一码。
+         */
+        suspend fun notifySavedOrders(context: Context, orders: List<OrderEntity>) {
+            if (orders.isEmpty()) return
+            val manager = getInstance(context)
+            val groupDao = OrderDatabase.getDatabase(context).orderGroupDao()
+            orders.groupBy { it.groupId }.forEach { (groupId, saved) ->
+                // 组内总数以分组记录为准（调用方已 updateOrderCount），读不到时退回本次入库数
+                val savedTotal = groupId?.let { id ->
+                    runCatching { groupDao.getGroupById(id)?.orderCount }.getOrNull()
+                } ?: 0
+                val groupTotal = maxOf(savedTotal, saved.size)
+                if (groupId != null && groupTotal >= 2) {
+                    manager.sendGroupNotify(saved, groupTotal)
+                } else {
+                    saved.forEach { notifyOrderSaved(context, it) }
+                }
+            }
         }
     }
 

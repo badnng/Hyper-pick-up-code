@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OrderEntity::class, OrderGroup::class], version = 9, exportSchema = false)
+@Database(entities = [OrderEntity::class, OrderGroup::class], version = 10, exportSchema = false)
 abstract class OrderDatabase : RoomDatabase() {
     abstract fun orderDao(): OrderDao
     abstract fun orderGroupDao(): OrderGroupDao
@@ -121,6 +121,33 @@ abstract class OrderDatabase : RoomDatabase() {
                 addColumnIfMissing(db, "orders", "needsRuleCorrection", "INTEGER NOT NULL DEFAULT 0")
             }
         }
+
+        /**
+         * 「纠正识别」已下线。草稿与正常订单同表，仅靠 needsRuleCorrection=1 区分，
+         * 因此必须先删掉历史草稿行（takeoutCode 为空），再删列，否则升级后主页会出现空码订单。
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                if (hasColumn(db, "orders", "needsRuleCorrection")) {
+                    db.execSQL("DELETE FROM orders WHERE needsRuleCorrection = 1")
+                    db.execSQL("ALTER TABLE `orders` DROP COLUMN `needsRuleCorrection`")
+                }
+                db.execSQL("DELETE FROM orders WHERE takeoutCode = ''")
+            }
+        }
+        private fun hasColumn(db: SupportSQLiteDatabase, table: String, column: String): Boolean =
+            db.query("PRAGMA table_info(`$table`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                var found = false
+                while (cursor.moveToNext()) {
+                    if (nameIndex >= 0 && cursor.getString(nameIndex) == column) {
+                        found = true
+                        break
+                    }
+                }
+                found
+            }
+
         private fun addColumnIfMissing(
             db: SupportSQLiteDatabase,
             table: String,
@@ -158,6 +185,7 @@ abstract class OrderDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
+                        MIGRATION_9_10,
                     )
                     .build()
                 INSTANCE = instance

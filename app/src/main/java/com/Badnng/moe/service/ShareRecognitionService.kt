@@ -27,8 +27,6 @@ import com.Badnng.moe.helper.ImageSourceMetadataResolver
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.ScreenshotStorage
 import com.Badnng.moe.recognition.RecognizedOrderFactory
-import com.Badnng.moe.recognition.RecognitionCorrectionDetector
-import com.Badnng.moe.recognition.RecognitionCorrectionStore
 import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.recognition.RecognitionTrigger
 
@@ -95,28 +93,12 @@ class ShareRecognitionService : Service() {
             val successfulResults = recognizedOrders
                 .filter { it.code != null }
                 .distinctBy { it.code }
-            val unrecognizedExplicitCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
-                fullText = recognizedOrders.firstOrNull()?.fullText.orEmpty(),
-                recognizedCodes = successfulResults.mapNotNull { it.code },
-            )
             if (successfulResults.isEmpty()) {
-                val draftSaved = recognizedOrders.firstOrNull()?.let { result ->
-                    RecognitionCorrectionStore.saveImageDraft(
-                        context = applicationContext,
-                        bitmap = bitmap,
-                        result = result,
-                        metadata = routedResult.metadata,
-                        recognizedText = "分享识别（待纠正）",
-                        sourceApp = resolvedSourceApp ?: "分享识别",
-                        sourcePackage = imageSource.packageName,
-                        screenshotPrefix = "分享待纠正",
-                    )
-                } == true
-                AppLogger.recognition("ShareRecognition: no codes found, correctionDraftSaved=$draftSaved")
+                AppLogger.recognition("ShareRecognition: no codes found")
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         applicationContext,
-                        if (draftSaved) "识别失败，已加入纠正识别" else "未识别到取件码",
+                        "未识别到取件码",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -128,27 +110,6 @@ class ShareRecognitionService : Service() {
                 bitmap,
                 namePrefix = "分享识别",
             )
-
-            val partialDraftSaved = if (unrecognizedExplicitCodes.isNotEmpty()) {
-                recognizedOrders.firstOrNull()?.let { result ->
-                    RecognitionCorrectionStore.saveImageDraft(
-                        context = applicationContext,
-                        bitmap = bitmap,
-                        result = result.copy(code = null, brand = null, pickupLocation = null),
-                        metadata = routedResult.metadata,
-                        recognizedText = "分享识别（部分待纠正）",
-                        sourceApp = resolvedSourceApp ?: "分享识别",
-                        sourcePackage = imageSource.packageName,
-                        screenshotPrefix = "分享待纠正",
-                        existingScreenshotPath = screenshotPath,
-                    )
-                } == true
-            } else {
-                false
-            }
-            if (partialDraftSaved) {
-                AppLogger.recognition("ShareRecognition: partial correction saved, missing=$unrecognizedExplicitCodes")
-            }
 
             val database = OrderDatabase.getDatabase(applicationContext)
             val orderDao = database.orderDao()
@@ -167,7 +128,6 @@ class ShareRecognitionService : Service() {
                 ) ?: continue
                 orderDao.insert(order)
                 insertedOrders.add(order)
-                com.Badnng.moe.wearable.WearableSyncManager.notifyOrderSaved(this, order)
             }
             if (insertedOrders.isEmpty()) return
 
@@ -201,6 +161,13 @@ class ShareRecognitionService : Service() {
                     ).show()
                 }
             }
+
+            // 手表通知：等分组整理完成后再发——同一组（组卡片）只发一条，未成组的仍一码一条。
+            // 此前是在入库循环里逐单发，组卡片到了手表上就变成 N 条通知。
+            com.Badnng.moe.wearable.WearableSyncManager.notifySavedOrders(
+                applicationContext,
+                refreshedInsertedOrders,
+            )
 
             refreshedInsertedOrders
                 .filter { it.groupId == null }

@@ -124,7 +124,6 @@ internal object BackupSettingsPolicy {
         "theme_color",
         "use_floating_nav_bar",
         "miuix_floating_nav_bar_style",
-        "large_screen_nav_adaptive_enabled",
         "nav_alignment",
         "haptic_enabled",
         "predictive_back_enabled",

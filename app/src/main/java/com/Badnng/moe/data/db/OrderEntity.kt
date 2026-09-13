@@ -45,5 +45,4 @@ data class OrderEntity(
     val recognitionErrorDetail: String? = null,
     val recognitionDurationMs: Long? = null,
     val ocrDiagnosticData: String? = null,
-    val needsRuleCorrection: Boolean = false,
 )

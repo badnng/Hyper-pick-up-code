@@ -110,7 +110,6 @@ class SmsRecognitionService : Service() {
             ) ?: continue
             orderDao.insert(order)
             insertedOrders.add(order)
-            com.Badnng.moe.wearable.WearableSyncManager.notifyOrderSaved(applicationContext, order)
         }
 
         if (insertedOrders.isEmpty()) return
@@ -134,6 +133,13 @@ class SmsRecognitionService : Service() {
                 }
             }
         }
+
+        // 手表通知：等分组整理完成后再发——同一组（组卡片）只发一条，未成组的仍一码一条。
+        // 此前是在入库循环里逐单发，组卡片到了手表上就变成 N 条通知。
+        com.Badnng.moe.wearable.WearableSyncManager.notifySavedOrders(
+            applicationContext,
+            refreshedOrders,
+        )
 
         refreshedOrders.filter { it.groupId == null }.forEach { order ->
             notificationHelper.showPromotedLiveUpdate(order, order.brandName)

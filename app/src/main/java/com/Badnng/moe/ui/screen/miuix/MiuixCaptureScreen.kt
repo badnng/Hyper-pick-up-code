@@ -49,6 +49,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationAdd
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -70,6 +71,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -96,6 +98,9 @@ import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.basic.Badge
+import top.yukonga.miuix.kmp.basic.BadgedBox
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -144,9 +149,19 @@ fun MiuixCaptureScreen(
     navAlignment: String = "center",
     useFloatingNavBar: Boolean = false,
     onQrDialogVisibilityChange: (Boolean) -> Unit = {},
-    onNavigateToRecognitionCorrection: () -> Unit = {},
     onNavigateToOrderDetail: (String) -> Unit = {},
-    onNavigateToGroupDetail: (Long) -> Unit = {}
+    onNavigateToGroupDetail: (Long) -> Unit = {},
+    /** 一镜到底转场时底部悬浮元素（「添加 + 身份码」工具栏）的淡出系数：1 = 正常显示，0 = 完全隐去。 */
+    bottomFade: () -> Float = { 1f },
+    /**
+     * 订单组卡片的展开态（由主页持有并下发）。
+     *
+     * 必须由外部持有：同一张组卡片在「列表」和「一镜到底叠加层」里存在两份 Compose 实例，
+     * 叠加层那份是注册进来的 lambda 被重新组合出来的，实例私有的 rememberSaveable 不共享，
+     * 会画出收起态卡片（转场时用户会看到卡片只剩几行）。
+     */
+    expandedGroupIds: Set<Long> = emptySet(),
+    onExpandedGroupsChange: (Set<Long>) -> Unit = {}
 ) {
     val context = LocalContext.current
     val orderViewModelFactory = remember(context) {
@@ -159,7 +174,6 @@ fun MiuixCaptureScreen(
     val completedOrders by viewModel.completedOrders.collectAsStateWithLifecycle()
     val incompleteGroups by viewModel.incompleteGroups.collectAsStateWithLifecycle()
     val completedGroups by viewModel.completedGroups.collectAsStateWithLifecycle()
-    val ruleCorrectionDrafts by viewModel.ruleCorrectionDrafts.collectAsStateWithLifecycle()
 
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
@@ -277,9 +291,9 @@ fun MiuixCaptureScreen(
     // 所有设备统一使用系统任务中心同款中性层级，不再随模糊能力或主题取色变化。
     val tabRowColors = if (isDarkTheme) {
         TabRowDefaults.tabRowColors(
-            backgroundColor = Color.Black,
-            contentColor = Color(0xFF8C8C8C),
-            selectedBackgroundColor = Color(0xFF2A2A2A),
+            backgroundColor = Color(0xFF1C1C1E),
+            contentColor = Color(0xFF9A9A9A),
+            selectedBackgroundColor = Color(0xFF2E2E30),
             selectedContentColor = Color.White,
         )
     } else {
@@ -305,7 +319,11 @@ fun MiuixCaptureScreen(
     Scaffold(
         topBar = {
             val topBarColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface
-            com.Badnng.moe.ui.miuix.MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled, progressive = false) {
+            com.Badnng.moe.ui.miuix.MiuixBlurredBar(
+                backdrop = backdrop,
+                blurEnabled = blurEnabled,
+                progressive = false,
+            ) {
                 Column {
                     TopAppBar(
                         title = "澎湃记",
@@ -317,16 +335,7 @@ fun MiuixCaptureScreen(
                             }
                         },
                         actions = {
-                            IconButton(onClick = {
-                                performHaptic()
-                                onNavigateToRecognitionCorrection()
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Rule,
-                                    contentDescription = if (ruleCorrectionDrafts.isEmpty()) "纠正识别" else "纠正识别，${ruleCorrectionDrafts.size} 条待处理",
-                                    tint = if (ruleCorrectionDrafts.isEmpty()) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.primary,
-                                )
-                            }                            // 多选模式切换按钮
+                            // 多选模式切换按钮
                             IconButton(onClick = {
                                 performHaptic()
                                 isEditMode = !isEditMode
@@ -448,21 +457,30 @@ fun MiuixCaptureScreen(
                                     )
                                 }
                             }
-                            MiuixOrderGroupCard(
-                                group = group,
-                                viewModel = viewModel,
-                                onClick = { onNavigateToGroupDetail(group.id) },
-                                onMarkAllCompleted = {
-                                    performHaptic()
-                                    viewModel.markGroupAsCompleted(group.id)
-                                },
-                                onDeleteGroup = {
-                                    performHaptic()
-                                    viewModel.deleteGroup(group)
-                                },
-                                isEditMode = isEditMode,
-                                modifier = Modifier.weight(1f)
-                            )
+                            CardMorphCard(morphKey = groupMorphKey(group.id)) {
+                                MiuixOrderGroupCard(
+                                    group = group,
+                                    viewModel = viewModel,
+                                    isExpanded = group.id in expandedGroupIds,
+                                    onExpandedChange = { expanded ->
+                                        onExpandedGroupsChange(
+                                            if (expanded) expandedGroupIds + group.id
+                                            else expandedGroupIds - group.id
+                                        )
+                                    },
+                                    onClick = { onNavigateToGroupDetail(group.id) },
+                                    onMarkAllCompleted = {
+                                        performHaptic()
+                                        viewModel.markGroupAsCompleted(group.id)
+                                    },
+                                    onDeleteGroup = {
+                                        performHaptic()
+                                        viewModel.deleteGroup(group)
+                                    },
+                                    isEditMode = isEditMode,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
@@ -500,21 +518,23 @@ fun MiuixCaptureScreen(
                                     )
                                 }
                             }
-                            MiuixOrderCard(
-                                order = order,
-                                onClick = { onNavigateToOrderDetail(order.id) },
-                                onMarkCompleted = {
-                                    performHaptic()
-                                    viewModel.markAsCompleted(order.id)
-                                },
-                                onDelete = {
-                                    performHaptic()
-                                    viewModel.deleteOrder(order)
-                                },
-                                onShowQr = { showQrCode(order) },
-                                isEditMode = isEditMode,
-                                modifier = Modifier.weight(1f)
-                            )
+                            CardMorphCard(morphKey = orderMorphKey(order.id)) {
+                                MiuixOrderCard(
+                                    order = order,
+                                    onClick = { onNavigateToOrderDetail(order.id) },
+                                    onMarkCompleted = {
+                                        performHaptic()
+                                        viewModel.markAsCompleted(order.id)
+                                    },
+                                    onDelete = {
+                                        performHaptic()
+                                        viewModel.deleteOrder(order)
+                                    },
+                                    onShowQr = { showQrCode(order) },
+                                    isEditMode = isEditMode,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
@@ -571,18 +591,27 @@ fun MiuixCaptureScreen(
                                     )
                                 }
                             }
-                            MiuixOrderGroupCard(
-                                group = group,
-                                viewModel = viewModel,
-                                onClick = { },
-                                onMarkAllCompleted = { },
-                                onDeleteGroup = {
-                                    performHaptic()
-                                    viewModel.deleteGroup(group)
-                                },
-                                isCompleted = true,
-                                isEditMode = isEditMode
-                            )
+                            CardMorphCard(morphKey = groupMorphKey(group.id)) {
+                                MiuixOrderGroupCard(
+                                    group = group,
+                                    viewModel = viewModel,
+                                    isExpanded = group.id in expandedGroupIds,
+                                    onExpandedChange = { expanded ->
+                                        onExpandedGroupsChange(
+                                            if (expanded) expandedGroupIds + group.id
+                                            else expandedGroupIds - group.id
+                                        )
+                                    },
+                                    onClick = { },
+                                    onMarkAllCompleted = { },
+                                    onDeleteGroup = {
+                                        performHaptic()
+                                        viewModel.deleteGroup(group)
+                                    },
+                                    isCompleted = true,
+                                    isEditMode = isEditMode
+                                )
+                            }
                         }
                     }
                 }
@@ -843,6 +872,10 @@ fun MiuixCaptureScreen(
         modifier = Modifier
             .align(toolbarAlignment)
             .padding(toolbarPadding)
+            // 工具栏贴在屏幕底部，卡片一镜到底铺开时容器底边会扫过它、把图标切一半留在容器外，
+            // 所以跟着底栏一起淡出。用 graphicsLayer 的 lambda 读系数：只在绘制阶段生效，
+            // 不会让工具栏每帧重组；它与 AnimatedVisibility 自身的显隐淡入淡出相乘，互不干扰。
+            .graphicsLayer { alpha = bottomFade() }
     ) {
         FloatingToolbar(
             color = MiuixTheme.colorScheme.surfaceContainer,
@@ -1236,6 +1269,9 @@ private fun MiuixOrderGroupCard(
     onDeleteGroup: () -> Unit = {},
     isCompleted: Boolean = false,
     isEditMode: Boolean = false,
+    /** 展开态由外部持有：列表卡片与一镜到底叠加层里的镜像卡片必须共用同一份状态。 */
+    isExpanded: Boolean = group.id in LocalCardMorphExpandedGroups.current,
+    onExpandedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1271,7 +1307,8 @@ private fun MiuixOrderGroupCard(
         }
     }
 
-    var isExpanded by rememberSaveable(group.id) { mutableStateOf(false) }
+    // 展开态改由主页下发（见 LocalCardMorphExpandedGroups）：同一张卡在列表与叠加层里有
+    // 两份 Compose 实例，实例私有的 rememberSaveable 不共享，叠加层那份永远画收起态。
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -1344,7 +1381,7 @@ private fun MiuixOrderGroupCard(
                     )
                     .clickable {
                         performHaptic()
-                        if (!isEditMode) isExpanded = !isExpanded
+                        if (!isEditMode) onExpandedChange(!isExpanded)
                     }
                     .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center
@@ -1437,6 +1474,9 @@ private fun MiuixOrderGroupCard(
                                 onClick = {
                                     performHaptic()
                                     notificationHelper.showGroupNotification(group, groupOrders)
+                                    com.Badnng.moe.wearable.WearableSyncManager
+                                        .getInstance(context)
+                                        .resendGroupToWatch(group, groupOrders)
                                 },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColorsPrimary()
@@ -1584,6 +1624,8 @@ private fun MiuixOrderCard(
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
         sdf.format(Date(order.createdAt))
     }
+    // 一镜到底转场的起点由外层 CardMorphCard 登记（几何 + 卡片内容），这里只管点击本身。
+    val handleCardClick: () -> Unit = { onClick() }
 
     val brandIconRes = remember(order.brandName, order.orderType) {
         BrandIconResolver.resolveBuiltinFallbackResId(context, order.brandName, order.orderType)
@@ -1617,7 +1659,7 @@ private fun MiuixOrderCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        onClick = onClick
+        onClick = handleCardClick
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             // 顶部：图标 + 取餐码 + 二维码按钮
@@ -1741,7 +1783,12 @@ private fun MiuixOrderCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { notificationHelper.showPromotedLiveUpdate(order) },
+                        onClick = {
+                            notificationHelper.showPromotedLiveUpdate(order)
+                            com.Badnng.moe.wearable.WearableSyncManager
+                                .getInstance(context)
+                                .resendOrderToWatch(order)
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColorsPrimary()
                     ) {

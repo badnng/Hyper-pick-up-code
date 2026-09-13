@@ -133,7 +133,6 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
             )
         )
     }
-    var largeScreenNavAdaptive by remember { mutableStateOf(prefs.getBoolean("large_screen_nav_adaptive_enabled", true)) }
     var keyColorIndex by remember { mutableIntStateOf(prefs.getInt("key_color_index", 0)) }
 
     val smsPermissionLauncher = rememberLauncherForActivityResult(
@@ -275,39 +274,21 @@ fun PreferenceSettingsContent(performHaptic: () -> Unit, onNavigate: (SettingsPa
             ) {
                 Column {
                     MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
-                        if (isLargeScreen) {
-                            SwitchPreference(
-                                title = "底栏自适应",
-                                summary = "大屏设备下滑切换底栏位置",
-                                checked = largeScreenNavAdaptive,
-                                onCheckedChange = {
-                                    performHaptic()
-                                    largeScreenNavAdaptive = it
-                                    prefs.edit().putBoolean("large_screen_nav_adaptive_enabled", it).apply()
-                                }
-                            )
-                        }
-                        AnimatedVisibility(
-                            visible = !isLargeScreen || !largeScreenNavAdaptive,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut()
-                        ) {
-                            OverlayDropdownPreference(
-                                title = "底栏位置",
-                                items = listOf("靠左", "居中", "靠右"),
-                                selectedIndex = when (navAlignment) {
-                                    "left" -> 0
-                                    "right" -> 2
-                                    else -> 1
-                                },
-                                onSelectedIndexChange = { index ->
-                                    performHaptic()
-                                    val alignment = listOf("left", "center", "right")[index]
-                                    navAlignment = alignment
-                                    prefs.edit().putString("nav_alignment", alignment).apply()
-                                }
-                            )
-                        }
+                        OverlayDropdownPreference(
+                            title = "底栏位置",
+                            items = listOf("靠左", "居中", "靠右"),
+                            selectedIndex = when (navAlignment) {
+                                "left" -> 0
+                                "right" -> 2
+                                else -> 1
+                            },
+                            onSelectedIndexChange = { index ->
+                                performHaptic()
+                                val alignment = listOf("left", "center", "right")[index]
+                                navAlignment = alignment
+                                prefs.edit().putString("nav_alignment", alignment).apply()
+                            }
+                        )
                     }
                 }
             }

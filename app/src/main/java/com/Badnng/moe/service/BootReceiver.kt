@@ -15,6 +15,10 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        if (!KeepAliveService.hasConsumer(context)) {
+            Log.d("WearableSyncService", "收到 BOOT_COMPLETED，但无后台通知/手表同步消费者，跳过保活服务")
+            return
+        }
         Log.d("WearableSyncService", "收到 BOOT_COMPLETED，启动后台恢复服务")
         KeepAliveService.start(context)
         // 开机后立即预热规则引擎

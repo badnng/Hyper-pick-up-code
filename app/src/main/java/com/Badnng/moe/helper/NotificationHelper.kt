@@ -74,10 +74,8 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val qrDetailIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("highlight_order_id", order.id)
-            putExtra("show_qr_detail", true)
+        val qrDetailIntent = Intent(context, OrderQuickViewActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
             putExtra("order_id", order.id)
             putExtra("from_notification", true)
         }
@@ -191,10 +189,8 @@ class NotificationHelper(private val context: Context) {
         )
 
         val qrDetailPendingIntent = orders.firstOrNull { !it.qrCodeData.isNullOrBlank() }?.let { qrOrder ->
-            val qrDetailIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra("highlight_order_id", qrOrder.id)
-                putExtra("show_qr_detail", true)
+            val qrDetailIntent = Intent(context, OrderQuickViewActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 putExtra("order_id", qrOrder.id)
                 putExtra("from_notification", true)
             }

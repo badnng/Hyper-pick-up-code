@@ -26,6 +26,9 @@ class TextRecognitionHelper(private val context: Context) {
     // PaddleOCR 文字识别
     val paddleOcr = PaddleOcrHelper.getInstance(context)
 
+    // 词汇两步识别引擎（三类型词汇规则：先判定餐食/快递 → 定位 → 裁剪 → 二次识别）
+    val pickupTwoPassEngine = PickupTwoPassEngine(context)
+
     private val engine = RecognitionRuleEngine
     private val drinkBrands get() = engine.getAllDrinkNames()
     private val foodBrands get() = engine.getAllFoodNames()
@@ -45,6 +48,8 @@ class TextRecognitionHelper(private val context: Context) {
         val correctedBlocks: List<PaddleOcrHelper.TextBlock>,
         val diagnosticResult: PaddleOcrHelper.DiagnosticResult?,
         val simpleRuleMatches: List<SimpleRuleMatch>? = null,
+        /** 词汇两步识别引擎结果（引擎命中时携带，供多码/诊断使用）。 */
+        val engineResult: PickupTwoPassEngine.EngineResult? = null,
     )
 
     suspend fun recognizeAll(bitmap: Bitmap, sourceApp: String? = null, sourcePkg: String? = null, existingOcr: OcrResult? = null): Pair<RecognitionResult, OcrResult> {
@@ -105,6 +110,39 @@ class TextRecognitionHelper(private val context: Context) {
         }
 
         val simplePack = SimpleRuleRuntime.ensureLoaded(context)
+
+        // ═══ 词汇两步识别引擎优先 ═══
+        // 用三类型词汇规则识别：先判定餐食/快递类型 → 词汇定位 → 裁剪 → 二次识别。
+        // 复用本函数已有的 OCR 结果，避免重复全图识别；识别出取餐码则直接返回。
+        // 瑞幸二维码命中时跳过词汇引擎，走下方 SimpleRule 分支（瑞幸逻辑不动）。
+        val builtInLuckinQrHit = LuckinQrRule.matches(qrCode)
+        if (!builtInLuckinQrHit) {
+            val pass1ForEngine = PaddleOcrHelper.RecognizeResult(
+                fullText = rawFullText,
+                textBlocks = textBlocks,
+                diagnosticResult = ocrResult.diagnosticResult
+                    ?: PaddleOcrHelper.DiagnosticResult(emptyList(), 0, 0, 0, 0, 0),
+            )
+            val engineResult = pickupTwoPassEngine.run(
+                bitmap = bitmap,
+                keepCropBitmap = false,
+                existingPass1 = pass1ForEngine,
+            )
+            if (engineResult.codes.isNotEmpty()) {
+                // 与 Router 保持一致：优先取页面级裁决后的主候选（selectedCodes 默认等于 codes）
+                val first = engineResult.selectedCodes.firstOrNull() ?: engineResult.codes[0]
+                Log.d("RecognitionMonitor", "词汇引擎识别: codes=${engineResult.codes.map { it.code }}, brand=${engineResult.brand?.name}")
+                return RecognitionResult(
+                    code = first.code,
+                    qr = qrCode,
+                    type = engineResult.pageType,
+                    brand = engineResult.brand?.name,
+                    fullText = rawFullText,
+                    pickupLocation = null,
+                ) to ocrResult.copy(engineResult = engineResult)
+            }
+        }
+
         if (simplePack.schemaVersion == com.Badnng.moe.rules.SimpleRulePack.SCHEMA_VERSION) {
             val matches = SimpleRuleRuntime.recognizeCurrent(
                 rawText = rawFullText,

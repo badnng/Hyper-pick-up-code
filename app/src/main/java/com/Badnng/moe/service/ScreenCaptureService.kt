@@ -39,8 +39,6 @@ import com.Badnng.moe.helper.RootHelper
 import com.Badnng.moe.helper.ScreenshotStorage
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.recognition.RecognizedOrderFactory
-import com.Badnng.moe.recognition.RecognitionCorrectionDetector
-import com.Badnng.moe.recognition.RecognitionCorrectionStore
 import com.Badnng.moe.recognition.RecognitionRouter
 import com.Badnng.moe.recognition.RecognitionTrigger
 import rikka.shizuku.Shizuku
@@ -344,29 +342,8 @@ class ScreenCaptureService : Service() {
                 val successfulResults = recognizedOrders
                     .filter { it.code != null }
                     .distinctBy { it.code }
-                val unrecognizedExplicitCodes = RecognitionCorrectionDetector.findUnrecognizedCodes(
-                    fullText = recognizedOrders.firstOrNull()?.fullText.orEmpty(),
-                    recognizedCodes = successfulResults.mapNotNull { it.code },
-                )
                 if (successfulResults.isEmpty()) {
-                    val draftSaved = recognizedOrders.firstOrNull()?.let { result ->
-                        RecognitionCorrectionStore.saveImageDraft(
-                            context = applicationContext,
-                            bitmap = detailBitmap,
-                            result = result,
-                            metadata = routedResult.metadata,
-                            recognizedText = "自动识别（待纠正）",
-                            sourceApp = sourceApp,
-                            sourcePackage = sourcePkg,
-                            screenshotPrefix = "识屏待纠正",
-                        )
-                    } == true
-                    Log.d("CaptureLog", "No code recognized, correctionDraftSaved=$draftSaved")
-                    if (draftSaved) {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(applicationContext, "识别失败，已加入纠正识别", Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                    Log.d("CaptureLog", "No code recognized")
                     return@launch
                 }
 
@@ -375,27 +352,6 @@ class ScreenCaptureService : Service() {
                     detailBitmap,
                     namePrefix = "识屏",
                 )
-
-                val partialDraftSaved = if (unrecognizedExplicitCodes.isNotEmpty()) {
-                    recognizedOrders.firstOrNull()?.let { result ->
-                        RecognitionCorrectionStore.saveImageDraft(
-                            context = applicationContext,
-                            bitmap = detailBitmap,
-                            result = result.copy(code = null, brand = null, pickupLocation = null),
-                            metadata = routedResult.metadata,
-                            recognizedText = "自动识别（部分待纠正）",
-                            sourceApp = sourceApp,
-                            sourcePackage = sourcePkg,
-                            screenshotPrefix = "识屏待纠正",
-                            existingScreenshotPath = screenshotPath,
-                        )
-                    } == true
-                } else {
-                    false
-                }
-                if (partialDraftSaved) {
-                    Log.d("CaptureLog", "Partial recognition saved for correction: missing=$unrecognizedExplicitCodes")
-                }
 
                 val database = OrderDatabase.getDatabase(applicationContext)
                 val orderGroupDao = database.orderGroupDao()
@@ -414,7 +370,6 @@ class ScreenCaptureService : Service() {
                     ) ?: continue
                     orderDao.insert(order)
                     insertedOrders.add(order)
-                    com.Badnng.moe.wearable.WearableSyncManager.notifyOrderSaved(applicationContext, order)
                 }
                 if (insertedOrders.isEmpty()) return@launch
 
@@ -448,6 +403,13 @@ class ScreenCaptureService : Service() {
                         ).show()
                     }
                 }
+
+                // 手表通知：等分组整理完成后再发——同一组（组卡片）只发一条，未成组的仍一码一条。
+                // 此前是在入库循环里逐单发，组卡片到了手表上就变成 N 条通知。
+                com.Badnng.moe.wearable.WearableSyncManager.notifySavedOrders(
+                    applicationContext,
+                    refreshedInsertedOrders,
+                )
 
                 refreshedInsertedOrders
                     .filter { it.groupId == null }

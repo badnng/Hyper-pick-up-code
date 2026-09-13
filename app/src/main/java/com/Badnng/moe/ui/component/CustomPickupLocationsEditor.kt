@@ -52,8 +52,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.Badnng.moe.recognition.RecognitionBlockedWordsPolicy
-import com.Badnng.moe.recognition.RecognitionBlockedWordsPreferences
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
@@ -67,40 +65,57 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.MiuixIndication
 
 @Stable
-class BlockedWordsEditorState internal constructor(context: Context) {
+class CustomPickupLocationsEditorState internal constructor(context: Context) {
     private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    var words by mutableStateOf(RecognitionBlockedWordsPreferences.load(appContext))
+    var locations by mutableStateOf(load())
         private set
 
     var input by mutableStateOf("")
 
-    fun addInput(): AddBlockedWordResult {
+    fun addInput(): AddCustomLocationResult {
         val candidate = input.trim()
         if (candidate.isEmpty()) {
             input = ""
-            return AddBlockedWordResult.Empty
+            return AddCustomLocationResult.Empty
         }
-        if (words.any { it.equals(candidate, ignoreCase = true) }) {
-            return AddBlockedWordResult.Duplicate
+        if (locations.any { it.equals(candidate, ignoreCase = true) }) {
+            return AddCustomLocationResult.Duplicate
         }
-        if (words.size >= RecognitionBlockedWordsPolicy.MAX_WORDS) {
-            return AddBlockedWordResult.LimitReached
+        if (locations.size >= MAX_LOCATIONS) {
+            return AddCustomLocationResult.LimitReached
         }
-        words = RecognitionBlockedWordsPreferences.save(appContext, words + candidate)
+        locations = save(locations + candidate)
         input = ""
-        return AddBlockedWordResult.Added
+        return AddCustomLocationResult.Added
     }
 
-    fun remove(word: String) {
-        words = RecognitionBlockedWordsPreferences.save(
-            appContext,
-            words.filterNot { it == word },
-        )
+    fun remove(location: String) {
+        locations = save(locations.filterNot { it == location })
+    }
+
+    private fun load(): List<String> =
+        prefs.getString("custom_pickup_locations", "")
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?: emptyList()
+
+    private fun save(newList: List<String>): List<String> {
+        prefs.edit()
+            .putString("custom_pickup_locations", newList.joinToString(","))
+            .apply()
+        return newList
+    }
+
+    companion object {
+        const val MAX_LOCATIONS = 50
     }
 }
 
-enum class AddBlockedWordResult {
+enum class AddCustomLocationResult {
     Added,
     Empty,
     Duplicate,
@@ -108,35 +123,35 @@ enum class AddBlockedWordResult {
 }
 
 @Composable
-fun rememberBlockedWordsEditorState(): BlockedWordsEditorState {
+fun rememberCustomPickupLocationsEditorState(): CustomPickupLocationsEditorState {
     val context = LocalContext.current
-    return remember(context) { BlockedWordsEditorState(context) }
+    return remember(context) { CustomPickupLocationsEditorState(context) }
 }
 
 @Composable
-fun Md3eBlockedWordsEditor(
-    state: BlockedWordsEditorState,
+fun Md3eCustomPickupLocationsEditor(
+    state: CustomPickupLocationsEditorState,
     performHaptic: () -> Unit,
 ) {
     val context = LocalContext.current
-    val addWord = {
+    val addLocation = {
         performHaptic()
         showAddResult(context, state.addInput())
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        BlockedWordsEmptyOrFlow(
-            words = state.words,
-            item = { word ->
+        CustomLocationsEmptyOrFlow(
+            locations = state.locations,
+            item = { location ->
                 InputChip(
                     selected = false,
                     onClick = {
                         performHaptic()
-                        state.remove(word)
+                        state.remove(location)
                     },
                     label = {
                         Text(
-                            text = word,
+                            text = location,
                             modifier = Modifier.widthIn(max = 240.dp),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -145,7 +160,7 @@ fun Md3eBlockedWordsEditor(
                     trailingIcon = {
                         Icon(
                             imageVector = Icons.Default.Md3eClose,
-                            contentDescription = "删除屏蔽词 $word",
+                            contentDescription = "删除取件地点 $location",
                             modifier = Modifier.size(16.dp),
                         )
                     },
@@ -161,28 +176,28 @@ fun Md3eBlockedWordsEditor(
                     .fillMaxWidth()
                     .onPreviewKeyEvent { event ->
                         if (event.type == KeyEventType.KeyUp && event.key == Key.Enter) {
-                            addWord()
+                            addLocation()
                             true
                         } else {
                             false
                         }
                     },
-                label = { Text("添加屏蔽词") },
+                label = { Text("添加取件地点") },
                 supportingText = {
-                    Text("${state.words.size}/${RecognitionBlockedWordsPolicy.MAX_WORDS}")
+                    Text("${state.locations.size}/${CustomPickupLocationsEditorState.MAX_LOCATIONS}")
                 },
                 trailingIcon = {
-                    IconButton(onClick = addWord) {
-                        Icon(Icons.Default.Md3eAdd, contentDescription = "添加屏蔽词")
+                    IconButton(onClick = addLocation) {
+                        Icon(Icons.Default.Md3eAdd, contentDescription = "添加取件地点")
                     }
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { addWord() }),
+                keyboardActions = KeyboardActions(onDone = { addLocation() }),
                 shape = RoundedCornerShape(15.dp),
             )
             Text(
-                text = "包含以下词语的短信或通知将直接忽略，不会上传或执行离线识别。",
+                text = "添加取件地点关键词，识别文本中包含这些关键词时直接将其作为取件地点。点击标签可删除。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -192,25 +207,25 @@ fun Md3eBlockedWordsEditor(
 }
 
 @Composable
-fun MiuixBlockedWordsEditor(
-    state: BlockedWordsEditorState,
+fun MiuixCustomPickupLocationsEditor(
+    state: CustomPickupLocationsEditorState,
     performHaptic: () -> Unit,
 ) {
     val context = LocalContext.current
-    val addWord = {
+    val addLocation = {
         performHaptic()
         showAddResult(context, state.addInput())
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        BlockedWordsEmptyOrFlow(
-            words = state.words,
-            item = { word ->
-                MiuixBlockedWordChip(
-                    word = word,
+        CustomLocationsEmptyOrFlow(
+            locations = state.locations,
+            item = { location ->
+                MiuixCustomLocationChip(
+                    location = location,
                     onRemove = {
                         performHaptic()
-                        state.remove(word)
+                        state.remove(location)
                     },
                 )
             },
@@ -219,28 +234,28 @@ fun MiuixBlockedWordsEditor(
             MiuixTextField(
                 value = state.input,
                 onValueChange = { state.input = it.replace("\n", "") },
-                label = "添加屏蔽词（${state.words.size}/${RecognitionBlockedWordsPolicy.MAX_WORDS}）",
+                label = "添加取件地点（${state.locations.size}/${CustomPickupLocationsEditorState.MAX_LOCATIONS}）",
                 modifier = Modifier
                     .fillMaxWidth()
                     .onPreviewKeyEvent { event ->
                         if (event.type == KeyEventType.KeyUp && event.key == Key.Enter) {
-                            addWord()
+                            addLocation()
                             true
                         } else {
                             false
                         }
                     },
                 trailingIcon = {
-                    MiuixIconButton(onClick = addWord) {
-                        MiuixIcon(MiuixIcons.Regular.Add, contentDescription = "添加屏蔽词")
+                    MiuixIconButton(onClick = addLocation) {
+                        MiuixIcon(MiuixIcons.Regular.Add, contentDescription = "添加取件地点")
                     }
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { addWord() }),
+                keyboardActions = KeyboardActions(onDone = { addLocation() }),
             )
             MiuixText(
-                text = "包含以下词语的短信或通知将直接忽略，不会上传或执行离线识别。",
+                text = "添加取件地点关键词，识别文本中包含这些关键词时直接将其作为取件地点。点击标签可删除。",
                 style = MiuixTheme.textStyles.body2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -250,24 +265,24 @@ fun MiuixBlockedWordsEditor(
 }
 
 @Composable
-private fun BlockedWordsEmptyOrFlow(
-    words: List<String>,
+private fun CustomLocationsEmptyOrFlow(
+    locations: List<String>,
     item: @Composable (String) -> Unit,
 ) {
-    if (words.isNotEmpty()) {
+    if (locations.isNotEmpty()) {
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            words.forEach { word -> item(word) }
+            locations.forEach { location -> item(location) }
         }
     }
 }
 
 @Composable
-private fun MiuixBlockedWordChip(
-    word: String,
+private fun MiuixCustomLocationChip(
+    location: String,
     onRemove: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -286,13 +301,13 @@ private fun MiuixBlockedWordChip(
             )
             .semantics {
                 role = Role.Button
-                contentDescription = "删除屏蔽词 $word"
+                contentDescription = "删除取件地点 $location"
             }
             .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MiuixText(
-            text = word,
+            text = location,
             modifier = Modifier.widthIn(max = 240.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -308,13 +323,13 @@ private fun MiuixBlockedWordChip(
     }
 }
 
-private fun showAddResult(context: Context, result: AddBlockedWordResult) {
+private fun showAddResult(context: Context, result: AddCustomLocationResult) {
     val message = when (result) {
-        AddBlockedWordResult.Added,
-        AddBlockedWordResult.Empty -> return
-        AddBlockedWordResult.Duplicate -> "该屏蔽词已存在"
-        AddBlockedWordResult.LimitReached ->
-            "最多添加 ${RecognitionBlockedWordsPolicy.MAX_WORDS} 条屏蔽词"
+        AddCustomLocationResult.Added,
+        AddCustomLocationResult.Empty -> return
+        AddCustomLocationResult.Duplicate -> "该取件地点关键词已存在"
+        AddCustomLocationResult.LimitReached ->
+            "最多添加 ${CustomPickupLocationsEditorState.MAX_LOCATIONS} 条取件地点关键词"
     }
     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 }

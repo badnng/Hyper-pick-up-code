@@ -58,7 +58,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class SettingsPage {
-    Main, Preference, Permission, Screenshot, Recognition, CustomPrompt, RecognitionCorrection, KeepAlive, WearableSync, Storage, About, Backup, Sponsor, NotificationApps, Credits, Developer
+    Main, Preference, Permission, Screenshot, Recognition, CustomPrompt, KeepAlive, WearableSync, Storage, About, Backup, Sponsor, NotificationApps, Credits, Developer
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -564,11 +564,6 @@ fun SubPage(
                         onNavigateToPromptEditor = { onNavigate(SettingsPage.CustomPrompt) },
                     )
                     SettingsPage.CustomPrompt -> PromptEditorContent(performHaptic, 0.dp)
-                    SettingsPage.RecognitionCorrection -> com.Badnng.moe.ui.component.RecognitionCorrectionRouteContent(
-                        isMiuix = true,
-                        onBack = onBack,
-                        modifier = Modifier.fillMaxSize(),
-                    )
                     SettingsPage.Permission -> PermissionSettingsContent(performHaptic, 0.dp, scrollState)
                     SettingsPage.Preference -> PreferenceSettingsContent(performHaptic, onNavigate, 0.dp, scrollState)
                     SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic, 0.dp, scrollState)
@@ -649,11 +644,6 @@ fun SubPage(
                     onNavigateToPromptEditor = { onNavigate(SettingsPage.CustomPrompt) },
                 )
                 SettingsPage.CustomPrompt -> PromptEditorContent(performHaptic, topContentPadding)
-                SettingsPage.RecognitionCorrection -> com.Badnng.moe.ui.component.RecognitionCorrectionRouteContent(
-                    isMiuix = false,
-                    onBack = onBack,
-                    modifier = Modifier.fillMaxSize().padding(top = topContentPadding),
-                )
                 SettingsPage.Permission -> PermissionSettingsContent(performHaptic, topContentPadding, scrollState)
                 SettingsPage.Preference -> PreferenceSettingsContent(performHaptic, onNavigate, topContentPadding, scrollState)
                 SettingsPage.KeepAlive -> KeepAliveSettingsContent(performHaptic, topContentPadding, scrollState)
