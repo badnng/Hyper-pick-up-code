@@ -59,7 +59,7 @@ class BackupManagerInstrumentedTest {
     }
 
     @Test
-    fun versionTwoRoundTripDeduplicatesScreenshots() = runBlocking {
+    fun versionTwoRoundTripDeduplicatesScreenshotsAndKeepsGroupSources() = runBlocking {
         val screenshot = File(context.filesDir, "screenshots/backup-test/shared.png").apply {
             parentFile?.mkdirs()
             writeBytes(byteArrayOf(1, 2, 3, 4, 5))
@@ -67,11 +67,17 @@ class BackupManagerInstrumentedTest {
         val duplicateScreenshot = File(context.filesDir, "screenshots/backup-test/shared-copy.jpg").apply {
             writeBytes(screenshot.readBytes())
         }
+        val secondSource = File(context.filesDir, "screenshots/backup-test/second.png").apply {
+            writeBytes(byteArrayOf(6, 7, 8, 9, 10))
+        }
         val groupId = database.orderGroupDao().insertGroup(
             OrderGroup(
                 name = "测试组",
                 orderType = "快递",
                 screenshotPath = duplicateScreenshot.absolutePath,
+                screenshotPathsJson = GroupScreenshotPaths.encode(
+                    listOf(duplicateScreenshot.absolutePath, secondSource.absolutePath),
+                ),
                 recognizedText = "测试",
                 orderCount = 2,
             ),
@@ -109,7 +115,8 @@ class BackupManagerInstrumentedTest {
         try {
             assertEquals(2, staged.preview.orderCount)
             assertEquals(1, staged.preview.groupCount)
-            assertEquals(1, staged.preview.screenshotCount)
+            assertEquals(2, staged.preview.screenshotCount)
+            assertEquals(2, staged.payload.groups.single().screenshotEntries.size)
             assertEquals(2, staged.preview.conflictingOrderCount)
             assertFalse(
                 staged.payload.orders.any {
@@ -135,6 +142,10 @@ class BackupManagerInstrumentedTest {
             assertEquals(2, restored.size)
             assertEquals(1, restored.map { it.screenshotPath }.distinct().size)
             assertTrue(ScreenshotStorage.exists(context, restored.first().screenshotPath))
+            val restoredGroup = database.orderGroupDao().getAllGroupsList().single()
+            val restoredGroupSources = GroupScreenshotPaths.all(restoredGroup)
+            assertEquals(2, restoredGroupSources.size)
+            assertTrue(restoredGroupSources.all { ScreenshotStorage.exists(context, it) })
             assertEquals(2, report.insertedOrders)
             assertEquals(1, report.restoredGroups)
         } finally {

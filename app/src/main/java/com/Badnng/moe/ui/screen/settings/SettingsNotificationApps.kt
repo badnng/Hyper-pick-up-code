@@ -49,7 +49,7 @@ import com.Badnng.moe.service.NotificationListenerRecognitionService
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import com.Badnng.moe.ui.miuix.MiuixReadableCard as MiuixCard
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.InputField

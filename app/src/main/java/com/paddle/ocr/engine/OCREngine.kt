@@ -16,6 +16,7 @@ package com.paddle.ocr.engine
 
 import android.content.Context
 import android.graphics.Bitmap
+import com.Badnng.moe.npu.NpuCapability
 import com.paddle.ocr.EngineConfig
 import com.paddle.ocr.PaddleOCRConfig
 import com.paddle.ocr.model.ModelConfig
@@ -37,6 +38,14 @@ class OCREngine(
     private val detectionEngine: DetectionEngine
     private val recognitionEngine: RecognitionEngine
     val coldLoadTimeMs: Long get() = ortManager.coldLoadTimeMs
+    /** 实际生效的推理后端(NPU 条件不满足时会落回 CPU)。 */
+    val activeBackend: com.paddle.ocr.AccelBackend get() = ortManager.activeBackend
+
+    /** 后端决策说明,可直接展示。 */
+    val backendNote: String get() = ortManager.backendNote
+
+    /** NPU 能力探测明细。 */
+    val npuCapability: NpuCapability? get() = ortManager.npuCapability
 
     init {
         val configured = try {
@@ -47,7 +56,7 @@ class OCREngine(
             ortManager.release()
             throw t
         }
-        detectionEngine = DetectionEngine(ortManager, config)
+        detectionEngine = DetectionEngine(ortManager, config, engineConfig.npu)
         recognitionEngine = RecognitionEngine(ortManager, configured.characterList)
     }
 
@@ -105,7 +114,13 @@ class OCREngine(
         val allResults = mutableListOf<OCRResult>()
         val recInputShapes = mutableListOf<List<Int>>()
         val perLineRecMs = mutableListOf<Long>()
-        val batchSize = config.recBatchSize.coerceAtLeast(1)
+        // NPU 路径下识别模型的 batch 被固化,必须按模型要求组批;
+        // CPU/NNAPI 路径仍按配置的 recBatchSize(改造前行为)。
+        val batchSize = if (ortManager.recFixedInputShape != null) {
+            recognitionEngine.fixedBatchSize()
+        } else {
+            config.recBatchSize.coerceAtLeast(1)
+        }
 
         var i = 0
         while (i < sortedBoxes.size) {

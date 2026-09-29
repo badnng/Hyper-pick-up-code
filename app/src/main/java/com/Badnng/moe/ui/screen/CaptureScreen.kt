@@ -79,6 +79,7 @@ import com.Badnng.moe.activity.MainActivity
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.BrandIconResolver
+import com.Badnng.moe.helper.GroupScreenshotPaths
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.NotificationScheduler
 import com.Badnng.moe.helper.ScreenshotStorage
@@ -790,6 +791,9 @@ fun CaptureScreenContent(
                                     orderType = firstOrder.orderType,
                                     brandName = firstOrder.brandName,
                                     screenshotPath = firstOrder.screenshotPath,
+                                    screenshotPathsJson = GroupScreenshotPaths.encode(
+                                        ordersToMerge.map(OrderEntity::screenshotPath),
+                                    ),
                                     sourceApp = firstOrder.sourceApp,
                                     sourcePackage = firstOrder.sourcePackage,
                                     recognizedText = firstOrder.recognizedText,
@@ -803,6 +807,17 @@ fun CaptureScreenContent(
                                 groupDao.updateOrderCount(groupId, ordersToMerge.size)
                             } else if (mode == "existing" && targetGroupId != null) {
                                 // 添加到已有组
+                                groupDao.getGroupById(targetGroupId)?.let { targetGroup ->
+                                    groupDao.updateGroup(targetGroup.copy(
+                                        screenshotPath = targetGroup.screenshotPath.ifBlank {
+                                            ordersToMerge.first().screenshotPath
+                                        },
+                                        screenshotPathsJson = GroupScreenshotPaths.encode(
+                                            GroupScreenshotPaths.all(targetGroup) +
+                                                ordersToMerge.map(OrderEntity::screenshotPath),
+                                        ),
+                                    ))
+                                }
                                 for (order in ordersToMerge) {
                                     orderDao.update(order.copy(groupId = targetGroupId))
                                 }

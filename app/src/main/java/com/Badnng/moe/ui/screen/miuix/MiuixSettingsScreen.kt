@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.Badnng.moe.R
 import com.Badnng.moe.service.CaptureTileService
 import com.Badnng.moe.ui.miuix.MiuixBlurredBar
+import com.Badnng.moe.ui.miuix.miuixReadableCardShadow
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.rememberMiuixBackdrop
 import com.Badnng.moe.ui.screen.settings.SettingsPage
@@ -72,6 +73,7 @@ fun MiuixSettingsScreen(
                     modifier = Modifier
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 12.dp)
+                        .miuixReadableCardShadow()
                 ) {
                     ArrowPreference(
                         title = "偏好设置",

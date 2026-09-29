@@ -29,6 +29,14 @@ class PaddleOCR private constructor(
     /** Time spent loading ONNX models (milliseconds). */
     val coldLoadTimeMs: Long get() = engine.coldLoadTimeMs
 
+    /**
+     * 实际生效的推理后端。
+     *
+     * 请求 NPU 但条件不满足(SoC 白名单、打包策略、模型资源、QNN 建图失败)时会落回 CPU,
+     * 调用方必须以此字段为准,不能只看自己传入的 [EngineConfig.accel]。
+     */
+    val activeBackend: AccelBackend get() = engine.activeBackend
+
     companion object {
 
         suspend fun create(context: Context): PaddleOCR {

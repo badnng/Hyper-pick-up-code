@@ -8,7 +8,7 @@
       "category": "EXPRESS",
       "name": "快递",
       "enabled": true,
-      "keywords": ["取件", "取货", "到站", "驿站", "快递柜", "自提", "快递"],
+      "keywords": ["取件", "到站", "驿站", "快递柜", "快递"],
       "package_names": [],
       "qr_patterns": [],
       "templates": [
@@ -31,7 +31,7 @@
           "sources": ["TEXT", "SMS", "NOTIFICATION"]
         },
         {
-          "id": "builtin-express-t2",
+          "id": "builtin-express-t3",
           "name": "凭码领取",
           "enabled": true,
           "template": "凭{{code:alnum:1-40}}领取",
@@ -46,7 +46,7 @@
       "category": "FOOD",
       "name": "餐食",
       "enabled": true,
-      "keywords": ["取餐", "取餐号", "出餐", "备餐", "叫号", "餐号"],
+      "keywords": ["取餐", "取餐号", "出餐", "备餐", "叫号", "餐号", "美团外卖", "饿了么"],
       "package_names": [],
       "qr_patterns": [],
       "templates": [

@@ -31,10 +31,34 @@ class RecognitionEngine(
         val inputShape: List<Int>,
     )
 
+    /**
+     * NPU 生效时返回模型固化的 batch;否则返回 1。
+     * 调用方(OCREngine)据此决定每批塞多少张图。
+     */
+    fun fixedBatchSize(): Int {
+        val fixed = ortManager.recFixedInputShape ?: return 1
+        val batch = fixed.getOrNull(0) ?: return 1
+        return if (batch > 0) batch.toInt() else 1
+    }
+
     fun recognize(crops: List<Mat>): RecognitionResult {
+        if (crops.isEmpty()) {
+            return RecognitionResult(emptyList(), 0, 0, 0, 0, emptyList())
+        }
+
         // Preprocess
         val preStart = System.currentTimeMillis()
-        val preResult = RecPreprocessor.preprocessBatch(crops)
+        val fixed = ortManager.recFixedInputShape
+        val preResult = if (fixed != null && fixed.size == 4) {
+            RecPreprocessor.preprocessBatchFixed(
+                crops = crops,
+                targetH = fixed[2].toInt(),
+                targetW = fixed[3].toInt(),
+                batch = fixed[0].toInt(),
+            )
+        } else {
+            RecPreprocessor.preprocessBatch(crops)
+        }
         val preprocessMs = System.currentTimeMillis() - preStart
 
         // Inference
@@ -45,12 +69,14 @@ class RecognitionEngine(
         // Postprocess (CTC decode)
         val postStart = System.currentTimeMillis()
         val decoded = CTCDecoder.decode(outputData, outputShape, characterList)
+        // 固定 batch 不足时会用最后一张图补齐,这里按真实样本数截断
+        val texts = if (decoded.size > crops.size) decoded.subList(0, crops.size) else decoded
         val postprocessMs = System.currentTimeMillis() - postStart
 
         val inputShape = preResult.shape.map { it.toInt() }
         val timeMs = preprocessMs + inferenceMs + postprocessMs
         return RecognitionResult(
-            texts = decoded,
+            texts = texts,
             preprocessMs = preprocessMs,
             inferenceMs = inferenceMs,
             postprocessMs = postprocessMs,

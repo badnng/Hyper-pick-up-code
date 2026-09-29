@@ -1,15 +1,18 @@
 package com.Badnng.moe.ui.screen.miuix
 
+import android.graphics.Paint
 import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -22,7 +25,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -37,19 +39,25 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
@@ -57,9 +65,13 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import com.Badnng.moe.ui.miuix.MiuixCardShadowAlpha
+import com.Badnng.moe.ui.miuix.MiuixCardShadowOffsetY
+import com.Badnng.moe.ui.miuix.MiuixCardShadowRadius
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -108,8 +120,8 @@ internal fun groupMorphKey(groupId: Long): String = "$GroupMorphKeyPrefix$groupI
 
 /** 卡片登记自身几何信息与卡片内容的入口；只在非三段式模式下提供。 */
 class CardMorphSource internal constructor(
-    private val onRegister: (String, String?, () -> CardMorphBounds?, () -> (@Composable () -> Unit)?) -> Unit,
-    private val onUnregister: (String) -> Unit,
+    private val onRegister: (String, String?, Any, () -> CardMorphBounds?, () -> Any?, () -> (@Composable () -> Unit)?) -> Unit,
+    private val onUnregister: (Any) -> Unit,
 ) {
     /**
      * 卡片在布局完成后登记自己。
@@ -122,11 +134,13 @@ class CardMorphSource internal constructor(
     fun register(
         key: String,
         ownerKey: String?,
+        instanceId: Any,
         bounds: () -> CardMorphBounds?,
+        payload: () -> Any?,
         card: () -> (@Composable () -> Unit)?,
-    ) = onRegister(key, ownerKey, bounds, card)
+    ) = onRegister(key, ownerKey, instanceId, bounds, payload, card)
 
-    fun unregister(key: String) = onUnregister(key)
+    fun unregister(instanceId: Any) = onUnregister(instanceId)
 }
 
 val LocalCardMorphSource = compositionLocalOf<CardMorphSource?> { null }
@@ -155,8 +169,12 @@ internal val LocalCardMorphOwnerKey = compositionLocalOf<String?> { null }
  */
 internal val LocalCardMorphExpandedGroups = compositionLocalOf<Set<Long>> { emptySet() }
 
+/** 活跃会话的源卡片由形变层绘制阴影，列表和镜像卡片不再各画一份。 */
+internal val LocalCardMorphActiveKeys = compositionLocalOf<Set<String>> { emptySet() }
+
 /** 与 miuix `Card` 的默认圆角保持一致（转场起始帧要和真实卡片完全重合）。 */
 private val CardMorphCornerRadius = 16.dp
+private val CardMorphHorizontalClearance = 6.dp
 
 /**
  * 把这张卡的几何信息与「它长什么样」登记给一镜到底控制器。
@@ -169,7 +187,7 @@ private val CardMorphCornerRadius = 16.dp
  * [orderMorphKey] / [groupMorphKey]；`LocalCardMorphSource` 为 null（三段式大屏）时直接透传内容。
  */
 @Composable
-internal fun CardMorphCard(morphKey: String, content: @Composable () -> Unit) {
+internal fun CardMorphCard(morphKey: String, payload: Any? = null, content: @Composable () -> Unit) {
     val source = LocalCardMorphSource.current
     if (source == null) {
         content()
@@ -177,10 +195,13 @@ internal fun CardMorphCard(morphKey: String, content: @Composable () -> Unit) {
     }
     // 这张卡片画在哪条会话的详情内容里（主页列表里 = null，组详情页 = 那条组会话的 key）。
     val ownerKey = LocalCardMorphOwnerKey.current
+    val instanceId = remember { Any() }
     val boundsState = remember { mutableStateOf<CardMorphBounds?>(null) }
+    val latestPayload = rememberUpdatedState(payload)
     val latestContent = rememberUpdatedState(content)
     Box(
         modifier = Modifier
+            .fillMaxWidth()
             .onGloballyPositioned { coordinates ->
                 // 这里刻意不用 coordinates.boundsInRoot()：它会把矩形裁进根布局范围，
                 // 卡片贴在屏幕底部（下半截在屏幕外）时量到的高度会短一截（本机实测短 50~90px）。
@@ -203,14 +224,16 @@ internal fun CardMorphCard(morphKey: String, content: @Composable () -> Unit) {
     ) {
         content()
     }
-    DisposableEffect(source, morphKey, ownerKey) {
+    DisposableEffect(source, morphKey, ownerKey, instanceId) {
         source.register(
             key = morphKey,
             ownerKey = ownerKey,
+            instanceId = instanceId,
             bounds = { boundsState.value },
+            payload = { latestPayload.value },
             card = { latestContent.value },
         )
-        onDispose { source.unregister(morphKey) }
+        onDispose { source.unregister(instanceId) }
     }
 }
 
@@ -255,16 +278,12 @@ private const val SOURCE_LAYER_MAX_PROGRESS = 0.999f
 private const val RADIUS_RAMP_END = 0.5f
 
 /**
- * 屏幕圆角收回成直角（0）所用的起点进度：t≤它保持屏幕圆角，t=1 时圆角恰好为 0。
- *
- * 末段必须收到 0 的原因：动画停下来的那一帧就是详情页的**静止态**，而这一帧依旧由叠加层绘制
- * （会话留在列表里、NavDisplay 的详情入口被 overlayVisible 守卫留空）。真实详情页是**直角满屏**的
- * ——它不会被裁到屏幕圆角，四角由面板自己切；容器若停在屏幕圆角上，四角就会露出圆角外那四块背景
- * （真机静止帧实测：四角 = 背景底色 60，圆弧半径 133 ↔ 系统上报圆角 134）。
- * 收到 0 之后，叠加层画出来就是一整块直角满屏的页面，与真实详情页逐像素一致，四角不再露底。
- * 收 0 的这一段半径始终 ≤ 屏幕圆角，多画出来的部分全落在系统/面板圆角之内，设备上看不出形状变化。
+ * 静止详情页从直角开始响应返回手势时，圆角在这一段进度内逐渐恢复。
+ * 正向开卡动画不使用这段收角：全程保持圆角，到达详情页后才单独过渡为直角。
  */
 private const val RADIUS_SQUARE_START = 0.8f
+/** 开卡完成后圆角变成详情页直角的时长。 */
+private const val CARD_MORPH_CORNER_SQUARE_MILLIS = 180
 
 /**
  * 主页**底部悬浮元素**淡出所用的进度：t=0 完全显示，t≥它之后完全隐去。
@@ -326,6 +345,8 @@ class CardMorphSession internal constructor(
     val key: String,
     /** 被点卡片的几何信息；进度为 0 时叠加层与之完全重合。 */
     val bounds: CardMorphBounds,
+    /** 列表中已经持有的数据，供转场首帧直接绘制详情，避免主线程同步查数据库。 */
+    val payload: Any?,
     /**
      * 「卡片快照」——就是列表里那张卡的同一份 Compose。叠加层直接实时渲染它，
      * 所以内容是原样的文字与图标。
@@ -351,13 +372,16 @@ class CardMorphSession internal constructor(
 
     internal var settleJob: Job? = null
     internal var popRequested = false
-    internal var pushRequested = false
+    internal var pushRequested by mutableStateOf(false)
 }
 
 /** 可见卡片在控制器里的登记项：几何 + 「这张卡长什么样」+「它画在哪条会话的内容里」。 */
 private class CardMorphRegistration(
+    val key: String,
     val ownerKey: String?,
+    val instanceId: Any,
     val bounds: () -> CardMorphBounds?,
+    val payload: () -> Any?,
     val card: () -> (@Composable () -> Unit)?,
 )
 
@@ -369,7 +393,9 @@ class CardMorphController internal constructor(
     val sessions = mutableStateListOf<CardMorphSession>()
 
     /** 可见卡片登记表，供收回途中按坐标找回被点的卡片。 */
-    private val visibleCards = mutableMapOf<String, CardMorphRegistration>()
+    private val visibleCards = mutableListOf<CardMorphRegistration>()
+    /** 详情退栈后，底层列表重新布局前仍可命中的最近一帧卡片。 */
+    private val retainedCards = mutableListOf<CardMorphRegistration>()
 
     /**
      * 是否允许发起转场。BottomSheet / 长按菜单已经占用了同一层背景采样与遮罩，
@@ -400,14 +426,24 @@ class CardMorphController internal constructor(
     fun registerCard(
         key: String,
         ownerKey: String?,
+        instanceId: Any,
         bounds: () -> CardMorphBounds?,
+        payload: () -> Any?,
         card: () -> (@Composable () -> Unit)?,
     ) {
-        visibleCards[key] = CardMorphRegistration(ownerKey, bounds, card)
+        visibleCards.removeAll { it.instanceId === instanceId }
+        retainedCards.removeAll { it.key == key && it.ownerKey == ownerKey }
+        visibleCards.add(CardMorphRegistration(key, ownerKey, instanceId, bounds, payload, card))
     }
 
-    fun unregisterCard(key: String) {
-        visibleCards.remove(key)
+    fun unregisterCard(instanceId: Any) {
+        if (sessions.isNotEmpty()) {
+            visibleCards.filter { it.instanceId === instanceId }.forEach { item ->
+                retainedCards.removeAll { it.key == item.key && it.ownerKey == item.ownerKey }
+                retainedCards.add(item)
+            }
+        }
+        visibleCards.removeAll { it.instanceId === instanceId }
     }
 
     /**
@@ -418,15 +454,30 @@ class CardMorphController internal constructor(
     fun abandonSessions() {
         sessions.forEach { it.settleJob?.cancel() }
         sessions.clear()
+        retainedCards.clear()
         scope.launch { bottomReveal.snapTo(1f) }
     }
 
-    /** 这个坐标上是哪张可见卡片（收回途中点容器外 = 开它自己的转场）。 */
-    fun cardAt(position: Offset): String? =
-        visibleCards.entries.lastOrNull { (_, item) -> item.bounds()?.rect?.contains(position) == true }?.key
+    /**
+     * 只查当前露出的页面上的卡片。组详情在订单详情下面时，主页卡片虽然仍可能登记着，
+     * 却不在用户眼前；组详情退回主页时，组内子卡片也同样不能抢这次点击。
+     */
+    fun cardAt(position: Offset): String? {
+        val visibleOwner = restingSession()?.key
+        val matches: (CardMorphRegistration) -> Boolean = { item ->
+            item.ownerKey == visibleOwner && item.bounds()?.rect?.contains(position) == true
+        }
+        // 展开后的组卡片与子订单卡片区域重叠，命中范围更小的子卡片应优先。
+        val candidates = visibleCards.filter(matches).ifEmpty { retainedCards.filter(matches) }
+        return candidates.minByOrNull { item ->
+            item.bounds()?.rect?.let { it.width * it.height } ?: Float.MAX_VALUE
+        }?.key
+    }
 
     /** 这次点击能不能走一镜到底（卡片已登记、且没有别的模态层占用背景采样）。 */
-    fun canMorph(key: String): Boolean = enabled && visibleCards.containsKey(key)
+    fun canMorph(key: String): Boolean = enabled &&
+        (visibleCards.any { it.key == key && it.ownerKey == restingSession()?.key } ||
+            sessions.any { it.key == key })
 
     /**
      * 主页**底部悬浮元素**的淡出系数：1 = 正常显示，0 = 完全隐去。
@@ -452,10 +503,8 @@ class CardMorphController internal constructor(
     /**
      * 进入详情：从卡片状态铺开到全屏；铺满后才真正入栈。
      *
-     * 弹簧要等叠加层真的画出第一帧才起步：叠加层首帧需要现场组合整页详情（其中还有一次
-     * 数据库读取），这一帧大概率超时。若此时弹簧已经在跑，第一帧画出来时进度已经跳到中途，
-     * 观感就是「先闪一下主页，然后突然开始铺开」。t=0 那一帧与卡片、主页完全重合，看不见，
-     * 用它来热身最安全；已经有别的会话在跑时叠加层早就在位，不用再热身。
+     * 第一次创建叠加层要先画出 t=0 的源卡片，避免首帧组合详情时动画进度跳过起点。
+     * 已有会话退场时叠加层仍在绘制，新会话直接启动，不能再固定等待两帧。
      */
     fun beginExpand(key: String) {
         if (!enabled) return
@@ -468,21 +517,23 @@ class CardMorphController internal constructor(
         // （被它挡住的主页卡片收不到点击，走不到这里；这里是防一手程序化调用。）
         // 唯一例外是「被点的卡片就登记在那条静止会话自己的详情内容里」——订单组详情里的子订单
         // 卡片就是这种情况：此时第二条会话叠在它上面铺开，是设计允许的并行动画。
+        // 只允许从当前露出的页面发起。旧会话收回途中可以与新会话并行，但其已被遮住的
+        // 详情内容不能因为还在组合、还保有卡片登记，就抢走背景页面上的点击。
         val resting = restingSession()
-        if (resting != null && visibleCards[key]?.ownerKey != resting.key) return
-        val registration = visibleCards[key] ?: return
+        val matches: (CardMorphRegistration) -> Boolean = { it.key == key && it.ownerKey == resting?.key }
+        val registration = visibleCards.lastOrNull(matches) ?: retainedCards.lastOrNull(matches) ?: return
         val bounds = registration.bounds() ?: return
         val card = registration.card() ?: return
-        val session = CardMorphSession(key, bounds, card, Animatable(0f))
+        val parallel = sessions.isNotEmpty()
+        val session = CardMorphSession(key, bounds, registration.payload(), card, Animatable(0f))
         sessions.add(session)
         session.settleJob = scope.launch {
-            // 无条件等两帧：每条会话的详情内容都是**按转场 key 新组合**的（里面有 runBlocking 的
-            // 数据库读取），首帧一定超时；只有等它真的画出来（t=0 与卡片、主页完全重合，看不见），
-            // 弹簧才起步。之前只在「叠加层第一次出现」时热身，收回刚结束、会话还没被移除的那一小段
-            // 里再次点开就会少了这两帧，进度一上来就跳到中途，手感上就是「顿一下」。
-            // 组详情里的子订单卡片尤其如此：那两帧同样用来等新的一页详情组合出来。
-            withFrameNanos { }
-            withFrameNanos { }
+            // 首次创建叠加层需要预绘制；它已经存在时直接启动新会话，
+            // 让旧卡收回与新卡展开从用户按下的这一帧开始并行。
+            if (!parallel) {
+                withFrameNanos { }
+                withFrameNanos { }
+            }
             runSettle(session, 1f)
         }
     }
@@ -574,11 +625,13 @@ class CardMorphController internal constructor(
         // 清掉的话 Pressed 会重新挑一条（collapsing 的已被 [gestureTarget] 滤掉）→ 收错会话。
         gestureRunning = false
         val session = pinnedSession() ?: gestureTarget()
-        if (session == null || session.progressState.value <= 0f) {
+        if (session == null) {
             gestureSession = null
             onRequestPop?.invoke()
             return
         }
+        // 长按预测性返回直到进度到 0 时，容器已经缩回原卡，但会话仍在 sessions 中。
+        // 这里也必须走收束收尾：只弹导航页会留下 t=0 的透明详情层继续渲染并挡住主页。
         detachDetail(session)
         settle(session, 0f)
     }
@@ -670,11 +723,16 @@ class CardMorphController internal constructor(
             sessions.remove(session)
             if (gestureSession === session) gestureSession = null
             if (sessions.isEmpty()) {
+                retainedCards.clear()
                 // 收回动画真的播完、叠加层也撤掉之后，底部这些元素才淡回来。
                 // 这里是唯一让它们重新显现的地方：先 snapTo(0) 保证衔接（会话期间它恒为 0），
                 // 再淡到 1，观感是「退出动画结束 → 它们浮现」，而不是动画中途往回涨。
                 bottomReveal.snapTo(0f)
                 bottomReveal.animateTo(1f, animationSpec = tween(HOME_BOTTOM_REVEAL_MILLIS))
+            } else {
+                // 并行动画里旧会话先退场时，新会话可能还在展开早期。
+                // 此时底栏仍要留在隐藏态，不能按新会话较小的进度突然重新出现。
+                bottomReveal.snapTo(0f)
             }
         } else if (!session.pushRequested) {
             // 铺满（或手势取消后弹回全屏）：入栈真正的详情入口。
@@ -797,6 +855,8 @@ private fun morphFrame(
     targetRadius: Float,
     t: Float,
     sink: Float = 1f,
+    clearancePx: Float = 0f,
+    cornerSquareProgress: Float = 0f,
 ): MorphFrame {
     val w0 = from.width
     val h0 = from.height
@@ -806,7 +866,10 @@ private fun morphFrame(
     val cy = fullHeight / 2f
     val rawW = w0 + (fullWidth - w0) * t
     val rawH = h0 + (fullHeight - h0) * t
-    val curW = rawW * sinkScale
+    // 中段留一点左右呼吸空间，避免容器与物理屏幕边缘贴得过紧。
+    // 起点与终点归零，卡片位置和静止详情页都保持原样。
+    val horizontalInset = clearancePx * (4f * t * (1f - t)).coerceIn(0f, 1f)
+    val curW = (rawW - 2f * horizontalInset).coerceAtLeast(0f) * sinkScale
     val curH = rawH * sinkScale
     // 内容缩放**只按卡片自己的宽度比**（w0 / fullWidth），铺开过程中回到 1。
     //
@@ -820,21 +883,24 @@ private fun morphFrame(
     //
     // 与 sink 无关：下沉量由 [MorphFrame.sinkScale] 单独承载，在这里乘进去会被算两遍。
     val startScale = if (fullWidth > 0f) (w0 / fullWidth).coerceIn(0f, 1f) else 1f
+    val insetScale = if (rawW > 0f) ((rawW - 2f * horizontalInset) / rawW).coerceIn(0f, 1f) else 1f
+    val morphRadius = sourceRadius +
+        (targetRadius - sourceRadius) * (t / RADIUS_RAMP_END).coerceIn(0f, 1f)
+    val squareAtRest = ((t - RADIUS_SQUARE_START) / (1f - RADIUS_SQUARE_START)).coerceIn(0f, 1f)
+    val ownRadius = morphRadius * (1f - cornerSquareProgress.coerceIn(0f, 1f) * squareAtRest) * sinkScale
+    // 上层卡片铺开时，下层详情整页缩小；静止详情本是直角，一开始下沉就按
+    // 屏幕圆角裁切，避免缩放早期露出一帧直角矩形。
+    val coveredRadius = if (sinkScale < 1f) targetRadius else 0f
     return MorphFrame(
-        curX = cx + (from.left * (1f - t) - cx) * sinkScale,
+        curX = cx + (from.left * (1f - t) - cx + horizontalInset) * sinkScale,
         curY = cy + (from.top * (1f - t) - cy) * sinkScale,
         curW = curW,
         curH = curH,
-        // 圆角：卡片圆角 →（前一半长完）屏幕圆角 →（末段收回 0）直角，整体再随下沉量收缩。
-        // 中段维持屏幕圆角：容器四角与屏幕四角重合，观感是「窗口本身在长大」，
-        // 也不会像线性收到 0 那样提前变成方角。
-        // 末段必须收到 0：停下来的那一帧仍由叠加层绘制（原因见 [RADIUS_SQUARE_START]），
-        // 容器若是圆角，四角就会露出圆角外的背景；真实详情页是直角满屏，必须与它完全一致。
-        // 再乘 [sinkScale]：容器被上层盖住时圆角要跟着一起缩，否则圆角处会透出下层底色（直角硬边）。
-        radius = (sourceRadius + (targetRadius - sourceRadius) * (t / RADIUS_RAMP_END).coerceAtMost(1f)) *
-            (1f - ((t - RADIUS_SQUARE_START) / (1f - RADIUS_SQUARE_START)).coerceIn(0f, 1f)) *
-            sinkScale,
-        contentScale = startScale + (1f - startScale) * t,
+        // 开卡转场保持圆角；铺满并入栈后再单独变成直角。
+        // 并行动画中被盖住的详情缩成浮层时，始终保持圆角。
+        radius = maxOf(ownRadius, coveredRadius).coerceAtMost(minOf(curW, curH) / 2f),
+        // 内容跟着容器一起微缩，不能只缩裁剪框，否则文字仍会在左右边缘被切掉。
+        contentScale = (startScale + (1f - startScale) * t) * insetScale,
         contentAlpha = ((t - CONTENT_FADE_START) / (CONTENT_FADE_END - CONTENT_FADE_START)).coerceIn(0f, 1f),
         sinkScale = sinkScale,
     )
@@ -860,14 +926,17 @@ fun MiuixCardMorphOverlay(
     backdrop: LayerBackdrop?,
     surfaceColor: Color,
     destinationColor: Color,
-    content: @Composable (key: String) -> Unit,
+    hapticEnabled: Boolean,
+    content: @Composable (session: CardMorphSession) -> Unit,
 ) {
     if (controller.sessions.isEmpty()) return
     val density = LocalDensity.current
-    // 容器圆角从卡片圆角长到**屏幕圆角**，再在末段收回 0：铺开过程四角是圆的（与屏幕四角重合），
-    // 停下来的那一帧则是**直角满屏**，与真实详情页（直角铺满）逐像素一致，四角不会留缝。
+    // 容器圆角从卡片圆角长到**屏幕圆角**，整个铺开过程保持圆角；铺满并入栈后
+    // 再单独过渡成详情页的直角满屏状态。
     val screenRadiusPx = rememberScreenCornerRadiusPx()
     val targetRadiusPx = if (screenRadiusPx > 0f) screenRadiusPx else with(density) { FallbackScreenCornerRadius.toPx() }
+    val haptic = LocalHapticFeedback.current
+    val latestHapticEnabled = rememberUpdatedState(hapticEnabled)
     var overlaySize by remember { mutableStateOf(IntSize.Zero) }
 
     Box(
@@ -891,10 +960,12 @@ fun MiuixCardMorphOverlay(
                 // 否则重组一次之后这个值就冻在当时的进度上（CardMorphBackdrop 同理）。
                 CardMorphLayer(
                     session = session,
+                    isTopSession = session === topSession,
                     overlaySize = overlaySize,
                     surfaceColor = surfaceColor,
                     destinationColor = destinationColor,
                     targetRadiusPx = targetRadiusPx,
+                    horizontalClearancePx = with(density) { CardMorphHorizontalClearance.toPx() },
                     backdrop = backdrop,
                     coverProgressProvider = {
                         if (session === topSession) {
@@ -910,7 +981,7 @@ fun MiuixCardMorphOverlay(
                     // 打上「这条内容属于哪条会话」的标记：组详情页里的子订单卡片据此才能再开一条
                     // 会话做并行动画（见 CardMorphController.beginExpand）。
                     CompositionLocalProvider(LocalCardMorphOwnerKey provides session.key) {
-                        content(session.key)
+                        content(session)
                     }
                 }
             }
@@ -918,29 +989,42 @@ fun MiuixCardMorphOverlay(
 
         // ③ 正在收回的会话：整屏接住点击。
         //    容器矩形内 = 「撤回」（从当前进度继续铺回详情）；
-        //    矩形外 = 另一张卡片（第一条还在退回时，点别处开第二条 = 并行动画）。
+        //    矩形外 = 另一张露出的卡片（旧会话退回与新会话展开同时进行）。
         //    这里自己按坐标查登记表，而不是让事件穿透到背景里的主页：Compose 的命中测试只走
         //    「最上层命中的那条路径」，叠加层只要挂一个整屏点击节点，背景卡片就永远收不到事件。
         //
-        //    判定用 collapseInteractive() 而不是裸的 collapsing：这一层是**整屏**的，只要挂上就吞掉
-        //    全屏点击，而 collapsing 这个标记可能停在 true 而收回其实早已结束（见该函数的说明）。
-        //    收回真的在跑时二者完全等价；收回不在跑时整层不挂，点击直接落到列表里那张真卡上。
-        val collapsingSessions = controller.sessions.filter { it.collapseInteractive() }
-        if (collapsingSessions.isNotEmpty()) {
+        //    退场会话还在列表里时整层保持可点击：预测性返回由手指接管期间
+        //    settleJob 会被取消，不能把 Job.isActive 当作能否撤回的条件。
+        // 新卡片已经盖到旧会话上时，旧会话继续退场，但不再让它的整屏点击层
+        // 抢走新卡片的触摸；只有当前最上层正在退场，才需要这层转发。
+        val collapsingSession = topSession?.takeIf { it.collapsing }
+        val latestCollapsingSession = rememberUpdatedState(collapsingSession)
+        if (collapsingSession != null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(overlaySize, targetRadiusPx) {
-                        detectTapGestures { position ->
-                            val owner = collapsingSessions.lastOrNull { session ->
-                                sessionContains(session, position, overlaySize, targetRadiusPx)
-                            }
-                            if (owner != null) {
+                        detectTapGestures(onPress = { position ->
+                            val owner = latestCollapsingSession.value
+                            if (owner != null && (owner.bounds.rect.contains(position) || sessionContains(
+                                    owner, position, overlaySize, targetRadiusPx,
+                                    with(density) { CardMorphHorizontalClearance.toPx() },
+                                    with(density) { owner.bounds.cornerRadius.toPx() },
+                                ))
+                            ) {
+                                // 视觉上仍在旧容器内，就从它这一帧的进度掉头；不能让容器
+                                // 背后登记的另一张卡片把这次点击抢走。
+                                if (latestHapticEnabled.value) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 controller.reverseCollapse(owner)
                             } else {
-                                controller.cardAt(position)?.let { controller.beginExpand(it) }
+                                // 只有已经露出旧容器外的卡片才启动独立会话。旧会话继续退场，
+                                // 新会话同时进场；不等待旧动画结束，也不重置它的进度。
+                                controller.cardAt(position)?.let {
+                                    if (latestHapticEnabled.value) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    controller.beginExpand(it)
+                                }
                             }
-                        }
+                        })
                     },
             )
         }
@@ -962,10 +1046,12 @@ fun MiuixCardMorphOverlay(
 @Composable
 private fun CardMorphLayer(
     session: CardMorphSession,
+    isTopSession: Boolean,
     overlaySize: IntSize,
     surfaceColor: Color,
     destinationColor: Color,
     targetRadiusPx: Float,
+    horizontalClearancePx: Float,
     backdrop: LayerBackdrop?,
     coverProgressProvider: () -> Float,
     content: @Composable () -> Unit,
@@ -975,14 +1061,13 @@ private fun CardMorphLayer(
     val sourceRadiusPx = with(density) { session.bounds.cornerRadius.toPx() }
     val cardWidthDp = with(density) { from.width.toDp() }
     val cardHeightDp = with(density) { from.height.toDp() }
-    // 卡片只在转场前半段参与触摸判定；后半个身位已经淡出，不能继续挡住详情页。
-    //
-    // 还要求这条会话的收回**真的在跑**（collapseInteractive）：这一层挡住的是真卡的整块矩形，
-    // 只靠 `collapsing` 标记时，一段早已结束、标记却没被清掉的收回会让它一直压在真卡上，
-    // 列表卡的「收起 / 展开查看详情」按钮就永远点不到（同 ③ 的整屏点击层）。
-    // 收回进行中它照旧生效（含可打断续播），撤回语义不变。
-    val cardInteractive by remember {
-        derivedStateOf { session.progress < SOURCE_LAYER_EXIT && session.collapseInteractive() }
+    // 镜像卡片仍在最上层时带有原卡的点击回调，必须拦截；
+    // 同卡片的反向进入由叠加层统一命中，从当前进度接续。
+    val blockSourceTouches by remember {
+        derivedStateOf { session.progress < SOURCE_LAYER_EXIT }
+    }
+    val detailInteractive by remember(session, isTopSession) {
+        derivedStateOf { isTopSession && !session.collapsing && session.progress >= 0.999f }
     }
     // 铺满之后不再组合卡片（它在 t≥0.4 就全透明了），只在收回时重新挂回来。
     // 休息态（progress = 1.0，会话仍留在 sessions 里由叠加层独占绘制）**必须**不挂：
@@ -992,6 +1077,15 @@ private fun CardMorphLayer(
     // 看不出差别；但它会作为真实语义节点留在 a11y 树里（真机 ui-J5.xml 实测到两张卡的节点）。
     val cardVisible by remember { derivedStateOf { session.progress < SOURCE_LAYER_MAX_PROGRESS } }
     val isDarkTheme = MiuixTheme.colorScheme.background.luminance() < 0.5f
+    val shadowColor = MiuixTheme.colorScheme.onSurface.copy(alpha = MiuixCardShadowAlpha)
+    val shadowRadiusPx = with(density) { MiuixCardShadowRadius.toPx() }
+    val shadowOffsetYPx = with(density) { MiuixCardShadowOffsetY.toPx() }
+    val morphShadowPaint = remember { Paint(Paint.ANTI_ALIAS_FLAG) }
+    val cornerSquareProgress = animateFloatAsState(
+        targetValue = if (session.pushRequested && !session.collapsing) 1f else 0f,
+        animationSpec = tween(CARD_MORPH_CORNER_SQUARE_MILLIS),
+        label = "CardMorphCornerSquare",
+    )
     // 被上面那条会话盖住时，本层内容要跟外层背景一样「模糊 + 压暗」，否则叠在上面的详情卡片
     // 周围仍是一页清晰可读的下层详情，观感与主页卡片进入时的不一致。
     //
@@ -1010,8 +1104,13 @@ private fun CardMorphLayer(
                 // `scale = 1 - 0.15t` 严格一致（同一个 0.15，不新增常量）。
                 // 在绘制阶段读，避免每帧把整棵详情子树重组一遍。
                 val cover = coverProgressProvider().coerceIn(0f, 1f)
-                val sink = 1f - 0.15f * cover
-                val frame = morphFrame(from, size.width, size.height, sourceRadiusPx, targetRadiusPx, t, sink)
+                // 旧会话与新会话并行时，各自的形变路径必须独立。新会话可以
+                // 模糊、压暗旧会话，但不能把正在退场的旧容器再缩放一次。
+                val sink = if (session.collapsing) 1f else 1f - 0.15f * cover
+                val frame = morphFrame(
+                    from, size.width, size.height, sourceRadiusPx, targetRadiusPx, t, sink,
+                    horizontalClearancePx, cornerSquareProgress.value,
+                )
                 if (frame.curW <= 0.01f || frame.curH <= 0.01f) return@drawWithContent
 
                 val container = Path().apply {
@@ -1026,6 +1125,28 @@ private fun CardMorphLayer(
                             cornerRadius = CornerRadius(frame.radius, frame.radius),
                         ),
                     )
+                }
+                // 原卡片在活跃会话期间收起自身阴影；这里沿同一个 frame 的位置、尺寸和圆角
+                // 绘制阴影，避免卡片已铺开、阴影仍停在列表原位。满屏后阴影自然落在视口外。
+                if (!isDarkTheme) {
+                    morphShadowPaint.color = lerp(surfaceColor, destinationColor, t).toArgb()
+                    morphShadowPaint.setShadowLayer(
+                        shadowRadiusPx,
+                        0f,
+                        shadowOffsetYPx,
+                        shadowColor.toArgb(),
+                    )
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.drawRoundRect(
+                            frame.curX,
+                            frame.curY,
+                            frame.curX + frame.curW,
+                            frame.curY + frame.curH,
+                            frame.radius,
+                            frame.radius,
+                            morphShadowPaint,
+                        )
+                    }
                 }
                 // 容器底色：从卡片底色渐变到详情页底色，它就是铺开过程中的「卡片面」。
                 drawPath(path = container, color = lerp(surfaceColor, destinationColor, t))
@@ -1046,15 +1167,15 @@ private fun CardMorphLayer(
                     // 同一段进度也驱动下面的模糊。在图层块（绘制阶段）里读进度，
                     // 避免每帧把这一整棵子树重组一遍。
                     val cover = coverProgressProvider().coerceIn(0f, 1f)
-                    val sink = 1f - 0.15f * cover
-                    val frame = morphFrame(from, size.width, size.height, sourceRadiusPx, targetRadiusPx, t, sink)
+                    val sink = if (session.collapsing) 1f else 1f - 0.15f * cover
+                    val frame = morphFrame(from, size.width, size.height, sourceRadiusPx, targetRadiusPx, t, sink, horizontalClearancePx)
                     // contentScale 只含 t（morphFrame 已把 sink 从它里面摘出去），
                     // 这里再乘上同一个 sink 才是最终缩放——只乘一次。
                     val contentScale = frame.contentScale * frame.sinkScale
                     scaleX = contentScale
                     scaleY = contentScale
                     transformOrigin = TransformOrigin(0f, 0f)
-                    translationX = (frame.curW - size.width * contentScale) / 2f
+                    translationX = frame.curX + (frame.curW - size.width * contentScale) / 2f
                     // 垂直锚点 = 容器顶边 frame.curY（详情页第 0 行像素落在容器顶边）。
                     // transformOrigin 是**左上角**（见上面那行），绕左上角缩放不会让顶边位移，
                     // 所以这里**不需要**任何 (1 - contentScale) 项——上一轮按「绕中心缩放」多减了
@@ -1078,7 +1199,13 @@ private fun CardMorphLayer(
                     if (dim > 0.001f) drawRect(Color.Black.copy(alpha = dim))
                 },
         ) {
+            // 静止详情页的空白区域也要挡住主页，否则点空白处可能落到背后卡片。
+            Box(Modifier.fillMaxSize().blockMorphCardTouches())
             content()
+            if (!detailInteractive) {
+                // 转场中的详情页仍被组合用于绘制，但不应让按钮和列表行接收点击。
+                Box(Modifier.fillMaxSize().blockMorphCardTouches())
+            }
         }
 
         // 源卡片：实时渲染列表里那张卡的**同一份 Compose**，靠图层变换摆到容器里的卡片位置。
@@ -1091,9 +1218,9 @@ private fun CardMorphLayer(
                         val t = session.progress.coerceIn(0f, 1f)
                         val fullWidth = if (overlaySize.width > 0) overlaySize.width.toFloat() else size.width
                         val fullHeight = if (overlaySize.height > 0) overlaySize.height.toFloat() else size.height
-                        val frame = morphFrame(from, fullWidth, fullHeight, sourceRadiusPx, targetRadiusPx, t)
+                        val frame = morphFrame(from, fullWidth, fullHeight, sourceRadiusPx, targetRadiusPx, t, clearancePx = horizontalClearancePx)
                         val w0 = from.width
-                        val srcScale = if (w0 > 0f) 1f + (fullWidth / w0 - 1f) * t else 1f
+                        val srcScale = if (w0 > 0f) frame.curW / w0 else 1f
                         transformOrigin = TransformOrigin(0f, 0f)
                         scaleX = srcScale
                         scaleY = srcScale
@@ -1106,7 +1233,7 @@ private fun CardMorphLayer(
                         translationY = frame.curY
                         alpha = (1f - frame.contentAlpha).coerceIn(0f, 1f)
                     }
-                    .then(if (cardInteractive) Modifier.blockMorphCardTouches() else Modifier),
+                    .then(if (blockSourceTouches) Modifier.blockMorphCardTouches() else Modifier),
             ) {
                 session.card.invoke()
             }
@@ -1114,41 +1241,36 @@ private fun CardMorphLayer(
     }
 }
 
-/**
- * 「这条会话的收回**正在进行**」：撤回点击层与源卡片触摸拦截层是否生效的**唯一**判据。
- *
- * 为什么不能直接用 `collapsing`：它只是「请求收回」这个状态标记，**没有任何东西保证它会被清掉**。
- * 真正的清理只发生在 `runSettle` 目标为 0 的收尾里（`sessions.remove` + `collapsing = false`），
- * 而收尾要等弹簧跑完、协程真的执行到那一行：转场被系统返回手势打断、帧时钟停摆（屏幕熄灭/丢焦点）、
- * 渲染停顿都可能让 `collapsing` 长时间停在 true。叠加层只要看到这个标记就挂上整屏点击层，
- * 于是一段早就播完（甚至从没真正开跑）的转场会一直把点击吸进 [CardMorphController.reverseCollapse]
- * ——用户看到的是「卡片已经收回、画面静止」，点按钮却进了组详情。
- *
- * 改成要求「收束协程还在跑」：动画结束那一帧清理就执行（`settleJob` 随即变为完成），
- * 再晚到来的点击一律穿透给列表里那张真卡；而收回途中（含可打断续播）协程始终活跃，撤回语义一字不变。
- * 它不改变任何绘制：镜像卡片层 / 容器几何 / 圆角 / 进度一律照旧，只决定「谁接住这一下点击」。
- */
-private fun CardMorphSession.collapseInteractive(): Boolean =
-    collapsing && settleJob?.isActive == true
-
 /** 这个坐标是否落在该会话当前的容器矩形里（撤回点击层的判据）。 */
 private fun sessionContains(
     session: CardMorphSession,
     position: Offset,
     overlaySize: IntSize,
     targetRadiusPx: Float,
+    horizontalClearancePx: Float,
+    sourceRadiusPx: Float,
 ): Boolean {
     if (overlaySize.width <= 0 || overlaySize.height <= 0) return false
     val frame = morphFrame(
         from = session.bounds.rect,
         fullWidth = overlaySize.width.toFloat(),
         fullHeight = overlaySize.height.toFloat(),
-        sourceRadius = 0f,
+        sourceRadius = sourceRadiusPx,
         targetRadius = targetRadiusPx,
         t = session.progress.coerceIn(0f, 1f),
+        clearancePx = horizontalClearancePx,
     )
-    return position.x >= frame.curX && position.x <= frame.curX + frame.curW &&
-        position.y >= frame.curY && position.y <= frame.curY + frame.curH
+    val left = frame.curX
+    val top = frame.curY
+    val right = left + frame.curW
+    val bottom = top + frame.curH
+    if (position.x < left || position.x > right || position.y < top || position.y > bottom) return false
+    val radius = frame.radius
+    val arcX = position.x.coerceIn(left + radius, right - radius)
+    val arcY = position.y.coerceIn(top + radius, bottom - radius)
+    val dx = position.x - arcX
+    val dy = position.y - arcY
+    return dx * dx + dy * dy <= radius * radius
 }
 
 /**
@@ -1210,9 +1332,7 @@ private fun CardMorphBackdrop(
         } else {
             with(density) { FallbackScreenCornerRadius.toPx() }
         }
-        val sunkShape = RoundedCornerShape(
-            with(density) { (resolvedRadiusPx / sinkScale).toDp() },
-        )
+        val sunkRadius = with(density) { (resolvedRadiusPx / sinkScale).toDp() }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1222,11 +1342,14 @@ private fun CardMorphBackdrop(
                     scaleY = sinkScale
                     transformOrigin = TransformOrigin(0.5f, 0.5f)
                 }
-                // 底色也按同一个圆角画：不然方角会在圆角外露出一圈硬边。
-                .background(color = surfaceColor, shape = sunkShape)
+                // 裁掉整层采样结果（含模糊溢出的像素），并把底色放在同一裁剪内。
+                // 单给 background / textureBlur 各传 shape 只约束各自绘制，二者的外缘
+                // 仍可能露出直角；缩放期间必须共用这个持续存在的圆角裁剪层。
+                .squircleClip(sunkRadius)
+                .background(surfaceColor)
                 .textureBlur(
                     backdrop = backdrop,
-                    shape = sunkShape,
+                    shape = RectangleShape,
                     blurRadius = 56f * progress,
                     colors = BlurDefaults.blurColors(
                         brightness = baseBrightness * progress,

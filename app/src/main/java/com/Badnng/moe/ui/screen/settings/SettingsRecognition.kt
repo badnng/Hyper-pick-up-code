@@ -56,12 +56,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +86,19 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.widget.Toast
+import com.Badnng.moe.npu.NpuAccelerator
+import com.Badnng.moe.npu.NpuCapability
+import com.Badnng.moe.npu.NpuDeviceQuery
+import com.Badnng.moe.npu.NpuLibLoader
+import com.Badnng.moe.npu.NpuModelDownloader
+import com.Badnng.moe.npu.NpuStatusCode
+import com.Badnng.moe.npu.NpuSupport
+import com.Badnng.moe.ui.component.NpuDownloadSheet
 import com.Badnng.moe.recognition.CustomRequestMode
 import com.Badnng.moe.recognition.MimoBillingMode
 import com.Badnng.moe.recognition.OnlineRecognitionClient
@@ -97,12 +113,15 @@ import com.Badnng.moe.ui.component.PrivacyConsentBottomSheet
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import kotlinx.coroutines.delay
-import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import kotlinx.coroutines.launch
+import com.Badnng.moe.ui.miuix.MiuixReadableCard as MiuixCard
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
+import top.yukonga.miuix.kmp.basic.HorizontalDivider as MiuixHorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Switch as MiuixSwitch
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.basic.TextField as MiuixTextField
 import top.yukonga.miuix.kmp.basic.TextFieldDefaults as MiuixTextFieldDefaults
@@ -132,6 +151,8 @@ fun RecognitionSettingsContent(
         context.getSystemService(ClipboardManager::class.java)
     }
     val isMiuix = rememberMiuixStyle()
+    val scope = rememberCoroutineScope()
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     var recognitionMode by remember {
         val savedMode = preferences.getString(
@@ -173,6 +194,50 @@ fun RecognitionSettingsContent(
     }
     var apiKeyVisible by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
+
+    // NPU 加速状态
+    var npuEnabled by remember { mutableStateOf(NpuAccelerator.isEnabled(context)) }
+    var npuCapability by remember { mutableStateOf<NpuCapability?>(null) }
+    var npuDeviceInfo by remember { mutableStateOf<NpuDeviceQuery.Info?>(null) }
+    /**
+     * 本机 HTP 架构 —— 全局唯一入口 [NpuSupport.resolveHtpArch] 的结论(白名单优先,
+     * 设备自报兜底)。**下载、就绪判定与界面显示都必须用这个值**:
+     * 设备自报([NpuDeviceQuery.Info.htpArch])在多套 Skel 并存的真机上会随目录列举顺序
+     * 漂移(实测 SM8475 报 v68,而白名单/detect 要的是 v69),直接拿它去下载会出现
+     * "文件已下载却永远提示未下载"的死循环。
+     *
+     * 键在 npuDeviceInfo 上:resolveHtpArch 会读系统属性,不能每次重组都调用。
+     */
+    val npuArch = remember(npuDeviceInfo) { NpuSupport.resolveHtpArch(npuDeviceInfo) }
+    var showNpuDownloadSheet by remember { mutableStateOf(false) }
+    var npuDownloadProgress by remember { mutableStateOf<List<NpuModelDownloader.FileProgress>>(emptyList()) }
+    var npuDownloading by remember { mutableStateOf(false) }
+
+    // 查询 NPU 设备信息
+    LaunchedEffect(Unit) {
+        npuDeviceInfo = NpuDeviceQuery.query()
+        npuCapability = NpuSupport.detect(context)
+    }
+
+    // NPU 下载完成后的处理
+    LaunchedEffect(npuDownloadProgress, npuDownloading) {
+        if (npuDownloading && npuDownloadProgress.isNotEmpty()) {
+            val allDone = npuDownloadProgress.all {
+                it.status == NpuModelDownloader.FileProgress.Status.DONE ||
+                    it.status == NpuModelDownloader.FileProgress.Status.SKIPPED
+            }
+            if (allDone) {
+                npuDownloading = false
+                // 重新检测能力
+                val cap = NpuSupport.detect(context)
+                npuCapability = cap
+                if (cap.supported) {
+                    NpuAccelerator.setEnabled(context, true)
+                    npuEnabled = true
+                }
+            }
+        }
+    }
 
     LaunchedEffect(preferences) {
         if (!PrivacyConsent.isCurrentPolicyAccepted(preferences) &&
@@ -278,6 +343,32 @@ fun RecognitionSettingsContent(
                 }
             }
 
+    // NPU 开关回调(Miuix / MD3E 两个分支共用同一份逻辑)
+    val onNpuEnabledChange: (Boolean) -> Unit = { checked ->
+        performHaptic()
+        if (checked) {
+            val cap = NpuSupport.detect(context)
+            if (cap.supported) {
+                NpuAccelerator.setEnabled(context, true)
+                npuEnabled = true
+            } else {
+                when (cap.status) {
+                    NpuStatusCode.RUNTIME_NOT_DOWNLOADED,
+                    NpuStatusCode.HTP_ARCH_LIB_MISSING,
+                    NpuStatusCode.MODEL_NOT_FOUND -> {
+                        showNpuDownloadSheet = true
+                    }
+                    else -> {
+                        npuCapability = cap
+                    }
+                }
+            }
+        } else {
+            NpuAccelerator.setEnabled(context, false)
+            npuEnabled = false
+        }
+    }
+
     if (isMiuix) {
         val sections = MiuixRecognitionSettingsSections(
                 recognitionMode = recognitionMode,
@@ -289,6 +380,11 @@ fun RecognitionSettingsContent(
                 customModels = customModels,
                 apiKeyInput = apiKeyInput,
                 apiKeyVisible = apiKeyVisible,
+                npuEnabled = npuEnabled,
+                npuCapability = npuCapability,
+                npuDeviceInfo = npuDeviceInfo,
+                npuArch = npuArch,
+                onNpuEnabledChange = onNpuEnabledChange,
                 onModeSelected = ::setMode,
                 onProviderSelected = ::setProvider,
                 onModelSelected = ::setModel,
@@ -373,12 +469,83 @@ fun RecognitionSettingsContent(
                 onApiKeyVisibilityChange = { apiKeyVisible = !apiKeyVisible },
                 canPasteApiKey = clipboardManager::hasPrimaryClip,
                 onPasteApiKey = ::pasteApiKey,
+                npuEnabled = npuEnabled,
+                npuCapability = npuCapability,
+                npuDeviceInfo = npuDeviceInfo,
+                npuArch = npuArch,
+                onNpuEnabledChange = onNpuEnabledChange,
                 performHaptic = performHaptic,
                 onNavigateToPromptEditor = onNavigateToPromptEditor,
             )
             Spacer(Modifier.height(32.dp))
         }
     }
+
+    // NPU 下载 BottomSheet
+    NpuDownloadSheet(
+        show = showNpuDownloadSheet,
+        isMiuix = isMiuix,
+        // 与 detect() / 下载口径同源的白名单架构;`?: 75` 是不可达的防御性兜底
+        // (resolveHtpArch 为 null 时 detect() 早已判定不可用,开关根本开不起来)。
+        arch = npuArch ?: 75,
+        progress = npuDownloadProgress,
+        isDownloading = npuDownloading,
+        onDownload = {
+            npuDownloading = true
+            npuDownloadProgress = emptyList()
+            val downloader = NpuModelDownloader(context)
+            downloader.onProgress = { progressList ->
+                // 回调来自 IO 线程,Compose state 必须在主线程写入
+                mainHandler.post { npuDownloadProgress = progressList }
+            }
+            scope.launch {
+                try {
+                    val result = downloader.download(
+                        // 同 Sheet 的 arch:必须用白名单结论,否则会下载到错架构的库。
+                        // `?: 75` 同为不可达的防御性兜底。
+                        arch = npuArch ?: 75,
+                        baseUrl = "https://badnng.dpdns.org/https://raw.githubusercontent.com/badnng/Hyper-pick-up-code/refs/heads/Dev",
+                    )
+                    when (result) {
+                        is NpuModelDownloader.Result.Success -> {
+                            Log.i("NpuDownload", "下载成功: ${result.files.size} 个文件")
+                        }
+                        is NpuModelDownloader.Result.Failed -> {
+                            Log.e("NpuDownload", "下载失败: ${result.errors}")
+                            npuDownloading = false
+                            Toast.makeText(
+                                context,
+                                "NPU 资源下载失败：${result.errors.firstOrNull() ?: "未知错误"}",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                        NpuModelDownloader.Result.Cancelled -> {
+                            npuDownloading = false
+                            Toast.makeText(context, "已取消 NPU 资源下载", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (t: Throwable) {
+                    Log.e("NpuDownload", "下载异常", t)
+                    npuDownloading = false
+                    Toast.makeText(
+                        context,
+                        "NPU 资源下载失败：${t.message ?: t.javaClass.simpleName}",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                } finally {
+                    // 兜底复位:全部成功时由 npuDownloadProgress 的 LaunchedEffect 负责收尾,
+                    // 这里只清理"没有进度可判定"的卡死状态(如 download() 自身抛异常)。
+                    if (npuDownloadProgress.isEmpty()) {
+                        npuDownloading = false
+                    }
+                }
+            }
+        },
+        onDismiss = {
+            showNpuDownloadSheet = false
+            npuDownloading = false
+        },
+    )
 
     PrivacyConsentBottomSheet(
         show = showPrivacyDialog,
@@ -404,6 +571,31 @@ fun RecognitionSettingsContent(
 }
 
 @Composable
+private fun NpuDeviceInfoRow(label: String, value: String, maxLines: Int = Int.MAX_VALUE) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MiuixText(
+            text = label,
+            fontSize = 13.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        Spacer(Modifier.width(12.dp))
+        MiuixText(
+            text = value,
+            modifier = Modifier.weight(1f, fill = false),
+            fontSize = 13.sp,
+            color = MiuixTheme.colorScheme.onSurface,
+            textAlign = TextAlign.End,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun MiuixRecognitionSettingsSections(
     recognitionMode: String,
     provider: OnlineRecognitionProvider,
@@ -414,6 +606,15 @@ private fun MiuixRecognitionSettingsSections(
     customModels: List<OnlineRecognitionModel>,
     apiKeyInput: TextFieldValue,
     apiKeyVisible: Boolean,
+    npuEnabled: Boolean,
+    npuCapability: NpuCapability?,
+    npuDeviceInfo: NpuDeviceQuery.Info?,
+    /**
+     * 展示用的 HTP 架构 = [NpuSupport.resolveHtpArch] 的结论(白名单口径),由调用方算好传入。
+     * 不用 [NpuDeviceQuery.Info.htpArch] 显示,否则界面会报设备自报的错架构(真机 SM8475 报 v68)。
+     */
+    npuArch: Int?,
+    onNpuEnabledChange: (Boolean) -> Unit,
     onModeSelected: (String) -> Unit,
     onProviderSelected: (OnlineRecognitionProvider) -> Unit,
     onModelSelected: (OnlineRecognitionModel) -> Unit,
@@ -447,6 +648,77 @@ private fun MiuixRecognitionSettingsSections(
                     )
                 )),
             )
+        }
+    }
+
+    // NPU 加速开关 + 设备信息卡片(离线识别模式下显示)
+    add {
+        if (recognitionMode == OnlineRecognitionPreferences.MODE_OFFLINE) {
+            SmallTitle("NPU 加速")
+            MiuixCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
+                // NPU 开关
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        MiuixText(
+                            text = "骁龙 NPU 加速",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MiuixTheme.colorScheme.onSurface,
+                        )
+                        MiuixText(
+                            text = "使用高通 Hexagon NPU 加速文字检测,识别更快更省电",
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    MiuixSwitch(
+                        checked = npuEnabled,
+                        onCheckedChange = { checked ->
+                            onNpuEnabledChange(checked)
+                        },
+                    )
+                }
+
+                // 设备信息(开关开启后显示)
+                if (npuEnabled) {
+                    MiuixHorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        thickness = 0.5.dp,
+                        color = MiuixTheme.colorScheme.outline.copy(alpha = 0.22f),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        NpuDeviceInfoRow("设备型号", Build.MODEL ?: "未知")
+                        NpuDeviceInfoRow("处理器", npuDeviceInfo?.socModel ?: "未知")
+                        NpuDeviceInfoRow(
+                            "NPU 架构",
+                            // 白名单结论优先(与下载/就绪判定一致);仅在它为 null 时才退回设备自报
+                            (npuArch ?: npuDeviceInfo?.htpArch)?.let { "Hexagon HTP v$it" }
+                                ?: "未识别",
+                        )
+                        NpuDeviceInfoRow(
+                            "状态",
+                            when {
+                                npuCapability?.supported == true -> "可用"
+                                npuCapability != null -> npuCapability.message ?: "未知"
+                                else -> "检测中..."
+                            },
+                            maxLines = 3,
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -715,6 +987,12 @@ private fun Md3eRecognitionSettings(
     onApiKeyVisibilityChange: () -> Unit,
     canPasteApiKey: () -> Boolean,
     onPasteApiKey: () -> Unit,
+    npuEnabled: Boolean,
+    npuCapability: NpuCapability?,
+    npuDeviceInfo: NpuDeviceQuery.Info?,
+    /** 展示用的 HTP 架构(白名单口径),见 Miuix 版的同名参数说明。 */
+    npuArch: Int?,
+    onNpuEnabledChange: (Boolean) -> Unit,
     performHaptic: () -> Unit,
     onNavigateToPromptEditor: () -> Unit,
 ) {
@@ -734,6 +1012,74 @@ private fun Md3eRecognitionSettings(
                     ),
                     onSelected = { onModeSelected(it) },
                 )
+            }
+        }
+
+        // NPU 加速开关 + 设备信息卡片(离线识别模式下显示)
+        if (recognitionMode == OnlineRecognitionPreferences.MODE_OFFLINE) {
+            Md3eSection("NPU 加速") {
+                SettingsCard(contentPadding = PaddingValues(0.dp)) {
+                    // NPU 开关
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "骁龙 NPU 加速",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = "使用高通 Hexagon NPU 加速文字检测，识别更快更省电",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                        Switch(
+                            checked = npuEnabled,
+                            onCheckedChange = { checked -> onNpuEnabledChange(checked) },
+                        )
+                    }
+
+                    // 设备信息(开关开启后显示)
+                    if (npuEnabled) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Md3eNpuDeviceInfoRow("设备型号", Build.MODEL ?: "未知")
+                            Md3eNpuDeviceInfoRow("处理器", npuDeviceInfo?.socModel ?: "未知")
+                            Md3eNpuDeviceInfoRow(
+                                "NPU 架构",
+                                // 白名单结论优先(与下载/就绪判定一致);仅在它为 null 时才退回设备自报
+                                (npuArch ?: npuDeviceInfo?.htpArch)?.let { "Hexagon HTP v$it" }
+                                    ?: "未识别",
+                            )
+                            Md3eNpuDeviceInfoRow(
+                                "状态",
+                                when {
+                                    npuCapability?.supported == true -> "可用"
+                                    npuCapability != null -> npuCapability.message ?: "未知"
+                                    else -> "检测中..."
+                                },
+                                maxLines = 3,
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -1370,6 +1716,31 @@ private fun SettingsCard(
         Column(
             modifier = Modifier.fillMaxWidth().padding(contentPadding),
             content = content,
+        )
+    }
+}
+
+@Composable
+private fun Md3eNpuDeviceInfoRow(label: String, value: String, maxLines: Int = Int.MAX_VALUE) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = value,
+            modifier = Modifier.weight(1f, fill = false),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.End,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

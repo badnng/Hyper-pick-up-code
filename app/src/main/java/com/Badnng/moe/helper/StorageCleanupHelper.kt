@@ -88,7 +88,13 @@ object StorageCleanupHelper {
                             )
                 }
                 .map { it.screenshotPath }
-                .toSet()
+                .toMutableSet()
+
+            // 未完成组中的图片仍在组详情展示；即使其中某条订单已完成，也不能提前清理。
+            db.orderGroupDao().getAllGroupsList()
+                .filterNot { it.isCompleted }
+                .flatMap { GroupScreenshotPaths.all(it) }
+                .forEach(protectedPaths::add)
 
             var deletedCount = 0
             expiredCompletedPaths.forEach { path ->

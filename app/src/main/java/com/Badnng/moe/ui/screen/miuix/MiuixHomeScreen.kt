@@ -488,7 +488,10 @@ fun MiuixHomeScreen(
     // 组详情页既可能由 NavDisplay 入口绘制、也可能正由叠加层绘制，两处的子订单卡片都要能登记几何；
     // 只包在 mainContent 里的话，详情页拿到的就是 null（子卡片点不出动画）。
     // supportsSupportingPane 为 true 时 cardMorphSource 本身就是 null，语义与之前完全一致（大屏不做一镜到底）。
-    CompositionLocalProvider(LocalCardMorphSource provides cardMorphSource) {
+    CompositionLocalProvider(
+        LocalCardMorphSource provides cardMorphSource,
+        LocalCardMorphActiveKeys provides cardMorph.sessions.mapTo(mutableSetOf()) { it.key },
+    ) {
     if (supportsSupportingPane) {
         val detailTarget = backStack.lastOrNull()
             ?.takeIf { it != HomeRoute.Main }
@@ -649,13 +652,16 @@ fun MiuixHomeScreen(
                 // 起点是卡片底色，终点是详情页底色：容器底色随进度在两者之间过渡。
                 surfaceColor = MiuixTheme.colorScheme.surfaceContainer,
                 destinationColor = MiuixTheme.colorScheme.surface,
-            ) { key ->
+                hapticEnabled = hapticEnabled,
+            ) { session ->
+                val key = session.key
                 // key 来自会话自己：并行动画时同时有两条会话，各画各的详情页。
                 // 前缀决定画哪一页：`order:` → 识别详情，`group:` → 订单组详情。
                 if (key.startsWith(GroupMorphKeyPrefix)) {
                     key.removePrefix(GroupMorphKeyPrefix).toLongOrNull()?.let { groupId ->
                         MiuixGroupDetailRouteContent(
                             groupId = groupId,
+                            initialGroup = session.payload as? OrderGroup,
                             supportingPane = false,
                             onBack = { cardMorph.beginCollapse() },
                             // 组详情里的子订单卡片：能一镜到底就再开一条会话（叠在组详情上，
@@ -667,6 +673,7 @@ fun MiuixHomeScreen(
                 } else {
                     MiuixOrderDetailContent(
                         orderId = key.removePrefix(OrderMorphKeyPrefix),
+                        initialOrder = session.payload as? OrderEntity,
                         supportingPane = false,
                         onBack = { cardMorph.beginCollapse() },
                     )
@@ -710,12 +717,13 @@ private data class MiuixHomeDetailTarget(
 @Composable
 private fun MiuixOrderDetailContent(
     orderId: String,
+    initialOrder: OrderEntity? = null,
     supportingPane: Boolean,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    val order = remember(orderId) {
-        runBlocking { OrderDatabase.getDatabase(context).orderDao().getOrderById(orderId) }
+    val order = remember(orderId, initialOrder) {
+        initialOrder ?: runBlocking { OrderDatabase.getDatabase(context).orderDao().getOrderById(orderId) }
     }
     if (order != null) {
         com.Badnng.moe.ui.screen.miuix.MiuixOrderDetailScreen(
@@ -885,6 +893,7 @@ private fun MiuixHomeDetailContent(
 @Composable
 private fun MiuixGroupDetailRouteContent(
     groupId: Long,
+    initialGroup: OrderGroup? = null,
     supportingPane: Boolean,
     onBack: () -> Unit,
     onOpenOrder: (OrderEntity) -> Unit,
@@ -893,8 +902,8 @@ private fun MiuixGroupDetailRouteContent(
 ) {
     val context = LocalContext.current
     val db = remember { OrderDatabase.getDatabase(context) }
-    val group = remember(groupId) {
-        runBlocking { db.orderGroupDao().getGroupById(groupId) }
+    val group = remember(groupId, initialGroup) {
+        initialGroup ?: runBlocking { db.orderGroupDao().getGroupById(groupId) }
     }
     val orders by db.orderGroupDao()
         .getOrdersByGroupId(groupId)

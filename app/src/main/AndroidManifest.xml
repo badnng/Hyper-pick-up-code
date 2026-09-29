@@ -68,6 +68,11 @@
             android:name="miui.window.CVW_MODE"
             android:value="1" />
 
+        <!-- QNN HTP 后端依赖 libcdsprpc.so(系统厂商库),targetSdk>=31 必须显式声明 -->
+        <uses-native-library
+            android:name="libcdsprpc.so"
+            android:required="false" />
+
         <activity
             android:name=".activity.MainActivity"
             android:exported="true"

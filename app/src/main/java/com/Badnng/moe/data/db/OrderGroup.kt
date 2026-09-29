@@ -1,6 +1,7 @@
 package com.Badnng.moe.data.db
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.PrimaryKey
 import java.util.UUID
 
@@ -22,5 +23,7 @@ data class OrderGroup(
     val isCompleted: Boolean = false,  // 是否已完成
     val completedAt: Long? = null,  // 完成时间
     val orderCount: Int = 0,  // 包含的订单数量
-    val iconResName: String? = null  // 自定义图标资源名，如 "ic_mcdonalds"
+    val iconResName: String? = null,  // 自定义图标资源名，如 "ic_mcdonalds"
+    @ColumnInfo(defaultValue = "'[]'")
+    val screenshotPathsJson: String = "[]", // 组内所有采集来源图，保留 screenshotPath 兼容旧数据
 )

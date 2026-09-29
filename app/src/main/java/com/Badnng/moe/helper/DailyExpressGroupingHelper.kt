@@ -47,7 +47,10 @@ object DailyExpressGroupingHelper {
             val groupId = if (existingGroup != null) {
                 groupDao.updateGroup(
                     existingGroup.copy(
-                        screenshotPath = latest.screenshotPath,
+                        screenshotPath = existingGroup.screenshotPath.ifBlank { latest.screenshotPath },
+                        screenshotPathsJson = GroupScreenshotPaths.encode(
+                            GroupScreenshotPaths.all(existingGroup, ordersOfDay),
+                        ),
                         recognizedText = latest.fullText ?: existingGroup.recognizedText,
                         sourceApp = latest.sourceApp ?: existingGroup.sourceApp,
                         sourcePackage = latest.sourcePackage ?: existingGroup.sourcePackage,
@@ -62,6 +65,9 @@ object DailyExpressGroupingHelper {
                         orderType = "快递",
                         brandName = latest.brandName,
                         screenshotPath = latest.screenshotPath,
+                        screenshotPathsJson = GroupScreenshotPaths.encode(
+                            ordersOfDay.sortedBy(OrderEntity::createdAt).map(OrderEntity::screenshotPath),
+                        ),
                         sourceApp = latest.sourceApp,
                         sourcePackage = latest.sourcePackage,
                         recognizedText = latest.fullText ?: "",
@@ -123,7 +129,10 @@ object DailyExpressGroupingHelper {
         val groupId = if (existingTodayGroup != null) {
             groupDao.updateGroup(
                 existingTodayGroup.copy(
-                    screenshotPath = screenshotPath,
+                    screenshotPath = existingTodayGroup.screenshotPath.ifBlank { screenshotPath },
+                    screenshotPathsJson = GroupScreenshotPaths.encode(
+                        GroupScreenshotPaths.all(existingTodayGroup, todayPendingExpressOrders) + screenshotPath,
+                    ),
                     recognizedText = recognizedText,
                     sourceApp = sourceApp ?: existingTodayGroup.sourceApp,
                     sourcePackage = sourcePackage ?: existingTodayGroup.sourcePackage,
@@ -138,6 +147,10 @@ object DailyExpressGroupingHelper {
                     orderType = "快递",
                     brandName = defaultBrand,
                     screenshotPath = screenshotPath,
+                    screenshotPathsJson = GroupScreenshotPaths.encode(
+                        todayPendingExpressOrders.sortedBy(OrderEntity::createdAt)
+                            .map(OrderEntity::screenshotPath) + screenshotPath,
+                    ),
                     sourceApp = sourceApp,
                     sourcePackage = sourcePackage,
                     recognizedText = recognizedText,

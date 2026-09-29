@@ -103,11 +103,13 @@ fun MiuixBlurredBar(
                 .progressiveTextureBlur(
                     backdrop = backdrop,
                     shape = RectangleShape,
-                    blurRadius = blurRadius,
-                    gradient = ProgressiveBlur.Top,
+                    // 高半径会触发更低分辨率的多级采样，文字边缘容易呈块状。
+                    // 控制渐进模糊的最大半径，同时保留背景颜色和大致轮廓。
+                    blurRadius = blurRadius.coerceAtMost(18f),
+                    gradient = ProgressiveBlur.Top.copy(curve = 0.75f),
                     colors = BlurDefaults.blurColors(
                         blendColors = listOf(
-                            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(blendAlpha)),
+                            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(blendAlpha.coerceAtMost(0.68f))),
                         ),
                     ),
                 )

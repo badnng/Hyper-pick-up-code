@@ -6,6 +6,8 @@ import android.os.Bundle
 import com.Badnng.moe.helper.AppMemoryPressureState
 import com.Badnng.moe.helper.AppLogger
 import com.Badnng.moe.helper.FairMemoryManager
+import com.Badnng.moe.npu.NpuDeviceQuery
+import com.Badnng.moe.npu.NpuSupport
 import com.Badnng.moe.rules.RecognitionRuleEngine
 import com.Badnng.moe.wearable.WearableSyncManager
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +25,14 @@ class HyperNoteApp : Application(), Application.ActivityLifecycleCallbacks {
         FairMemoryManager.initialize(this)
         registerActivityLifecycleCallbacks(this)
         AppLogger.app("Application onCreate, process=${android.os.Process.myPid()}")
+
+        // NPU 加速:尽早设置 ADSP_LIBRARY_PATH(FastRPC 首次连接 DSP 时读取并缓存)
+        // 这必须在任何 QNN/DSP 动作之前完成,否则 NPU 可能回落到系统 Skel 导致版本不匹配
+        val npuInfo = NpuDeviceQuery.query()
+        if (npuInfo.htpArch != null) {
+            NpuSupport.ensureAdspLibraryPath(applicationContext, npuInfo.htpArch)
+        }
+
         // 进程因开机广播、保活服务或系统回收后恢复时，若用户已开启手表同步，
         // 立即开始节点发现和监听注册，不等待主页或 ViewModel 创建。
         // XMS SDK 初始化/节点发现可能触发 Binder 调用，不能阻塞 Activity 首帧。

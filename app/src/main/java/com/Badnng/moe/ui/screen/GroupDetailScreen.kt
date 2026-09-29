@@ -18,12 +18,14 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -62,6 +66,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
@@ -69,8 +74,11 @@ import com.Badnng.moe.activity.MainActivity
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.BrandIconResolver
+import com.Badnng.moe.helper.GroupScreenshotPaths
 import com.Badnng.moe.helper.ScreenshotStorage
+import com.Badnng.moe.ui.component.ScreenshotCornerPercents
 import com.Badnng.moe.ui.component.formatOrderTime
+import com.Badnng.moe.ui.component.toRoundedCornerShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,14 +105,14 @@ fun GroupDetailScreen(
     val completedCount = orders.count(OrderEntity::isCompleted)
     val totalCount = orders.size
     val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
-    val screenshotPaths = remember(context, group.screenshotPath, orders) {
-        val orderPaths = orders.map(OrderEntity::screenshotPath)
+    val configuration = LocalConfiguration.current
+    val screenshotPreviewMaxHeight = remember(configuration.screenHeightDp) {
+        (configuration.screenHeightDp * 0.50f).dp.coerceIn(240.dp, 460.dp)
+    }
+    val screenshotCornerPercents = rememberDisplayCornerPercents()
+    val screenshotPaths = remember(context, group.screenshotPath, group.screenshotPathsJson, orders) {
+        GroupScreenshotPaths.all(group, orders)
             .filter { ScreenshotStorage.exists(context, it) }
-        when {
-            orderPaths.isNotEmpty() -> orderPaths.distinct()
-            ScreenshotStorage.exists(context, group.screenshotPath) -> listOf(group.screenshotPath)
-            else -> emptyList()
-        }
     }
     var fullScreenImagePath by remember(group.id) { mutableStateOf<String?>(null) }
     var originalExpanded by remember(group.id) { mutableStateOf(false) }
@@ -147,14 +155,16 @@ fun GroupDetailScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            screenshotPaths.firstOrNull()?.let { path ->
-                item(key = "groupScreenshot") {
-                    Md3eGroupScreenshot(
-                        path = path,
-                        screenshotCount = screenshotPaths.size,
-                        onClick = { performHaptic(); fullScreenImagePath = path },
-                    )
-                }
+            itemsIndexed(screenshotPaths, key = { _, path -> "groupScreenshot:$path" }) { index, path ->
+                Md3eGroupScreenshot(
+                    path = path,
+                    screenshotIndex = index,
+                    screenshotCount = screenshotPaths.size,
+                    maxHeight = screenshotPreviewMaxHeight,
+                    corners = screenshotCornerPercents,
+                    onClick = { performHaptic(); fullScreenImagePath = path },
+                    onShare = { performHaptic(); shareOriginalScreenshot(context, path) },
+                )
             }
             item(key = "groupSummary") {
                 Md3eGroupSummary(group, completedCount, totalCount, progress)
@@ -275,35 +285,57 @@ fun GroupDetailScreen(
 }
 
 @Composable
-private fun Md3eGroupScreenshot(path: String, screenshotCount: Int, onClick: () -> Unit) {
+private fun Md3eGroupScreenshot(
+    path: String,
+    screenshotIndex: Int,
+    screenshotCount: Int,
+    maxHeight: Dp,
+    corners: ScreenshotCornerPercents,
+    onClick: () -> Unit,
+    onShare: () -> Unit,
+) {
     val context = LocalContext.current
     val ratio = remember(context, path) {
         ScreenshotStorage.decodeBounds(context, path)
             ?.let { (width, height) -> width.toFloat() / height.coerceAtLeast(1) }
-            ?.coerceIn(0.45f, 2.4f)
             ?: (4f / 3f)
     }
-    Column {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val previewHeight = (maxWidth / ratio).coerceIn(160.dp, 320.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            val previewWidth = minOf(maxWidth, maxHeight * ratio)
             AsyncImage(
                 model = ScreenshotStorage.imageModel(path),
-                contentDescription = "组识别截图",
+                contentDescription = "组来源截图，点击查看大图",
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(previewHeight)
-                    .clip(RoundedCornerShape(15.dp))
+                    .width(previewWidth)
+                    .height(previewWidth / ratio)
+                    .clip(corners.toRoundedCornerShape())
                     .clickable(onClick = onClick),
                 contentScale = ContentScale.Fit,
             )
         }
         if (screenshotCount > 1) {
             Text(
-                text = "共 $screenshotCount 张截图，子订单详情中可分别查看",
+                text = "来源图片 ${screenshotIndex + 1} / $screenshotCount",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, top = 6.dp),
             )
+        }
+        OutlinedButton(
+            onClick = onShare,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = RoundedCornerShape(15.dp),
+        ) {
+            Icon(Icons.Default.Share, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("分享原图")
         }
     }
 }

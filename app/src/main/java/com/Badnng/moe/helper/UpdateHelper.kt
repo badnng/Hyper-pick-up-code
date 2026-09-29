@@ -43,7 +43,6 @@ object UpdateHelper {
     private const val STABLE_URL = "https://badnng.dpdns.org/https://raw.githubusercontent.com/badnng/Hyper-pick-up-code/refs/heads/master/Stable.json"
     private const val DEV_URL = "https://badnng.dpdns.org/https://raw.githubusercontent.com/badnng/Hyper-pick-up-code/refs/heads/master/Dev.json"
     private const val DOWNLOAD_BASE_URL = "https://badnng.dpdns.org/"
-
     // 下载状态跟踪
     @Volatile
     var isDownloading = false

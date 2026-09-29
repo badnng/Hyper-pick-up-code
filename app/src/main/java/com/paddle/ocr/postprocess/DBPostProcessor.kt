@@ -42,13 +42,28 @@ object DBPostProcessor {
         boxType: String,
         originalH: Int,
         originalW: Int,
+        /**
+         * 概率图 → 原图 的显式仿射映射 `x_orig = (x_model - offsetX) * scaleX`。
+         *
+         * - `scaleX <= 0`(默认):退化为 `原图宽 / 概率图宽` 的线性缩放,offset 为 0
+         *   —— 这是改造前的行为,适用于"squash 整图"与"原生分辨率分块"两条路径。
+         * - letterbox(NPU 默认路径):必须显式传入,因为补边偏移无法从尺寸反推。
+         *   只按尺寸比例缩放会忽略 padX/padY,导致框整体偏移。
+         */
+        scaleX: Double = 0.0,
+        scaleY: Double = 0.0,
+        offsetX: Double = 0.0,
+        offsetY: Double = 0.0,
     ): List<OCRBox> {
         require(boxType == "quad") { "Only DBPostProcess box_type=quad is supported" }
 
         val pH = predShape[2].toInt()
         val pW = predShape[3].toInt()
-        val scaleX = originalW.toDouble() / pW
-        val scaleY = originalH.toDouble() / pH
+        // 显式映射优先;未给出时退回按尺寸比缩放(offset 视为 0)
+        val sx = if (scaleX > 0.0) scaleX else originalW.toDouble() / pW
+        val sy = if (scaleY > 0.0) scaleY else originalH.toDouble() / pH
+        val ox = offsetX
+        val oy = offsetY
         val normalizedScoreMode = scoreMode.lowercase()
 
         val rawProb = Mat(pH, pW, CvType.CV_32FC1)
@@ -118,10 +133,10 @@ object DBPostProcessor {
                 expandedRect.points(expandedBox)
                 val ePts = QuadGeometry.orderMinAreaRectPoints(expandedBox)
                 val scaled = listOf(
-                    scalePoint(ePts[0], scaleX, scaleY, originalW, originalH),
-                    scalePoint(ePts[1], scaleX, scaleY, originalW, originalH),
-                    scalePoint(ePts[2], scaleX, scaleY, originalW, originalH),
-                    scalePoint(ePts[3], scaleX, scaleY, originalW, originalH),
+                    scalePoint(ePts[0], sx, sy, ox, oy, originalW, originalH),
+                    scalePoint(ePts[1], sx, sy, ox, oy, originalW, originalH),
+                    scalePoint(ePts[2], sx, sy, ox, oy, originalW, originalH),
+                    scalePoint(ePts[3], sx, sy, ox, oy, originalW, originalH),
                 )
 
                 val boxW = kotlin.math.hypot(
@@ -148,16 +163,21 @@ object DBPostProcessor {
         }
     }
 
+    /** 概率图坐标 → 原图坐标:`(p - offset) * scale`,再钳到图像范围内。 */
     private fun scalePoint(
         point: Point,
         scaleX: Double,
         scaleY: Double,
+        offsetX: Double,
+        offsetY: Double,
         originalW: Int,
         originalH: Int,
     ): PointF {
         return PointF(
-            MathUtils.roundHalfToEven(point.x * scaleX).coerceIn(0, originalW).toFloat(),
-            MathUtils.roundHalfToEven(point.y * scaleY).coerceIn(0, originalH).toFloat(),
+            MathUtils.roundHalfToEven((point.x - offsetX) * scaleX)
+                .coerceIn(0, originalW).toFloat(),
+            MathUtils.roundHalfToEven((point.y - offsetY) * scaleY)
+                .coerceIn(0, originalH).toFloat(),
         )
     }
 

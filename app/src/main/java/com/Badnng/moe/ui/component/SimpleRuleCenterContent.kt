@@ -4,7 +4,6 @@ import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -431,6 +430,7 @@ fun SimpleRuleCenterContent(
             contentPadding = contentPadding,
             performHaptic = performHaptic,
             onBack = { backPage() },
+            handleBackInternally = onBackPage == null,
             modifier = modifier,
         )
 
@@ -1107,6 +1107,7 @@ private fun WordCategoryPage(
     contentPadding: PaddingValues,
     performHaptic: () -> Unit,
     onBack: () -> Unit,
+    handleBackInternally: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1170,7 +1171,9 @@ private fun WordCategoryPage(
         loading = false
     }
 
-    BackHandler(enabled = true) { onBack() }
+    // 独立导航入口由 NavDisplay 接管返回手势。这里再注册 BackHandler 会抢走
+    // 预测性返回事件，使词汇二级页只能直接跳回上一页。
+    BackHandler(enabled = handleBackInternally) { onBack() }
 
     if (loading) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

@@ -7,6 +7,55 @@ import org.junit.Test
 
 class SimpleRuleTemplateCompilerTest {
     @Test
+    fun ambiguousPickupLabelUsesFoodContextButExplicitParcelLabelStaysExpress() {
+        SimpleRuleRuntime.replace(SimpleRulePack.empty())
+
+        val meal = SimpleRuleRuntime.recognizeCurrent(
+            "美团外卖 自提订单，凭1234领取",
+            SimpleRuleSource.NOTIFICATION,
+        ).single()
+        val parcel = SimpleRuleRuntime.recognizeCurrent(
+            "快递已到站，取件码5678",
+            SimpleRuleSource.NOTIFICATION,
+        ).single()
+
+        assertEquals("1234", meal.code)
+        assertEquals(SimpleRuleCategory.FOOD, meal.category)
+        assertEquals("5678", parcel.code)
+        assertEquals(SimpleRuleCategory.EXPRESS, parcel.category)
+    }
+
+    @Test
+    fun savedBuiltInExpressRuleDoesNotClaimMeituanMeal() {
+        SimpleRuleRuntime.replace(
+            SimpleRulePack(
+                brands = listOf(
+                    SimpleBrandRule(
+                        id = "builtin-express",
+                        category = SimpleRuleCategory.EXPRESS,
+                        name = "快递",
+                        keywords = listOf("自提"),
+                        templates = listOf(
+                            SimpleTemplateRule(
+                                name = "凭码领取",
+                                template = "凭{{code:alnum:1-40}}领取",
+                                sources = setOf(SimpleRuleSource.NOTIFICATION),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val meal = SimpleRuleRuntime.recognizeCurrent(
+            "美团外卖自提订单，凭1234领取",
+            SimpleRuleSource.NOTIFICATION,
+        ).single()
+
+        assertEquals(SimpleRuleCategory.FOOD, meal.category)
+    }
+
+    @Test
     fun digitsOnlyCodeDoesNotConsumeLetters() {
         val regex = SimpleRuleTemplateCompiler.compile("取餐号{{code}}已使用", codeDigitsOnly = true)
 

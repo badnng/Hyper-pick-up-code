@@ -58,6 +58,7 @@ import com.Badnng.moe.ui.component.SettingsListItem
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
+import com.Badnng.moe.ui.miuix.miuixReadableCardShadow
 import com.Badnng.moe.ui.miuix.MiuixDevicePerformanceTier
 import com.Badnng.moe.ui.miuix.MiuixVisualEffectsPolicy
 import com.Badnng.moe.ui.miuix.rememberMiuixBlurAllowed
@@ -1326,7 +1327,7 @@ fun CreditsSettingsContent(performHaptic: () -> Unit, topPadding: androidx.compo
     if (isMiuix) {
         val creditsSection: @Composable () -> Unit = {
             Card(
-                modifier = Modifier.padding(horizontal = 12.dp).padding(top = 12.dp).padding(bottom = 12.dp),
+                modifier = Modifier.padding(horizontal = 12.dp).padding(top = 12.dp).padding(bottom = 12.dp).miuixReadableCardShadow(),
                 colors = CardDefaults.defaultColors(MiuixTheme.colorScheme.surfaceContainer)
             ) {
                 credits.forEach { (name, _, url) ->

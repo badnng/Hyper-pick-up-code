@@ -167,7 +167,7 @@ fun OrderDetailHost(
     }
 }
 
-private fun shareOriginalScreenshot(context: Context, location: String) {
+internal fun shareOriginalScreenshot(context: Context, location: String) {
     val uri = ScreenshotStorage.shareUri(context, location)
     if (uri == null) {
         Toast.makeText(context, "原图不可用", Toast.LENGTH_SHORT).show()
@@ -203,7 +203,7 @@ private fun formatOcrDebugResult(result: PaddleOcrHelper.DiagnosticResult): Stri
 }.trimEnd()
 
 @Composable
-private fun rememberDisplayCornerPercents(): ScreenshotCornerPercents {
+internal fun rememberDisplayCornerPercents(): ScreenshotCornerPercents {
     val view = LocalView.current
     val configuration = LocalConfiguration.current
     var corners by remember(view) { mutableStateOf(ScreenshotCornerPercents()) }

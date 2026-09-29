@@ -518,18 +518,46 @@ private val BUILT_IN_EXPRESS_LABELS: SimpleRulePack by lazy {
 }
 
 /** 用内置标签规则扫描全文，返回去重后的命中。 */
-private fun builtInLabelMatches(text: String): List<SimpleRuleMatch> {
+private data class FoodRuleContext(
+    val category: SimpleRuleCategory,
+    val brand: String,
+    val brandRuleId: String,
+)
+
+/** 优先从用户当前规则包取得餐食上下文；内置词只给旧规则包补上常见外卖提示。 */
+private fun foodRuleContext(text: String, pack: SimpleRulePack): FoodRuleContext? {
+    val brand = pack.brands.firstOrNull { rule ->
+        rule.enabled && rule.category != SimpleRuleCategory.EXPRESS &&
+            (rule.keywords + rule.name).any { word -> word.isNotBlank() && text.contains(word, ignoreCase = true) }
+    }
+    if (brand != null) return FoodRuleContext(brand.category, brand.name, brand.id)
+    val name = when {
+        text.contains("美团外卖") -> "美团外卖"
+        text.contains("饿了么") -> "饿了么"
+        text.contains("取餐") || text.contains("餐号") || text.contains("外卖") -> "餐食"
+        text.contains("取茶") -> "饮品"
+        else -> return null
+    }
+    val category = if (name == "饮品") SimpleRuleCategory.DRINK else SimpleRuleCategory.FOOD
+    return FoodRuleContext(category, name, "builtin-food-context")
+}
+
+private fun builtInLabelMatches(text: String, pack: SimpleRulePack): List<SimpleRuleMatch> {
     val brand = BUILT_IN_EXPRESS_LABELS.brands.first()
+    val foodContext = foodRuleContext(text, pack)
     val results = mutableListOf<SimpleRuleMatch>()
     for (rule in brand.templates) {
         if (!rule.enabled) continue
-        for (code in extractLabeledCodes(text, rule.template)) {
+        for ((label, code) in extractLabeledCodes(text, rule.template)) {
+            val context = foodContext?.takeUnless {
+                label.contains("取件") || rule.template.endsWith("取件")
+            }
             results += SimpleRuleMatch(
                 code = code,
                 location = null,
-                brand = brand.name,
-                category = brand.category,
-                brandRuleId = brand.id,
+                brand = context?.brand ?: brand.name,
+                category = context?.category ?: brand.category,
+                brandRuleId = context?.brandRuleId ?: brand.id,
                 templateRuleId = rule.id,
                 templateRuleName = rule.name,
             )
@@ -545,7 +573,7 @@ private fun builtInLabelMatches(text: String): List<SimpleRuleMatch> {
  * 也避免依赖平台正则引擎对字符类交集等写法的支持差异。
  * 标签后的冒号、空格先跳过；紧跟在码值后面的动作词（到/请/领…）会被剪掉。
  */
-private fun extractLabeledCodes(text: String, template: String): List<String> {
+private fun extractLabeledCodes(text: String, template: String): List<Pair<String, String>> {
     val placeholderAt = template.indexOf("{{")
     if (placeholderAt <= 0) return emptyList()
     val label = template.substring(0, placeholderAt).trim()
@@ -558,7 +586,7 @@ private fun extractLabeledCodes(text: String, template: String): List<String> {
     }
     val minLength = Regex("\\{\\{code:alnum:(\\d+)-\\d+\\}\\}").find(template)?.groupValues?.get(1)?.toIntOrNull() ?: 1
 
-    val codes = mutableListOf<String>()
+    val codes = mutableListOf<Pair<String, String>>()
     for (candidate in labels) {
         var index = text.indexOf(candidate)
         while (index >= 0) {
@@ -570,7 +598,7 @@ private fun extractLabeledCodes(text: String, template: String): List<String> {
             val raw = text.substring(start, cursor)
             val code = SimpleRuleTemplateCompiler.trimTrailingActionWords(raw)
                 .trim(',', '，', ':', '：', '.', '。')
-            if (code.length >= minLength && code.any(Char::isDigit)) codes += code
+            if (code.length >= minLength && code.any(Char::isDigit)) codes += candidate to code
             index = text.indexOf(candidate, index + candidate.length)
         }
     }
@@ -777,14 +805,31 @@ object SimpleRuleRuntime {
             }
             pruned += entry
         }
-        val uniqueResults = pruned.map { it.second }.distinctBy { it.code }
+        val foodContext = foodRuleContext(normalized, currentPack)
+        val uniqueResults = pruned.map { it.second }.distinctBy { it.code }.map { match ->
+            // 已保存的旧内置规则仍可能用「自提」命中快递品牌。
+            // 只校正内置的含糊模板，不改用户自定义品牌与正则的结果。
+            val ambiguousBuiltIn = match.brandRuleId == "builtin-express" &&
+                (match.templateRuleName == "凭码领取" ||
+                    (match.templateRuleName == "取件码标签" &&
+                        normalized.contains("取货码") && !normalized.contains("取件码")))
+            if (ambiguousBuiltIn && foodContext != null) {
+                match.copy(
+                    category = foodContext.category,
+                    brand = foodContext.brand,
+                    brandRuleId = foodContext.brandRuleId,
+                )
+            } else {
+                match
+            }
+        }
         logDebug("规则识别结束: matchedBrands=${matchedBrands.size}, 候选=${ordered.size}, results=${uniqueResults.size}")
         if (uniqueResults.isNotEmpty()) return uniqueResults
 
         // 内置兜底：规则包是用户可改的，但「取件码」这类标签抓码不该依赖用户配置。
         // 只要文本里出现标签，就直接取标签后面紧邻的码值，品牌没命中、或命中了却没配
         // 当前来源（短信/通知/文本）都能生效——这正是「短信/通知单独开规则」想要的效果。
-        val fallback = builtInLabelMatches(normalized)
+        val fallback = builtInLabelMatches(normalized, currentPack)
         if (fallback.isEmpty()) {
             logDebug("内置标签兜底: 无命中, 文本长度=${normalized.length}")
         } else {

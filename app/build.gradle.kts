@@ -25,8 +25,8 @@ android {
         applicationId = "com.Badnng.moe"
         minSdk = 35
         targetSdk = 37
-        versionCode = 20260913_11
-        versionName = "26.9.13.C01-Dev"
+        versionCode = 20260930_01
+        versionName = "26.9.30.C01"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -169,7 +169,8 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     // PaddleOCR v6 Tiny 本地精简推理后端（arm64-only，自定义构建）
-    implementation(files("libs/onnxruntime-slim.aar"))
+    // 使用 QNN 变体(1.29.0)替代 slim(1.21.1),支持 CPU+NPU 双后端
+    implementation(files("libs/onnxruntime-qnn.aar"))
     implementation(files("libs/opencv-slim.aar"))
     // Miuix Blur (毛玻璃模糊效果)
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.4-rc01")

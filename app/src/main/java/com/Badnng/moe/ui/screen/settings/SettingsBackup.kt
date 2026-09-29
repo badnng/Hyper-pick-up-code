@@ -48,6 +48,7 @@ import java.util.Date
 import java.util.Locale
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import com.Badnng.moe.ui.miuix.miuixReadableCardShadow
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.basic.TextButton as MiuixTextButton
 import top.yukonga.miuix.kmp.basic.TextField as MiuixTextField
@@ -481,7 +482,7 @@ private fun groupPosition(index: Int, count: Int): GroupPosition = when {
 
 @Composable
 internal fun MiuixMessageBlock(text: String, isError: Boolean) {
-    Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
+    Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth().miuixReadableCardShadow()) {
         MiuixText(
             text = text,
             modifier = Modifier.padding(16.dp),

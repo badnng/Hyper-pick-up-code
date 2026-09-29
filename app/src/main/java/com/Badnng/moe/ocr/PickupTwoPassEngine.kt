@@ -133,12 +133,21 @@ class PickupTwoPassEngine(private val context: Context) {
         val auxiliaryWords = pack.enabledWords(WordType.AUXILIARY)
         val foodHits = findKeywordBlocks(pass1Lines, foodWords)
         val expressHits = findKeywordBlocks(pass1Lines, expressWords)
-        val isExpressPage = expressHits.size > foodHits.size
+        // 「请凭」「本人」「待取」「取货码」在餐食自提页也会出现，不能仅凭这些
+        // 通用词把美团外卖等餐食卡片判为快递。旧的用户规则包仍可能保存这些词，
+        // 因此在类型判定时过滤，定位阶段仍保留用户配置的全部词。
+        val specificExpressHits = expressHits.filterNot { it.keyword in AMBIGUOUS_EXPRESS_KEYWORDS }
+        val hasFoodContext = foodHits.isNotEmpty() || FOOD_CONTEXT_WORDS.any { fullText.contains(it) }
+        val isExpressPage = when {
+            specificExpressHits.size > foodHits.size -> true
+            hasFoodContext -> false
+            else -> expressHits.isNotEmpty()
+        }
         val activeWords = if (isExpressPage) expressWords else foodWords
         val keywordHits = if (isExpressPage) expressHits else foodHits
         Log.d(
             "RecognitionMonitor",
-            "词汇引擎类型判定: ${if (isExpressPage) "快递" else "餐食"} (餐食命中=${foodHits.size}, 快递命中=${expressHits.size}, 辅助锚点=${auxiliaryWords.size})",
+            "词汇引擎类型判定: ${if (isExpressPage) "快递" else "餐食"} (餐食命中=${foodHits.size}, 快递命中=${expressHits.size}, 快递专属=${specificExpressHits.size}, 辅助锚点=${auxiliaryWords.size})",
         )
         Log.d(
             "RecognitionMonitor",
@@ -756,6 +765,8 @@ class PickupTwoPassEngine(private val context: Context) {
     }
 
     companion object {
+        private val AMBIGUOUS_EXPRESS_KEYWORDS = setOf("请凭", "本人", "待取", "取货码")
+        private val FOOD_CONTEXT_WORDS = listOf("外卖", "取餐", "取茶", "餐号")
         const val TAG = "PickupTwoPassEngine"
         private const val MAX_CODES = 20
 

@@ -40,7 +40,7 @@ fun MiuixOrderDetailScreen(
             MiuixBlurredBar(
                 backdrop = backdrop,
                 blurEnabled = blurEnabled,
-                blurRadius = 42f,
+                blurRadius = 18f,
                 blendAlpha = 0.62f,
             ) {
                 TopAppBar(

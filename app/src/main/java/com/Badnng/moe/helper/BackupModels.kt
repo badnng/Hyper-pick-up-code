@@ -106,6 +106,7 @@ internal data class BackupOrder(
 internal data class BackupGroup(
     val group: com.Badnng.moe.data.db.OrderGroup,
     val screenshotEntry: String?,
+    val screenshotEntries: List<String> = emptyList(),
 )
 
 internal data class NormalizedSettings(

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,45 +16,60 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.BrandIconResolver
+import com.Badnng.moe.helper.GroupScreenshotPaths
 import com.Badnng.moe.helper.ScreenshotStorage
+import com.Badnng.moe.ui.component.ScreenshotCornerPercents
 import com.Badnng.moe.ui.component.formatOrderTime
+import com.Badnng.moe.ui.component.toRoundedCornerShape
 import com.Badnng.moe.ui.miuix.MiuixBlurredBar
+import com.Badnng.moe.ui.miuix.miuixReadableCardShadow
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.rememberMiuixBackdrop
 import com.Badnng.moe.ui.screen.FullScreenImageDialog
+import com.Badnng.moe.ui.screen.rememberDisplayCornerPercents
+import com.Badnng.moe.ui.screen.shareOriginalScreenshot
 import com.Badnng.moe.ui.screen.openPddIdentityEntry
 import com.Badnng.moe.ui.screen.openTaobaoIdentityEntry
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -62,6 +78,7 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -98,14 +115,16 @@ fun MiuixGroupDetailScreen(
     val topAppBarScrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberMiuixBackdrop()
     val blurEnabled = backdrop != null
-    val screenshotPaths = remember(context, group.screenshotPath, orders) {
-        val orderPaths = orders.map(OrderEntity::screenshotPath)
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val screenshotPreviewMaxHeight = remember(configuration.screenHeightDp) {
+        (configuration.screenHeightDp * 0.50f).dp.coerceIn(240.dp, 460.dp)
+    }
+    val screenshotCornerPercents = rememberDisplayCornerPercents()
+    var expandedTopBarHeightPx by remember(group.id) { mutableIntStateOf(0) }
+    val screenshotPaths = remember(context, group.screenshotPath, group.screenshotPathsJson, orders) {
+        GroupScreenshotPaths.all(group, orders)
             .filter { ScreenshotStorage.exists(context, it) }
-        when {
-            orderPaths.isNotEmpty() -> orderPaths.distinct()
-            ScreenshotStorage.exists(context, group.screenshotPath) -> listOf(group.screenshotPath)
-            else -> emptyList()
-        }
     }
     var fullScreenImagePath by remember(group.id) { mutableStateOf<String?>(null) }
     var originalExpanded by remember(group.id) { mutableStateOf(false) }
@@ -113,31 +132,46 @@ fun MiuixGroupDetailScreen(
 
     Scaffold(
         topBar = {
-            MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
-                TopAppBar(
-                    title = "订单组详情",
-                    color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
-                    scrollBehavior = topAppBarScrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { performHaptic(); onBack() }) {
-                            Icon(
-                                if (supportingPane) MiuixIcons.Regular.Close else MiuixIcons.Regular.Back,
-                                contentDescription = if (supportingPane) "关闭" else "返回",
-                            )
-                        }
-                    },
-                    actions = {
-                        if (completedCount < totalCount) {
-                            IconButton(onClick = { performHaptic(); onMarkAllCompleted() }) {
-                                Icon(MiuixIcons.Regular.Ok, "全部完成")
+            Box(Modifier.onSizeChanged { size ->
+                if (size.height > expandedTopBarHeightPx) expandedTopBarHeightPx = size.height
+            }) {
+                MiuixBlurredBar(
+                    backdrop = backdrop,
+                    blurEnabled = blurEnabled,
+                    blurRadius = 18f,
+                    blendAlpha = 0.62f,
+                    progressive = true,
+                ) {
+                    TopAppBar(
+                        title = "订单组详情",
+                        color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
+                        scrollBehavior = topAppBarScrollBehavior,
+                        navigationIcon = {
+                            IconButton(onClick = { performHaptic(); onBack() }) {
+                                Icon(
+                                    if (supportingPane) MiuixIcons.Regular.Close else MiuixIcons.Regular.Back,
+                                    contentDescription = if (supportingPane) "关闭" else "返回",
+                                )
                             }
-                        }
-                    },
-                )
+                        },
+                        actions = {
+                            if (completedCount < totalCount) {
+                                IconButton(onClick = { performHaptic(); onMarkAllCompleted() }) {
+                                    Icon(MiuixIcons.Regular.Ok, "全部完成")
+                                }
+                            }
+                        },
+                    )
+                }
             }
         },
     ) { innerPadding ->
         val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val topBarHeight = if (expandedTopBarHeightPx > 0) {
+            with(density) { expandedTopBarHeightPx.toDp() }
+        } else {
+            WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 120.dp
+        }
         Box(
             modifier = if (backdrop != null) {
                 Modifier.fillMaxSize().layerBackdrop(backdrop)
@@ -148,22 +182,23 @@ fun MiuixGroupDetailScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .miuixScrollModifiers(topAppBarScrollBehavior)
-                    .padding(top = innerPadding.calculateTopPadding()),
+                    .miuixScrollModifiers(topAppBarScrollBehavior),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    top = 12.dp,
+                    top = maxOf(innerPadding.calculateTopPadding(), topBarHeight) + 12.dp,
                     bottom = bottomPadding + if (supportingPane) 24.dp else 32.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                screenshotPaths.firstOrNull()?.let { path ->
-                    item(key = "groupScreenshot") {
-                        MiuixGroupScreenshot(
-                            path = path,
-                            screenshotCount = screenshotPaths.size,
-                            onClick = { performHaptic(); fullScreenImagePath = path },
-                        )
-                    }
+                itemsIndexed(screenshotPaths, key = { _, path -> "groupScreenshot:$path" }) { index, path ->
+                    MiuixGroupScreenshot(
+                        path = path,
+                        screenshotIndex = index,
+                        screenshotCount = screenshotPaths.size,
+                        maxHeight = screenshotPreviewMaxHeight,
+                        corners = screenshotCornerPercents,
+                        onClick = { performHaptic(); fullScreenImagePath = path },
+                        onShare = { performHaptic(); shareOriginalScreenshot(context, path) },
+                    )
                 }
                 item(key = "groupSummary") {
                     MiuixGroupSummary(
@@ -176,7 +211,7 @@ fun MiuixGroupDetailScreen(
                 item { SmallTitle(text = "订单列表") }
                 if (orders.isEmpty()) {
                     item {
-                        Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                        Card(modifier = Modifier.padding(horizontal = 12.dp).miuixReadableCardShadow()) {
                             Text(
                                 text = "暂无订单",
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -189,22 +224,25 @@ fun MiuixGroupDetailScreen(
                         // 子订单卡片同样登记一镜到底：这一页可能正由叠加层绘制（组卡片铺开后落在这里），
                         // 点开后是叠在它上面的第二条会话。点击本身仍走 onOpenOrder，由调用方决定
                         // 「能 morph 就 morph、否则按原来的方式开详情」。
-                        CardMorphCard(morphKey = orderMorphKey(order.id)) {
-                            MiuixGroupOrderItem(
-                                order = order,
-                                onClick = { performHaptic(); onOpenOrder(order) },
-                                onMarkCompleted = {
-                                    performHaptic()
-                                    onMarkOrderCompleted(order)
-                                },
-                            )
+                        Box(Modifier.padding(horizontal = 12.dp)) {
+                            // 转场登记框紧贴卡片本身，避免把边距也画成卡片底色。
+                            CardMorphCard(morphKey = orderMorphKey(order.id), payload = order) {
+                                MiuixGroupOrderItem(
+                                    order = order,
+                                    onClick = { performHaptic(); onOpenOrder(order) },
+                                    onMarkCompleted = {
+                                        performHaptic()
+                                        onMarkOrderCompleted(order)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
                 if (group.orderType == "快递") {
                     item { SmallTitle(text = "身份码快捷入口") }
                     item {
-                        Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                        Card(modifier = Modifier.padding(horizontal = 12.dp).miuixReadableCardShadow()) {
                             ArrowPreference(
                                 title = "淘宝身份码",
                                 summary = "打开淘宝菜鸟身份码",
@@ -220,7 +258,7 @@ fun MiuixGroupDetailScreen(
                 }
                 item { SmallTitle(text = "来源信息") }
                 item {
-                    Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).miuixReadableCardShadow()) {
                         Column(
                             modifier = Modifier.padding(18.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -236,7 +274,7 @@ fun MiuixGroupDetailScreen(
                 item {
                     val originalText = group.recognizedText.ifBlank { "未记录" }
                     Card(
-                        modifier = Modifier.padding(horizontal = 12.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp).miuixReadableCardShadow(),
                         onClick = { performHaptic(); originalExpanded = !originalExpanded },
                     ) {
                         Column(modifier = Modifier.padding(18.dp)) {
@@ -282,34 +320,56 @@ fun MiuixGroupDetailScreen(
 }
 
 @Composable
-private fun MiuixGroupScreenshot(path: String, screenshotCount: Int, onClick: () -> Unit) {
+private fun MiuixGroupScreenshot(
+    path: String,
+    screenshotIndex: Int,
+    screenshotCount: Int,
+    maxHeight: Dp,
+    corners: ScreenshotCornerPercents,
+    onClick: () -> Unit,
+    onShare: () -> Unit,
+) {
     val context = LocalContext.current
     val ratio = remember(context, path) {
         ScreenshotStorage.decodeBounds(context, path)
             ?.let { (width, height) -> width.toFloat() / height.coerceAtLeast(1) }
-            ?.coerceIn(0.45f, 2.4f)
             ?: (4f / 3f)
     }
-    Column(modifier = Modifier.padding(horizontal = 12.dp)) {
-        Card(onClick = onClick) {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val previewHeight = (maxWidth / ratio).coerceIn(160.dp, 320.dp)
-                AsyncImage(
-                    model = ScreenshotStorage.imageModel(path),
-                    contentDescription = "组识别截图",
-                    modifier = Modifier.fillMaxWidth().height(previewHeight),
-                    contentScale = ContentScale.Fit,
-                )
-            }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val previewWidth = minOf(maxWidth, maxHeight * ratio)
+            AsyncImage(
+                model = ScreenshotStorage.imageModel(path),
+                contentDescription = "组来源截图，点击查看大图",
+                modifier = Modifier
+                    .width(previewWidth)
+                    .height(previewWidth / ratio)
+                    .clip(corners.toRoundedCornerShape())
+                    .clickable(onClick = onClick),
+                contentScale = ContentScale.Fit,
+            )
         }
         if (screenshotCount > 1) {
             Text(
-                text = "共 $screenshotCount 张截图，子订单详情中可分别查看",
+                text = "来源图片 ${screenshotIndex + 1} / $screenshotCount",
                 style = MiuixTheme.textStyles.body2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(start = 4.dp, top = 6.dp),
+                modifier = Modifier.padding(top = 8.dp),
             )
         }
+        TextButton(
+            text = "分享原图",
+            onClick = onShare,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                .fillMaxWidth().heightIn(min = 48.dp),
+            colors = ButtonDefaults.textButtonColorsPrimary(),
+        )
     }
 }
 
@@ -327,7 +387,7 @@ private fun MiuixGroupSummary(
     val fallbackIcon = remember(group.brandName, group.orderType) {
         BrandIconResolver.resolveBuiltinFallbackResId(context, group.brandName, group.orderType)
     }
-    Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+    Card(modifier = Modifier.padding(horizontal = 12.dp).miuixReadableCardShadow()) {
         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (customIcon != null) {
@@ -386,7 +446,7 @@ private fun MiuixGroupSummary(
 }
 
 @Composable
-private fun MiuixGroupOrderItem(
+internal fun MiuixGroupOrderItem(
     order: OrderEntity,
     onClick: () -> Unit,
     onMarkCompleted: () -> Unit,
@@ -398,7 +458,8 @@ private fun MiuixGroupOrderItem(
     val fallbackIcon = remember(order.brandName, order.orderType) {
         BrandIconResolver.resolveBuiltinFallbackResId(context, order.brandName, order.orderType)
     }
-    Card(modifier = Modifier.padding(horizontal = 12.dp), onClick = onClick) {
+    val shadowEnabled = orderMorphKey(order.id) !in LocalCardMorphActiveKeys.current
+    Card(modifier = Modifier.fillMaxWidth().miuixReadableCardShadow(shadowEnabled), onClick = onClick) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,

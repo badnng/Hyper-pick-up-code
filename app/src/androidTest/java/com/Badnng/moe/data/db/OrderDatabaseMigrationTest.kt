@@ -166,6 +166,25 @@ class OrderDatabaseMigrationTest {
         assertEquals(listOf("order-1"), remainingIds)
     }
 
+    @Test
+    fun migrationTenToElevenAddsGroupScreenshotListWithoutLosingLegacyPath() {
+        val database = openHelper.writableDatabase
+        database.execSQL(
+            "INSERT INTO order_groups " +
+                "(id, name, orderType, screenshotPath, recognizedText, orderCount, isCompleted, createdAt) " +
+                "VALUES (1, '测试组', '快递', 'old-image.jpg', '', 1, 0, 1)"
+        )
+
+        OrderDatabase.MIGRATION_10_11.migrate(database)
+        OrderDatabase.MIGRATION_10_11.migrate(database)
+
+        database.query("SELECT screenshotPath, screenshotPathsJson FROM order_groups WHERE id = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("old-image.jpg", cursor.getString(0))
+            assertEquals("[]", cursor.getString(1))
+        }
+    }
+
     private companion object {
         const val DATABASE_NAME = "migration-v6-v7-test.db"
     }

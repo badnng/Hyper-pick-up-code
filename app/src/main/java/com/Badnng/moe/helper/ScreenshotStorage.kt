@@ -306,8 +306,17 @@ object ScreenshotStorage {
                     }
                 }
                 groupDao.getAllGroupsList().forEach { group ->
-                    migratedLocation(group.screenshotPath, migratedLocations)?.let { newLocation ->
-                        groupDao.updateGroup(group.copy(screenshotPath = newLocation))
+                    val primaryPath = migratedLocation(group.screenshotPath, migratedLocations)
+                        ?: group.screenshotPath
+                    val sourcePaths = GroupScreenshotPaths.decode(group.screenshotPathsJson).map { path ->
+                        migratedLocation(path, migratedLocations) ?: path
+                    }
+                    val sourcePathsJson = GroupScreenshotPaths.encode(sourcePaths)
+                    if (primaryPath != group.screenshotPath || sourcePathsJson != group.screenshotPathsJson) {
+                        groupDao.updateGroup(group.copy(
+                            screenshotPath = primaryPath,
+                            screenshotPathsJson = sourcePathsJson,
+                        ))
                         updatedGroups++
                     }
                 }

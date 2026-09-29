@@ -228,8 +228,11 @@ object BackupManager {
                         val validGroupIds = hashSetOf<Long>()
                         val orderCountsByGroup = payload.orders.groupingBy { it.order.groupId }.eachCount()
                         payload.groups.forEach { backedGroup ->
+                            val restoredGroupPaths = restoredGroupScreenshotPaths(backedGroup, screenshotPaths)
                             val restored = backedGroup.group.copy(
-                                screenshotPath = backedGroup.screenshotEntry?.let(screenshotPaths::get).orEmpty(),
+                                screenshotPath = backedGroup.screenshotEntry?.let(screenshotPaths::get)
+                                    ?: restoredGroupPaths.firstOrNull().orEmpty(),
+                                screenshotPathsJson = GroupScreenshotPaths.encode(restoredGroupPaths),
                                 orderCount = orderCountsByGroup[backedGroup.group.id] ?: 0,
                             )
                             groupDao.insertGroup(restored)
@@ -252,11 +255,14 @@ object BackupManager {
                         payload.groups.forEach { backedGroup ->
                             val members = pendingByGroup[backedGroup.group.id].orEmpty()
                             if (members.isNotEmpty()) {
+                                val restoredGroupPaths = restoredGroupScreenshotPaths(backedGroup, screenshotPaths)
                                 val newId = groupDao.insertGroup(
                                     backedGroup.group.copy(
                                         id = 0,
                                         orderCount = members.size,
-                                        screenshotPath = backedGroup.screenshotEntry?.let(screenshotPaths::get).orEmpty(),
+                                        screenshotPath = backedGroup.screenshotEntry?.let(screenshotPaths::get)
+                                            ?: restoredGroupPaths.firstOrNull().orEmpty(),
+                                        screenshotPathsJson = GroupScreenshotPaths.encode(restoredGroupPaths),
                                     ),
                                 )
                                 remappedGroupIds[backedGroup.group.id] = newId
@@ -381,7 +387,9 @@ object BackupManager {
             if (orders.any { it.screenshotEntry != null && it.screenshotEntry !in screenshots }) {
                 add("部分订单引用的截图不在备份中")
             }
-            if (groups.any { it.screenshotEntry != null && it.screenshotEntry !in screenshots }) {
+            if (groups.any { group ->
+                    (group.screenshotEntries + listOfNotNull(group.screenshotEntry)).any { it !in screenshots }
+                }) {
                 add("部分订单组引用的截图不在备份中")
             }
             val groupIds = groups.mapTo(hashSetOf()) { it.group.id }
@@ -547,6 +555,13 @@ object BackupManager {
     ): String = order.screenshotEntry?.let(paths::get)
         ?: order.order.screenshotPath.takeIf { ScreenshotStorage.exists(context, it) }.orEmpty()
 
+    private fun restoredGroupScreenshotPaths(
+        group: BackupGroup,
+        paths: Map<String, String>,
+    ): List<String> = (group.screenshotEntries + listOfNotNull(group.screenshotEntry))
+        .mapNotNull(paths::get)
+        .distinct()
+
     private fun replaceRules(rulesDir: File, entries: Map<String, String>) {
         rulesDir.deleteRecursively()
         rulesDir.mkdirs()
@@ -587,7 +602,7 @@ object BackupManager {
         orders: List<OrderEntity>,
         groups: List<OrderGroup>,
     ): ScreenshotAssets {
-        val candidates = (orders.map { it.screenshotPath } + groups.map { it.screenshotPath })
+        val candidates = (orders.map { it.screenshotPath } + groups.flatMap { GroupScreenshotPaths.all(it) })
             .asSequence()
             .filter(String::isNotBlank)
             .distinct()
@@ -650,6 +665,9 @@ object BackupManager {
                     put("id", group.id); put("name", group.name); put("orderType", group.orderType)
                     putNullable("brandName", group.brandName)
                     putNullable("screenshotAsset", screenshotEntries[group.screenshotPath])
+                    put("screenshotAssets", JSONArray(
+                        GroupScreenshotPaths.all(group).mapNotNull(screenshotEntries::get).distinct(),
+                    ))
                     putNullable("sourceApp", group.sourceApp); putNullable("sourcePackage", group.sourcePackage)
                     put("recognizedText", group.recognizedText); put("createdAt", group.createdAt)
                     put("isCompleted", group.isCompleted); putNullable("completedAt", group.completedAt)
@@ -706,6 +724,13 @@ object BackupManager {
                     orderCount = json.optInt("orderCount", 0), iconResName = json.optNullableString("iconResName"),
                 ),
                 screenshotEntry = json.optNullableString("screenshotAsset"),
+                screenshotEntries = json.optJSONArray("screenshotAssets")?.let { assets ->
+                    buildList {
+                        for (assetIndex in 0 until assets.length()) {
+                            assets.optString(assetIndex).takeIf(String::isNotBlank)?.let(::add)
+                        }
+                    }
+                }.orEmpty(),
             ))
         }
     }
