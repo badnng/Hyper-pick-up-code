@@ -12,7 +12,7 @@ object PrivacyConsent {
     const val ACCEPTED_KEY = "privacy_agreement_v1_accepted"
     const val ACCEPTED_VERSION_KEY = "privacy_agreement_v1_accepted_version"
     const val NETWORK_UPDATE_ENABLED_KEY = "network_update_enabled_privacy_v1"
-    const val POLICY_VERSION = "2.0"
+    const val POLICY_VERSION = "2.1"
 
     private const val LEGACY_NETWORK_UPDATE_ENABLED_KEY = "network_update_enabled"
     private const val POLICY_ASSET_NAME = "PRIVACY.md"
