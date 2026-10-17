@@ -1,7 +1,7 @@
 {
-  "versionCode": 2026091311,
-  "versionName": "26.9.13.C01-Dev",
-  "releaseNotes": "您正在使用 澎湃记 的测试版本，可能会遇到不稳定，闪退，数据丢失等情况，请谨慎升级\n\n我们在v26.7.13.C01-Dev之后的版本更新了 《澎湃记用户协议与隐私说明》\n更新后，联网更新开关将强制关闭，如需开启，需要同意《澎湃记用户协议与隐私说明》\n快应用已对小米手环8/9/10pro、REDMI Watch 5/6的屏幕进行了适配，欢迎反馈\n\n快应用端 26.9.13-Watch 更改如下：\n优化 部分UI的显示效果\n\n手机端 26.9.13.C01-Dev 更改如下：\n重构 规则底层（实验性）\n\n添加 主页卡片一镜到底动画（实验性）\n添加 再次推送实时通知时再次给手表推送\n添加 Opencode 供应商所需的 x-opencode-session 请求头\n添加 Deepseek v4.1 Flash 在Opencode/Deepseek platform 的访问\n\n修复 大屏设备下无法使用平行世界\n修复 预测性返回手势开关无法生效的情况\n修复 在小米超级岛时，带有二维码信息的记录点击二维码按钮时会跳转到app内，而不是显示在上层的页面\n\n近期需要解决可用模型的续费问题，纯为爱发电，多多支持！",
-  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.9.13.C01-Dev/app-release.apk",
-  "md5": "4ee3dacc9f9ef2728e9cb75b40f91f03"
+  "versionCode": 2026093001,
+  "versionName": "26.9.30.C01",
+  "releaseNotes": "您正在使用 澎湃记 的预览正式版，可能会不稳定，请多反馈\n\n我们目前正在着手准备网盘链接更新，届时，内部下载更新需要一点手段来进行更新，所以这个版本目前不受影响\n如果更新困难，可前往appshare或网盘渠道内进行下载更新（需要大家支持）\n我们在v26.7.13.C01-Dev之后的版本更新了 《澎湃记用户协议与隐私说明》\n更新后，联网更新开关将强制关闭，如需开启，需要同意《澎湃记用户协议与隐私说明》\n快应用已对小米手环8/9/10的pro系列、REDMI Watch 5/6的屏幕进行了适配，欢迎反馈\n\n手机端 26.9.30.C01 更改如下：\n重构 规则底层（实验性）\n\n优化 部分UI效果\n优化 Miuix 依赖至 0.9.4-rc1\n\n添加 主页卡片一镜到底动画（实验性）\n添加 离线识别对于骁龙处理器的NPU加速选项\n添加 小米手表与手机客户端的同步支持（需要安装小米运动健康并打开设置内的手表同步功能）\n添加 三个在线识别的供应商（OpenCode Go/OpenCode Zen for Free/DeepSeek）*\n\n修复 大量记不清楚的问题\n修复 大屏设备下无法使用平行世界\n修复 预测性返回手势开关无法生效的情况\n修复 在小米超级岛时，带有二维码信息的记录点击二维码按钮时会跳转到app内，而不是显示在上层的页面\n\n纯为爱发电，多多支持！\n\n* 需要《澎湃记用户协议与隐私说明》同意后才可使用",
+  "downloadUrl": "https://github.com/badnng/Hyper-pick-up-code/releases/download/v26.9.30-C01/app-release.apk",
+  "md5": "fd5d423b02163b083dd957dc085ddcdc"
 }
