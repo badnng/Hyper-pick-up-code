@@ -271,7 +271,7 @@ class OnlineRecognitionClient(context: Context) {
                         put("thinking", JSONObject().put("type", "disabled"))
                     }
                     ReasoningControl.OPENCODE_COMBINED -> {
-                        // OpenCode go/zen 网关：同时携带两种关闭思考参数，
+                        // OpenCode Go 网关：同时携带两种关闭思考参数，
                         // 兼容 OpenAI 风格与 DeepSeek/Qwen 风格的网关实现。
                         put("reasoning_effort", "none")
                         put("enable_thinking", false)
@@ -436,7 +436,6 @@ class OnlineRecognitionClient(context: Context) {
             ApiKind.ANTHROPIC -> "https://opencode.ai/zen/go/v1/messages"
             ApiKind.CHAT -> "https://opencode.ai/zen/go/v1/chat/completions"
         }
-        OnlineRecognitionProvider.OPENCODE_ZEN -> "https://opencode.ai/zen/v1/chat/completions"
         OnlineRecognitionProvider.DEEPSEEK -> "https://api.deepseek.com/chat/completions"
         OnlineRecognitionProvider.CUSTOM -> {
             val baseUrl = normalizeCustomBaseUrl(
@@ -448,12 +447,11 @@ class OnlineRecognitionClient(context: Context) {
     }
 
     /**
-     * OpenCode（Go 与 Zen 共用 opencode.ai 网关）要求客户端用自身专属 UA 标识，
+     * OpenCode Go 要求客户端用自身专属 UA 标识，
      * 并在每段对话中携带稳定的会话 ID，用于路由优化与提示词缓存。
      */
     private fun OnlineRecognitionProvider.isOpenCode(): Boolean =
-        this == OnlineRecognitionProvider.OPENCODE_GO ||
-            this == OnlineRecognitionProvider.OPENCODE_ZEN
+        this == OnlineRecognitionProvider.OPENCODE_GO
 
     private fun openCodeUserAgent(): String = OPENCODE_USER_AGENT
 

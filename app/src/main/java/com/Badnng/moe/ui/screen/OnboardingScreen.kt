@@ -178,7 +178,7 @@ fun OnboardingScreen(
     var privacyAccepted by remember { mutableStateOf(PrivacyConsent.isAccepted(prefs)) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var preferredRecognitionMode by rememberSaveable {
-        val savedMode = prefs.getString(OnlineRecognitionPreferences.MODE_KEY, null)
+        val savedMode = OnlineRecognitionPreferences.savedMode(context)
         mutableStateOf(
             savedMode.takeUnless {
                 it == OnlineRecognitionPreferences.MODE_ONLINE && !privacyAccepted
@@ -894,7 +894,6 @@ private fun OobeOnlineRecognitionSetup(
                 provider == OnlineRecognitionProvider.MINIMAX ||
                 provider == OnlineRecognitionProvider.MOONSHOT ||
                 provider == OnlineRecognitionProvider.OPENCODE_GO ||
-                provider == OnlineRecognitionProvider.OPENCODE_ZEN ||
                 provider == OnlineRecognitionProvider.DEEPSEEK
             ) {
                 ProviderUsageGuide(

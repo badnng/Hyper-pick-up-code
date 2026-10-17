@@ -155,10 +155,8 @@ fun RecognitionSettingsContent(
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     var recognitionMode by remember {
-        val savedMode = preferences.getString(
-            OnlineRecognitionPreferences.MODE_KEY,
-            OnlineRecognitionPreferences.MODE_OFFLINE,
-        ) ?: OnlineRecognitionPreferences.MODE_OFFLINE
+        val savedMode = OnlineRecognitionPreferences.savedMode(context)
+            ?: OnlineRecognitionPreferences.MODE_OFFLINE
         mutableStateOf(
             if (savedMode == OnlineRecognitionPreferences.MODE_ONLINE &&
                 !PrivacyConsent.isCurrentPolicyAccepted(preferences)
@@ -897,7 +895,6 @@ private fun MiuixRecognitionSettingsSections(
                 provider == OnlineRecognitionProvider.MINIMAX ||
                 provider == OnlineRecognitionProvider.MOONSHOT ||
                 provider == OnlineRecognitionProvider.OPENCODE_GO ||
-                provider == OnlineRecognitionProvider.OPENCODE_ZEN ||
                 provider == OnlineRecognitionProvider.DEEPSEEK)
         ) {
             SmallTitle("使用说明")
@@ -1260,7 +1257,6 @@ private fun Md3eRecognitionSettings(
                 provider == OnlineRecognitionProvider.MINIMAX ||
                 provider == OnlineRecognitionProvider.MOONSHOT ||
                 provider == OnlineRecognitionProvider.OPENCODE_GO ||
-                provider == OnlineRecognitionProvider.OPENCODE_ZEN ||
                 provider == OnlineRecognitionProvider.DEEPSEEK
             ) {
                 Md3eSection("使用说明") {
@@ -1609,24 +1605,6 @@ private fun providerGuideSections(
                 ),
                 ProviderGuideStep(
                     text = "将获取的 API Key 复制到上方输入框，然后选择模型即可使用。",
-                ),
-            ),
-        ),
-    )
-
-    OnlineRecognitionProvider.OPENCODE_ZEN -> listOf(
-        ProviderGuideSection(
-            steps = listOf(
-                ProviderGuideStep(
-                    text = "进入 OpenCode 账号页面，点击列表中的“API 密钥”，创建并复制你的 API Key（免费模型也需要 API Key）。",
-                    linkLabel = "https://opencode.ai/auth",
-                    link = "https://opencode.ai/auth",
-                ),
-                ProviderGuideStep(
-                    text = "OpenCode Zen 免费额度由 opencode teams 运营的大规模模型 provider 提供，每天仅有部分限量额度给免费用户使用，所有用量信息均以 opencode teams 的调整为准。",
-                ),
-                ProviderGuideStep(
-                    text = "将 API Key 复制到上方输入框，然后选择模型“MiMo-V2.5 Free”即可使用。",
                 ),
             ),
         ),

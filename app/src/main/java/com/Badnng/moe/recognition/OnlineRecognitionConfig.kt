@@ -15,7 +15,6 @@ enum class OnlineRecognitionProvider(
     MOONSHOT("moonshot", "月之暗面", R.drawable.provider_kimi_hd),
     MINIMAX("minimax", "MiniMax", R.drawable.provider_minimax_hd),
     OPENCODE_GO("opencode_go", "OpenCode Go", R.drawable.provider_opencode),
-    OPENCODE_ZEN("opencode_zen", "OpenCode Zen（免费）", R.drawable.provider_opencode),
     DEEPSEEK("deepseek", "DeepSeek", R.drawable.provider_deepseek),
     CUSTOM("custom", "自定义", R.drawable.provider_custom);
 
@@ -111,9 +110,6 @@ object OnlineRecognitionCatalog {
             OnlineRecognitionModel("qwen3.7-plus", "Qwen3.7 Plus", ReasoningControl.ANTHROPIC_DISABLED),
             OnlineRecognitionModel("qwen3.6-plus", "Qwen3.6 Plus", ReasoningControl.ANTHROPIC_DISABLED),
         ),
-        OnlineRecognitionProvider.OPENCODE_ZEN to listOf(
-            OnlineRecognitionModel("mimo-v2.5-free", "MiMo-V2.5 Free", ReasoningControl.OPENCODE_COMBINED),
-        ),
         OnlineRecognitionProvider.DEEPSEEK to listOf(
             OnlineRecognitionModel("deepseek-flash", "DeepSeek V4.1 Flash", ReasoningControl.THINKING_DISABLED),
         ),
@@ -144,6 +140,8 @@ object OnlineRecognitionPreferences {
     const val CUSTOM_PROMPT_KEY = "online_recognition_custom_prompt"
     private fun modelKey(provider: OnlineRecognitionProvider) =
         "online_recognition_model_${provider.key}"
+
+    fun savedMode(context: Context): String? = settings(context).getString(MODE_KEY, null)
 
     fun isOnline(context: Context): Boolean {
         val preferences = settings(context)
@@ -205,5 +203,14 @@ object OnlineRecognitionPreferences {
     }
 
     private fun settings(context: Context) =
-        context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).also { preferences ->
+            if (preferences.getString(PROVIDER_KEY, null) == "opencode_zen") {
+                // 已移除的供应商回退到离线模式，避免升级后自动改用另一家在线服务。
+                preferences.edit()
+                    .putString(MODE_KEY, MODE_OFFLINE)
+                    .remove(PROVIDER_KEY)
+                    .remove("online_recognition_model_opencode_zen")
+                    .apply()
+            }
+        }
 }
