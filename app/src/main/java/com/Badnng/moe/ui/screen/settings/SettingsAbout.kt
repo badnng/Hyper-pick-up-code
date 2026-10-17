@@ -1,6 +1,8 @@
 package com.Badnng.moe.ui.screen.settings
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.SharedPreferences
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableIntStateOf
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.Badnng.moe.R
+import com.Badnng.moe.BuildConfig
 import com.Badnng.moe.helper.AppLogger
 import com.Badnng.moe.helper.NotificationHelper
 import com.Badnng.moe.helper.UpdateHelper
@@ -55,6 +58,7 @@ import com.Badnng.moe.ui.component.PreferenceSection
 import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsListItem
+import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
@@ -85,6 +89,26 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private const val DEVELOPER_OPTIONS_TAP_THRESHOLD = 7
+
+@Composable
+private fun AboutBuildGitHashItem(performHaptic: () -> Unit) {
+    val context = LocalContext.current
+    val hash = BuildConfig.GIT_HASH
+    LocalAppUi.current.settingsGroupValueItem(
+        "构建 Git hash",
+        if (hash == "unknown") "未知" else hash,
+        GroupPosition.Middle,
+        {
+            performHaptic()
+            if (hash != "unknown") {
+                context.getSystemService(ClipboardManager::class.java)
+                    ?.setPrimaryClip(ClipData.newPlainText("构建 Git hash", hash))
+            } else {
+                Toast.makeText(context, "此构建未包含 Git 信息", Toast.LENGTH_SHORT).show()
+            }
+        },
+    )
+}
 
 @Composable
 fun AboutSettingsContent(
@@ -711,6 +735,7 @@ private fun MiuixAboutPage(
                                             uriHandler.openUri("https://github.com/badnng/Hyper-pick-up-code/blob/master/LICENSE")
                                         }
                                     )
+                                    AboutBuildGitHashItem(performHaptic)
                                     ArrowPreference(
                                         title = "赞助",
                                         summary = "支持项目持续更新",
@@ -1066,6 +1091,7 @@ private fun Md3eAboutPage(
                         uriHandler.openUri("https://github.com/badnng/Hyper-pick-up-code/blob/master/LICENSE")
                     }
                 )
+                AboutBuildGitHashItem(performHaptic)
                 SettingsGroupItem(
                     title = "赞助",
                     description = "支持项目持续更新",

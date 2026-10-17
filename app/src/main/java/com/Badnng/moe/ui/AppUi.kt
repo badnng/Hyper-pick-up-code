@@ -18,6 +18,7 @@ data class AppUi(
     // 设置分组
     val settingsGroup: @Composable (modifier: Modifier, content: @Composable ColumnScope.() -> Unit) -> Unit,
     val settingsGroupItem: @Composable (title: String, description: String?, position: GroupPosition, onClick: () -> Unit, trailing: @Composable (() -> Unit)?) -> Unit,
+    val settingsGroupValueItem: @Composable (title: String, value: String, position: GroupPosition, onClick: () -> Unit) -> Unit,
     val settingsGroupSwitchItem: @Composable (title: String, description: String?, position: GroupPosition, checked: Boolean, onCheckedChange: (Boolean) -> Unit) -> Unit,
     // 设置列表
     val settingsListItem: @Composable (title: String, description: String?, onClick: () -> Unit) -> Unit,

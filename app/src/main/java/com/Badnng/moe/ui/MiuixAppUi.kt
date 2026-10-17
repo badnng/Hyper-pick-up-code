@@ -27,6 +27,9 @@ import com.Badnng.moe.ui.screen.settings.MiuixSecurePasswordDialog
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Close
@@ -38,6 +41,16 @@ val miuixAppUi = AppUi(
     },
     settingsGroupItem = { title, description, position, onClick, trailing ->
         MiuixSettingsGroupItem(title, description, position, onClick, trailing)
+    },
+    settingsGroupValueItem = { title, value, _, onClick ->
+        ArrowPreference(
+            title = title,
+            endActions = {
+                Text(value, fontSize = MiuixTheme.textStyles.body2.fontSize,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            },
+            onClick = onClick,
+        )
     },
     settingsGroupSwitchItem = { title, description, position, checked, onCheckedChange ->
         MiuixSettingsGroupSwitchItem(title, description, position, checked, onCheckedChange)

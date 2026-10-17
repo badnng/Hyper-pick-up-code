@@ -7,6 +7,19 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// 将当前提交写入安装包，Provider 会在提交变化后使配置缓存失效。
+val buildGitHash = runCatching {
+    providers.exec {
+        workingDir(rootProject.projectDir)
+        commandLine("git", "rev-parse", "--verify", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("").ifBlank {
+    providers.environmentVariable("GITHUB_SHA").orNull.orEmpty()
+}.let { hash ->
+    if (hash.matches(Regex("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}"))) hash.take(7).lowercase() else "unknown"
+}
+
 val generatedPrivacyAssetsDir = layout.buildDirectory.dir("generated/privacy-assets")
 val generatePrivacyAssets by tasks.registering(Copy::class) {
     from(rootProject.file("PRIVACY.md"))
@@ -27,6 +40,7 @@ android {
         targetSdk = 37
         versionCode = 20260930_01
         versionName = "26.9.30.C01"
+        buildConfigField("String", "GIT_HASH", "\"$buildGitHash\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -101,6 +115,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     sourceSets.getByName("main").assets.directories.add(
