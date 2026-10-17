@@ -97,6 +97,8 @@ sealed interface SimpleRuleCenterPage {
     data object BlockedWords : SimpleRuleCenterPage
     data object CustomLocations : SimpleRuleCenterPage
     data object CustomIcons : SimpleRuleCenterPage
+    data object BrandFeatures : SimpleRuleCenterPage
+    data class BrandFeatureBrand(val brandName: String) : SimpleRuleCenterPage
 }
 
 @Stable
@@ -139,6 +141,8 @@ fun SimpleRuleCenterPage.title(pack: SimpleRulePack): String = when (this) {
     SimpleRuleCenterPage.BlockedWords -> "自定义屏蔽词"
     SimpleRuleCenterPage.CustomLocations -> "自定义取件地点"
     SimpleRuleCenterPage.CustomIcons -> "自定义图标"
+    SimpleRuleCenterPage.BrandFeatures -> "品牌特征词"
+    is SimpleRuleCenterPage.BrandFeatureBrand -> brandName
 }
 
 @Composable
@@ -268,7 +272,8 @@ fun SimpleRuleCenterContent(
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(wordRepo.exportJson(wordPack)) }
+                    val latestPack = wordRepo.load()
+                    context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(wordRepo.exportJson(latestPack)) }
                         ?: error("无法写入文件")
                 }
             }.onSuccess { Toast.makeText(context, "规则已导出", Toast.LENGTH_SHORT).show() }
@@ -370,9 +375,16 @@ fun SimpleRuleCenterContent(
                 RuleSectionTitle("辅助规则", isMiuix)
                 appUi.settingsGroup(if (isMiuix) Modifier else Modifier.padding(horizontal = 12.dp)) {
                     appUi.settingsGroupItem(
+                        "品牌特征词",
+                        "饮品、餐食品牌 · 命中词数多者优先",
+                        GroupPosition.First,
+                        { performHaptic(); openPage(SimpleRuleCenterPage.BrandFeatures) },
+                        null,
+                    )
+                    appUi.settingsGroupItem(
                         "自定义图标",
                         "为识别结果设置品牌图标",
-                        GroupPosition.First,
+                        GroupPosition.Middle,
                         { performHaptic(); openPage(SimpleRuleCenterPage.CustomIcons) },
                         null,
                     )
@@ -400,14 +412,14 @@ fun SimpleRuleCenterContent(
                 appUi.settingsGroup(if (isMiuix) Modifier else Modifier.padding(horizontal = 12.dp)) {
                     appUi.settingsGroupItem(
                         "导入规则",
-                        "导入词汇规则包（餐食/快递定位词）",
+                        "导入词汇规则包（含品牌特征词）",
                         GroupPosition.First,
                         { performHaptic(); importLauncher.launch(arrayOf("application/json", "text/plain")) },
                         if (isMiuix) null else ({ Icon(Icons.Default.FileUpload, contentDescription = null) }),
                     )
                     appUi.settingsGroupItem(
                         "导出规则",
-                        "导出词汇规则（三类型词汇 + 品牌表）",
+                        "导出定位词、品牌表与品牌特征词",
                         GroupPosition.Middle,
                         { performHaptic(); exportLauncher.launch("澎湃记词汇规则-v${PickupWordRulePack.SCHEMA_VERSION}.json") },
                         if (isMiuix) null else ({ Icon(Icons.Default.FileDownload, contentDescription = null) }),
@@ -423,6 +435,22 @@ fun SimpleRuleCenterContent(
             }
             item { Spacer(Modifier.height(12.dp)) }
         }
+
+        SimpleRuleCenterPage.BrandFeatures -> BrandFeatureRulesPage(
+            contentPadding = contentPadding,
+            isMiuix = isMiuix,
+            performHaptic = performHaptic,
+            onOpenBrand = { openPage(SimpleRuleCenterPage.BrandFeatureBrand(it)) },
+            modifier = modifier,
+        )
+
+        is SimpleRuleCenterPage.BrandFeatureBrand -> BrandFeatureBrandPage(
+            brandName = page.brandName,
+            contentPadding = contentPadding,
+            performHaptic = performHaptic,
+            onBack = { backPage() },
+            modifier = modifier,
+        )
 
         is SimpleRuleCenterPage.WordCategory -> WordCategoryPage(
             type = page.type,

@@ -52,3 +52,4 @@ local.properties
 
 # workbuddy
 .workbuddy/
+/output/

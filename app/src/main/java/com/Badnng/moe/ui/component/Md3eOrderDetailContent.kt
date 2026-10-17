@@ -131,6 +131,7 @@ fun Md3eOrderDetailContent(
                 Md3eDetailRow("供应商", recognitionProviderLabel(order))
                 Md3eDetailRow("模型", recognitionModelLabel(order))
                 Md3eDetailRow("总耗时", recognitionDurationLabel(order))
+                brandFeatureLabel(order)?.let { Md3eDetailRow("品牌判定依据", it) }
                 Md3eDetailRow("离线降级", recognitionFallbackLabel(order))
             }
         }

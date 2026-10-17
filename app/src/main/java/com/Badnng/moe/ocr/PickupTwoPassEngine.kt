@@ -765,6 +765,8 @@ class PickupTwoPassEngine(private val context: Context) {
     }
 
     companion object {
+        fun defaultBrandNames(): List<String> = DEFAULT_BRANDS.map { it.first }
+
         private val AMBIGUOUS_EXPRESS_KEYWORDS = setOf("请凭", "本人", "待取", "取货码")
         private val FOOD_CONTEXT_WORDS = listOf("外卖", "取餐", "取茶", "餐号")
         const val TAG = "PickupTwoPassEngine"

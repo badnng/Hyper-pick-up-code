@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
 import com.Badnng.moe.ui.component.GroupPosition
 import com.Badnng.moe.ui.component.Md3eCaptureModeItem
 import com.Badnng.moe.ui.component.Md3eChoiceChip
@@ -85,6 +86,21 @@ val md3eAppUi = AppUi(
     },
     messageBlock = { text, isError ->
         Md3eMessageBlock(text, isError)
+    },
+    ruleTextInput = { label, value, singleLine, modifier, onValueChange ->
+        androidx.compose.material3.OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            singleLine = singleLine,
+            modifier = modifier,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(15.dp),
+        )
+    },
+    brandFeatureWordsEditor = { words, input, enabled, onInputChange, onAdd, onRemove ->
+        com.Badnng.moe.ui.component.BrandFeatureWordsEditor(
+            words, input, enabled, onInputChange, onAdd, onRemove, isMiuix = false,
+        )
     },
     securePasswordDialog = { requireConfirmation, performHaptic, onDismiss, onConfirm ->
         Md3eSecurePasswordDialog(requireConfirmation, performHaptic, onDismiss, onConfirm)

@@ -20,6 +20,11 @@ import java.util.Locale
 const val LEGACY_DIAGNOSTIC_VALUE = "旧版数据未记录"
 const val UNRECORDED_VALUE = "未记录"
 
+fun brandFeatureLabel(order: OrderEntity): String? =
+    com.Badnng.moe.recognition.BrandFeatureRecognition.diagnosticLabel(
+        order.ocrDiagnosticData, order.takeoutCode, order.brandName,
+    )
+
 fun displayablePickupLocation(value: String?): String? = value?.trim()?.takeIf { it.isNotBlank() && it.any(Char::isLetterOrDigit) }
 
 data class OrderDetailUiState(
@@ -167,6 +172,7 @@ object OrderDiagnosticReportFormatter {
             appendLine("完成时间: ${formatOrderTime(order.completedAt)}")
             appendLine("类型: ${order.orderType}")
             appendLine("品牌: ${order.brandName.orUnrecordedValue()}")
+            brandFeatureLabel(order)?.let { appendLine("品牌判定依据: $it") }
             appendLine("取餐码/取件码: ${order.takeoutCode}")
             appendLine("取件位置: ${displayablePickupLocation(order.pickupLocation).orUnrecordedValue()}")
             appendLine()

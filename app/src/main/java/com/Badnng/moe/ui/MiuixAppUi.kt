@@ -97,6 +97,20 @@ val miuixAppUi = AppUi(
     messageBlock = { text, isError ->
         MiuixMessageBlock(text, isError)
     },
+    ruleTextInput = { label, value, singleLine, modifier, onValueChange ->
+        top.yukonga.miuix.kmp.basic.TextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = label,
+            singleLine = singleLine,
+            modifier = modifier,
+        )
+    },
+    brandFeatureWordsEditor = { words, input, enabled, onInputChange, onAdd, onRemove ->
+        com.Badnng.moe.ui.component.BrandFeatureWordsEditor(
+            words, input, enabled, onInputChange, onAdd, onRemove, isMiuix = true,
+        )
+    },
     securePasswordDialog = { requireConfirmation, performHaptic, onDismiss, onConfirm ->
         MiuixSecurePasswordDialog(requireConfirmation, performHaptic, onDismiss, onConfirm)
     },

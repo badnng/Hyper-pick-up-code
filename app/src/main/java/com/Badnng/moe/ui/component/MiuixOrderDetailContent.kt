@@ -126,6 +126,7 @@ fun MiuixOrderDetailContent(
                 MiuixDetailRow("供应商", recognitionProviderLabel(order))
                 MiuixDetailRow("模型", recognitionModelLabel(order))
                 MiuixDetailRow("总耗时", recognitionDurationLabel(order))
+                brandFeatureLabel(order)?.let { MiuixDetailRow("品牌判定依据", it) }
                 MiuixDetailRow("离线降级", recognitionFallbackLabel(order))
             }
         }

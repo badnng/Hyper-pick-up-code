@@ -42,6 +42,15 @@ class RecognitionRouter(context: Context) {
         sourceApp: String? = null,
         sourcePackage: String? = null,
         trigger: RecognitionTrigger = RecognitionTrigger.IMPORTED_IMAGE,
+    ): RoutedRecognitionResult = BrandFeatureRecognition.apply(
+        appContext, recognizeImageInternal(bitmap, sourceApp, sourcePackage, trigger),
+    )
+
+    private suspend fun recognizeImageInternal(
+        bitmap: Bitmap,
+        sourceApp: String? = null,
+        sourcePackage: String? = null,
+        trigger: RecognitionTrigger = RecognitionTrigger.IMPORTED_IMAGE,
     ): RoutedRecognitionResult {
         val startedAt = SystemClock.elapsedRealtime()
         if (!OnlineRecognitionPreferences.isOnline(appContext)) {
@@ -119,6 +128,14 @@ class RecognitionRouter(context: Context) {
     }
 
     suspend fun recognizeText(
+        text: String,
+        source: RecognitionTextSource = RecognitionTextSource.General,
+        trigger: RecognitionTrigger = source.defaultTrigger(),
+    ): RoutedRecognitionResult = BrandFeatureRecognition.apply(
+        appContext, recognizeTextInternal(text, source, trigger), text,
+    )
+
+    private suspend fun recognizeTextInternal(
         text: String,
         source: RecognitionTextSource = RecognitionTextSource.General,
         trigger: RecognitionTrigger = source.defaultTrigger(),
@@ -201,6 +218,14 @@ class RecognitionRouter(context: Context) {
     }
 
     suspend fun recognizeTextOffline(
+        text: String,
+        source: RecognitionTextSource = RecognitionTextSource.General,
+        trigger: RecognitionTrigger = source.defaultTrigger(),
+    ): RoutedRecognitionResult = BrandFeatureRecognition.apply(
+        appContext, recognizeTextOfflineInternal(text, source, trigger), text,
+    )
+
+    private suspend fun recognizeTextOfflineInternal(
         text: String,
         source: RecognitionTextSource = RecognitionTextSource.General,
         trigger: RecognitionTrigger = source.defaultTrigger(),

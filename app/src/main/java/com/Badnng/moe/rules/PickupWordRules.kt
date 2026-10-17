@@ -3,6 +3,9 @@ package com.Badnng.moe.rules
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -72,6 +75,8 @@ data class PickupWordRulePack(
     val auxiliaryKeywords: List<PickupWordRule> = DEFAULT_AUXILIARY_KEYWORDS.map { PickupWordRule(word = it) },
     /** 品牌表：name + 识别关键词 */
     val brands: List<PickupBrandRule> = emptyList(),
+    /** 品牌特征词及可信度；不改变定位词、模板和快递识别。 */
+    val brandFeatures: List<BrandFeatureRule> = emptyList(),
 ) {
     fun enabledWords(type: WordType): List<String> = when (type) {
         WordType.FOOD -> foodKeywords.filter { it.enabled && it.word.isNotBlank() }.map { it.word }
@@ -87,6 +92,7 @@ data class PickupWordRulePack(
         put("express_keywords", JSONArray().apply { expressKeywords.forEach { put(it.toJson()) } })
         put("auxiliary_keywords", JSONArray().apply { auxiliaryKeywords.forEach { put(it.toJson()) } })
         put("brands", JSONArray().apply { brands.forEach { put(it.toJson()) } })
+        put("brand_features", JSONArray().apply { brandFeatures.forEach { put(it.toJson()) } })
     }
 
     companion object {
@@ -122,6 +128,7 @@ data class PickupWordRulePack(
             auxiliaryKeywords = PickupWordRule.list(json.optJSONArray("auxiliary_keywords"))
                 .ifEmpty { DEFAULT_AUXILIARY_KEYWORDS.map { PickupWordRule(word = it) } },
             brands = PickupBrandRule.list(json.optJSONArray("brands")),
+            brandFeatures = BrandFeatureRule.list(json.optJSONArray("brand_features")),
         )
 
         fun empty(): PickupWordRulePack = PickupWordRulePack(
@@ -184,8 +191,9 @@ class PickupWordRuleRepository(private val context: Context) {
     private var cache: PickupWordRulePack? = null
 
     suspend fun load(): PickupWordRulePack = withContext(Dispatchers.IO) {
-        cache ?: synchronized(this@PickupWordRuleRepository) {
-            cache ?: runCatching {
+        // 各二级页和识别路由持有不同实例，读取磁盘以立即使用其他入口保存的规则。
+        synchronized(FILE_LOCK) {
+            runCatching {
                 if (!ruleFile.exists()) {
                     PickupWordRulePack.empty().also { saveBlocking(it) }
                 } else {
@@ -209,6 +217,19 @@ class PickupWordRuleRepository(private val context: Context) {
         cache = draft
     }
 
+    /** 只更新品牌特征词，保留其他页面保存的定位词和品牌表。 */
+    suspend fun saveBrandFeatures(rules: List<BrandFeatureRule>): PickupWordRulePack = withContext(Dispatchers.IO + NonCancellable) {
+        synchronized(FILE_LOCK) {
+            val current = if (ruleFile.exists()) {
+                PickupWordRulePack.fromJson(JSONObject(ruleFile.readText()))
+            } else PickupWordRulePack.empty()
+            current.copy(brandFeatures = rules, updatedAt = System.currentTimeMillis()).also {
+                saveBlocking(it)
+                cache = it
+            }
+        }
+    }
+
     fun current(): PickupWordRulePack? = cache
 
     suspend fun importJson(text: String): Result<PickupWordRulePack> = withContext(Dispatchers.IO) {
@@ -223,11 +244,22 @@ class PickupWordRuleRepository(private val context: Context) {
     fun exportJson(pack: PickupWordRulePack): String = pack.toJson().toString(2)
 
     private fun saveBlocking(pack: PickupWordRulePack) = synchronized(FILE_LOCK) {
-        ruleFile.writeText(pack.toJson().toString(2))
+        val file = android.util.AtomicFile(ruleFile)
+        val stream = file.startWrite()
+        try {
+            stream.write(pack.toJson().toString(2).toByteArray(Charsets.UTF_8))
+            file.finishWrite(stream)
+            _changes.value += 1
+        } catch (error: Throwable) {
+            file.failWrite(stream)
+            throw error
+        }
     }
 
     companion object {
         private const val TAG = "PickupWordRuleRepo"
         private val FILE_LOCK = Any()
+        private val _changes = MutableStateFlow(0L)
+        val changes = _changes.asStateFlow()
     }
 }

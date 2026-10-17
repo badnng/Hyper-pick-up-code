@@ -44,6 +44,15 @@ data class AppUi(
     // 设置子页面通用操作与安全输入
     val primaryActionButton: @Composable (text: String, enabled: Boolean, onClick: () -> Unit) -> Unit,
     val messageBlock: @Composable (text: String, isError: Boolean) -> Unit,
+    // 品牌特征词表单：输入控件由当前 UI 实现提供。
+    val ruleTextInput: @Composable (
+        label: String, value: String, singleLine: Boolean, modifier: Modifier, onValueChange: (String) -> Unit,
+    ) -> Unit,
+    val brandFeatureWordsEditor: @Composable (
+        words: List<com.Badnng.moe.rules.BrandFeatureWord>, input: String,
+        enabled: Boolean, onInputChange: (String) -> Unit,
+        onAdd: () -> Unit, onRemove: (String) -> Unit,
+    ) -> Unit,
     val securePasswordDialog: @Composable (
         requireConfirmation: Boolean,
         performHaptic: () -> Unit,

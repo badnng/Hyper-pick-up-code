@@ -180,6 +180,8 @@ enum class RuleSubPageKind {
     BlockedWords,
     CustomLocations,
     CustomIcons,
+    BrandFeatures,
+    BrandFeatureBrand,
 }
 
 @Serializable
@@ -196,6 +198,7 @@ sealed interface HomeRoute : NavKey {
         val category: String = "",
         val brandId: String = "",
         val templateId: String = "",
+        val brandName: String = "",
     ) : HomeRoute
 
     @Serializable
@@ -235,6 +238,8 @@ private fun SimpleRuleCenterPage.toHomeRoute(): HomeRoute.RuleSubPage = when (th
     SimpleRuleCenterPage.BlockedWords -> HomeRoute.RuleSubPage(kind = RuleSubPageKind.BlockedWords)
     SimpleRuleCenterPage.CustomLocations -> HomeRoute.RuleSubPage(kind = RuleSubPageKind.CustomLocations)
     SimpleRuleCenterPage.CustomIcons -> HomeRoute.RuleSubPage(kind = RuleSubPageKind.CustomIcons)
+    SimpleRuleCenterPage.BrandFeatures -> HomeRoute.RuleSubPage(kind = RuleSubPageKind.BrandFeatures)
+    is SimpleRuleCenterPage.BrandFeatureBrand -> HomeRoute.RuleSubPage(kind = RuleSubPageKind.BrandFeatureBrand, brandName = brandName)
 }
 
 private fun HomeRoute.RuleSubPage.toRulePage(): SimpleRuleCenterPage = when (kind) {
@@ -247,6 +252,8 @@ private fun HomeRoute.RuleSubPage.toRulePage(): SimpleRuleCenterPage = when (kin
     RuleSubPageKind.BlockedWords -> SimpleRuleCenterPage.BlockedWords
     RuleSubPageKind.CustomLocations -> SimpleRuleCenterPage.CustomLocations
     RuleSubPageKind.CustomIcons -> SimpleRuleCenterPage.CustomIcons
+    RuleSubPageKind.BrandFeatures -> SimpleRuleCenterPage.BrandFeatures
+    RuleSubPageKind.BrandFeatureBrand -> SimpleRuleCenterPage.BrandFeatureBrand(brandName)
 }
 
 @Composable
