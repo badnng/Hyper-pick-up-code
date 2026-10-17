@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.Badnng.moe.helper.UpdateInfo
+import com.Badnng.moe.ui.miuix.miuixReadableCardShadow
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
 import kotlinx.coroutines.delay
@@ -201,7 +202,8 @@ private fun MiuixUpdateSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(releaseNotesHeight)
-                            .padding(bottom = 12.dp),
+                            .padding(bottom = 12.dp)
+                            .miuixReadableCardShadow(),
                         colors = MiuixCardDefaults.defaultColors(
                             color = MiuixTheme.colorScheme.secondaryContainer
                         )
@@ -343,7 +345,8 @@ private fun MiuixUpdateProgressSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(releaseNotesHeight)
-                            .padding(bottom = 12.dp),
+                            .padding(bottom = 12.dp)
+                            .miuixReadableCardShadow(),
                         colors = MiuixCardDefaults.defaultColors(
                             color = MiuixTheme.colorScheme.secondaryContainer
                         )

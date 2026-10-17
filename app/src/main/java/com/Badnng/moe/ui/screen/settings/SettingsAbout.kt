@@ -59,6 +59,8 @@ import com.Badnng.moe.ui.component.SettingsGroup
 import com.Badnng.moe.ui.component.SettingsGroupItem
 import com.Badnng.moe.ui.component.SettingsListItem
 import com.Badnng.moe.ui.LocalAppUi
+import com.Badnng.moe.ui.miuix.LocalMiuixTopBarBackdrop
+import com.Badnng.moe.ui.miuix.LocalMiuixTopBarCollapseProgress
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
@@ -82,8 +84,6 @@ import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Update
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -481,11 +481,6 @@ private fun MiuixAboutPage(
         derivedStateOf { backdrop != null && scrollProgress >= 0.999f }
     }
     val aboutTopBar: @Composable () -> Unit = {
-        val barColor = if (blurActive) {
-            Color.Transparent
-        } else {
-            if (collapsed) MiuixTheme.colorScheme.surface else Color.Transparent
-        }
         val titleColor = MiuixTheme.colorScheme.onSurface.copy(
             alpha = ((scrollProgress - 0.35f) / 0.65f).coerceIn(0f, 1f),
         )
@@ -493,7 +488,7 @@ private fun MiuixAboutPage(
             top.yukonga.miuix.kmp.basic.SmallTopAppBar(
                 title = "关于",
                 scrollBehavior = topAppBarScrollBehavior,
-                color = barColor,
+                color = Color.Transparent,
                 titleColor = titleColor,
                 defaultWindowInsetsPadding = false,
                 navigationIcon = {
@@ -502,18 +497,11 @@ private fun MiuixAboutPage(
                             MiuixNavigationRailExpandButton(onClick = onExpandNavigationRail)
                         }
                         showBackButton -> {
-                            top.yukonga.miuix.kmp.basic.IconButton(onClick = {
-                                performHaptic()
-                                onBack()
-                            }) {
-                                top.yukonga.miuix.kmp.basic.Icon(
-                                    if (supportingPane) {
-                                        MiuixIcons.Regular.Close
-                                    } else {
-                                        MiuixIcons.Regular.Back
-                                    },
-                                    contentDescription = if (supportingPane) "关闭" else "返回",
-                                )
+                            CompositionLocalProvider(
+                                LocalMiuixTopBarBackdrop provides backdrop,
+                                LocalMiuixTopBarCollapseProgress provides { scrollProgress },
+                            ) {
+                                LocalAppUi.current.topBarBackButton(onBack, supportingPane)
                             }
                         }
                     }
@@ -522,7 +510,7 @@ private fun MiuixAboutPage(
         }
 
         if (!collapsed) {
-            // 首屏只覆盖透明导航按钮，让动态背景延伸到页面顶部。
+            // 首屏保持透明顶栏，让动态背景延伸到页面顶部。
             topBarContent()
         } else {
             com.Badnng.moe.ui.miuix.MiuixBlurredBar(
@@ -619,6 +607,7 @@ private fun MiuixAboutPage(
             }
             val aboutCardModifier = Modifier
                 .padding(horizontal = 12.dp)
+                .miuixReadableCardShadow()
                 .then(
                     if (contentBlurBackdrop != null) {
                         Modifier.textureBlur(

@@ -2,6 +2,7 @@ package com.Badnng.moe.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Checkbox
@@ -67,6 +68,14 @@ val md3eAppUi = AppUi(
     },
     notificationAppsTopBarAction = { showSystemApps, onShowSystemAppsChange, performHaptic ->
         Md3eNotificationAppsTopBarAction(showSystemApps, onShowSystemAppsChange, performHaptic)
+    },
+    topBarBackButton = { onClick, supportingPane ->
+        IconButton(onClick = rememberTopBarBackClick(onClick)) {
+            Icon(
+                imageVector = if (supportingPane) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = if (supportingPane) "关闭" else "返回",
+            )
+        }
     },
     promptEditor = { lineCount, onRestoreDefault, modifier, editor ->
         Md3ePromptEditor(lineCount, onRestoreDefault, modifier, editor)

@@ -18,6 +18,7 @@ import com.Badnng.moe.ui.miuix.MiuixSettingsGroup
 import com.Badnng.moe.ui.miuix.MiuixSettingsGroupItem
 import com.Badnng.moe.ui.miuix.MiuixSettingsGroupSwitchItem
 import com.Badnng.moe.ui.miuix.MiuixSettingsListItem
+import com.Badnng.moe.ui.miuix.MiuixTopBarBackButton
 import com.Badnng.moe.ui.component.MiuixBlockedWordsEditor
 import com.Badnng.moe.ui.component.MiuixPromptEditor
 import com.Badnng.moe.ui.component.MiuixOrderDetailContent
@@ -75,6 +76,9 @@ val miuixAppUi = AppUi(
     },
     notificationAppsTopBarAction = { showSystemApps, onShowSystemAppsChange, performHaptic ->
         MiuixNotificationAppsTopBarAction(showSystemApps, onShowSystemAppsChange, performHaptic)
+    },
+    topBarBackButton = { onClick, supportingPane ->
+        MiuixTopBarBackButton(rememberTopBarBackClick(onClick), supportingPane)
     },
     promptEditor = { lineCount, onRestoreDefault, modifier, editor ->
         MiuixPromptEditor(lineCount, onRestoreDefault, modifier, editor)

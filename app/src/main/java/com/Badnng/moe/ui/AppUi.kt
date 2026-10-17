@@ -1,9 +1,16 @@
 package com.Badnng.moe.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.Badnng.moe.ui.component.BlockedWordsEditorState
 import com.Badnng.moe.ui.component.GroupPosition
 import com.Badnng.moe.ui.component.PromptEditorVisuals
@@ -34,6 +41,8 @@ data class AppUi(
     val preferenceSwitchItem: @Composable (title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) -> Unit,
     // 通知识别应用页顶栏菜单
     val notificationAppsTopBarAction: @Composable (showSystemApps: Boolean, onShowSystemAppsChange: (Boolean) -> Unit, performHaptic: () -> Unit) -> Unit,
+    // 顶栏返回按钮；分栏模式沿用关闭图标。
+    val topBarBackButton: @Composable (onClick: () -> Unit, supportingPane: Boolean) -> Unit,
     // 自定义 Prompt 编辑器
     val promptEditor: @Composable (lineCount: Int, onRestoreDefault: () -> Unit, modifier: Modifier, editor: @Composable (PromptEditorVisuals) -> Unit) -> Unit,
     // 自定义屏蔽词编辑器
@@ -66,3 +75,21 @@ val LocalAppUi = staticCompositionLocalOf<AppUi> { error("No AppUi provided") }
 
 /** Keeps a transitioning UI subtree pinned to the style it was composed with. */
 val LocalIsMiuixUi = staticCompositionLocalOf<Boolean?> { null }
+
+@Composable
+internal fun rememberTopBarBackClick(onClick: () -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val preferences = remember(context) {
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    }
+    val haptic = LocalHapticFeedback.current
+    val currentOnClick by rememberUpdatedState(onClick)
+    return remember(preferences, haptic) {
+        {
+            if (preferences.getBoolean("haptic_enabled", true)) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+            currentOnClick()
+        }
+    }
+}

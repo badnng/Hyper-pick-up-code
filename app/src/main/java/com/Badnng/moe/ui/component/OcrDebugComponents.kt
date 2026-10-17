@@ -44,7 +44,7 @@ import coil.compose.AsyncImage
 import com.Badnng.moe.ocr.PaddleOcrHelper
 import com.Badnng.moe.ocr.OcrDiagnosticsPreferences
 import java.util.Locale
-import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import com.Badnng.moe.ui.miuix.MiuixReadableCard as MiuixCard
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch as MiuixSwitch
 import top.yukonga.miuix.kmp.basic.Text as MiuixText

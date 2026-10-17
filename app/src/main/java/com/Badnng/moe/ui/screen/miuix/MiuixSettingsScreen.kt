@@ -43,10 +43,15 @@ fun MiuixSettingsScreen(
 
     Scaffold(
         topBar = {
-            MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled, progressive = false) {
+            MiuixBlurredBar(
+                backdrop = backdrop,
+                blurEnabled = blurEnabled,
+                progressive = false,
+                collapseProgress = { topAppBarScrollBehavior.state.collapsedFraction },
+            ) {
                 TopAppBar(
                     title = "设置",
-                    color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
+                    color = Color.Transparent,
                     scrollBehavior = topAppBarScrollBehavior,
                     navigationIcon = {
                         onExpandNavigationRail?.let {

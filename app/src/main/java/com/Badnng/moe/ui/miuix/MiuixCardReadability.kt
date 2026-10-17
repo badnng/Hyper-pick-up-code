@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -18,12 +19,15 @@ internal const val MiuixCardShadowAlpha = 0.11f
 
 /** 给浅色页面上的 Miuix 卡片一层柔和的底部阴影，保留卡片原有的 squircle 裁剪。 */
 @Composable
-fun Modifier.miuixReadableCardShadow(enabled: Boolean = true): Modifier {
+fun Modifier.miuixReadableCardShadow(
+    enabled: Boolean = true,
+    cornerRadius: Dp = 16.dp,
+): Modifier {
     val colors = MiuixTheme.colorScheme
     if (!enabled || colors.surface.luminance() < 0.5f) return this
 
     return this.dropShadow(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(cornerRadius),
         shadow = Shadow(
             radius = MiuixCardShadowRadius,
             offset = DpOffset(0.dp, MiuixCardShadowOffsetY),

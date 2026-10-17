@@ -54,3 +54,6 @@ local.properties
 .workbuddy/
 /output/
 /.dsh-acl-repair/
+/node_modules/
+package.json
+pnpm-lock.yaml

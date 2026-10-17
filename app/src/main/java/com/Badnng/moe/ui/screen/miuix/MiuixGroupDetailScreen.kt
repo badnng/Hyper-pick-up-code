@@ -57,10 +57,12 @@ import com.Badnng.moe.data.db.OrderGroup
 import com.Badnng.moe.helper.BrandIconResolver
 import com.Badnng.moe.helper.GroupScreenshotPaths
 import com.Badnng.moe.helper.ScreenshotStorage
+import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.component.ScreenshotCornerPercents
 import com.Badnng.moe.ui.component.formatOrderTime
 import com.Badnng.moe.ui.component.toRoundedCornerShape
 import com.Badnng.moe.ui.miuix.MiuixBlurredBar
+import com.Badnng.moe.ui.miuix.MiuixTopBar
 import com.Badnng.moe.ui.miuix.miuixReadableCardShadow
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.rememberMiuixBackdrop
@@ -79,11 +81,8 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Copy
 import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -138,21 +137,16 @@ fun MiuixGroupDetailScreen(
                 MiuixBlurredBar(
                     backdrop = backdrop,
                     blurEnabled = blurEnabled,
-                    blurRadius = 18f,
-                    blendAlpha = 0.62f,
                     progressive = true,
+                    collapseProgress = { topAppBarScrollBehavior.state.collapsedFraction },
                 ) {
-                    TopAppBar(
+                    MiuixTopBar(
                         title = "订单组详情",
-                        color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
+                        color = Color.Transparent,
                         scrollBehavior = topAppBarScrollBehavior,
+                        expandedTitleTopPadding = if (supportingPane) 0.dp else 12.dp,
                         navigationIcon = {
-                            IconButton(onClick = { performHaptic(); onBack() }) {
-                                Icon(
-                                    if (supportingPane) MiuixIcons.Regular.Close else MiuixIcons.Regular.Back,
-                                    contentDescription = if (supportingPane) "关闭" else "返回",
-                                )
-                            }
+                            LocalAppUi.current.topBarBackButton(onBack, supportingPane)
                         },
                         actions = {
                             if (completedCount < totalCount) {

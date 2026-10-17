@@ -66,8 +66,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Sidebar
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.icon.extended.Home
@@ -155,7 +153,6 @@ import top.yukonga.miuix.kmp.basic.NavigationRailState
 import top.yukonga.miuix.kmp.basic.NavigationRailValue
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 import top.yukonga.miuix.kmp.anim.folmeSpring
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
@@ -1947,23 +1944,18 @@ private fun MiuixSettingsSubPageDirect(
                         },
                     ),
                 topBar = {
-                    val topBarColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface
-                    com.Badnng.moe.ui.miuix.MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
-                        TopAppBar(
+                    com.Badnng.moe.ui.miuix.MiuixBlurredBar(
+                        backdrop = backdrop,
+                        blurEnabled = blurEnabled,
+                        collapseProgress = { topAppBarScrollBehavior.state.collapsedFraction },
+                    ) {
+                        com.Badnng.moe.ui.miuix.MiuixTopBar(
                             title = title,
-                            color = topBarColor,
+                            color = Color.Transparent,
                             scrollBehavior = topAppBarScrollBehavior,
+                            expandedTitleTopPadding = if (supportingPane) 0.dp else 12.dp,
                             navigationIcon = {
-                                IconButton(onClick = onBack) {
-                                    Icon(
-                                        if (supportingPane) {
-                                            MiuixIcons.Regular.Close
-                                        } else {
-                                            MiuixIcons.Regular.Back
-                                        },
-                                        contentDescription = if (supportingPane) "关闭" else "返回",
-                                    )
-                                }
+                                appUi.topBarBackButton(onBack, supportingPane)
                             },
                             actions = {
                                 if (page == SettingsPage.NotificationApps) {

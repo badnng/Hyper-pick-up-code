@@ -31,8 +31,9 @@ enum class MiuixDevicePerformanceTier {
 /**
  * Miuix 视觉效果的统一设备策略。
  *
- * HyperOS 使用系统 Computility CPU Level 分档；非 HyperOS 不做性能降级。
- * 设备档位只控制模糊和 OOBE 箭头转场，常规动画与动态背景对所有档位开放。
+ * HyperOS 使用系统 Computility CPU Level 分档：低档 <= 4，中档 5，高档 >= 6。
+ * 非 HyperOS 不做性能降级；设备档位只控制模糊、混色和 OOBE 箭头转场，
+ * 常规动画与动态背景对所有档位开放。
  */
 object MiuixVisualEffectsPolicy {
     private const val COMPUTILITY_CPU_LEVEL_PROPERTY = "persist.sys.computility.cpulevel"

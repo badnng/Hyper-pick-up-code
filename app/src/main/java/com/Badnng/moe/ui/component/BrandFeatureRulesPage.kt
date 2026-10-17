@@ -42,7 +42,7 @@ import com.Badnng.moe.rules.RecognitionRuleEngine
 import com.Badnng.moe.ui.LocalAppUi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import com.Badnng.moe.ui.miuix.MiuixReadableCard as MiuixCard
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
 import top.yukonga.miuix.kmp.basic.Text as MiuixText

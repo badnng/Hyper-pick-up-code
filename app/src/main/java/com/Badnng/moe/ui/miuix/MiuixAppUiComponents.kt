@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.Badnng.moe.ui.component.GroupPosition
 import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
@@ -42,7 +41,7 @@ fun MiuixSettingsGroup(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(
+    MiuixReadableCard(
         modifier = modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
         content = content
     )
@@ -132,7 +131,7 @@ fun MiuixPermissionItem(
     isGranted: Boolean,
     actionButton: @Composable (() -> Unit)?
 ) {
-    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
+    MiuixReadableCard(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)

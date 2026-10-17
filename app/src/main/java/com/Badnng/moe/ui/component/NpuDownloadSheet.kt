@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.Badnng.moe.npu.NpuLibLoader
 import com.Badnng.moe.npu.NpuModelDownloader
+import com.Badnng.moe.ui.miuix.miuixReadableCardShadow
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
 import kotlinx.coroutines.launch
@@ -267,7 +268,7 @@ private fun NpuDownloadFileItem(
     totalBytes: Long,
 ) {
     MiuixCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().miuixReadableCardShadow(),
         colors = MiuixCardDefaults.defaultColors(
             color = MiuixTheme.colorScheme.secondaryContainer
         )
@@ -337,7 +338,7 @@ private fun NpuPendingFileList(arch: Int) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         files.forEach { (name, size) ->
             MiuixCard(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().miuixReadableCardShadow(),
                 colors = MiuixCardDefaults.defaultColors(
                     color = MiuixTheme.colorScheme.secondaryContainer
                 )

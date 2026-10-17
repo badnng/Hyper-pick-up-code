@@ -1093,7 +1093,7 @@ private fun RuleDangerButton(text: String, isMiuix: Boolean, enabled: Boolean, o
 @Composable
 private fun RuleSurface(isMiuix: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     if (isMiuix) {
-        top.yukonga.miuix.kmp.basic.Card(modifier = modifier) { content() }
+        com.Badnng.moe.ui.miuix.MiuixReadableCard(modifier = modifier) { content() }
     } else {
         androidx.compose.material3.Surface(
             modifier = modifier,

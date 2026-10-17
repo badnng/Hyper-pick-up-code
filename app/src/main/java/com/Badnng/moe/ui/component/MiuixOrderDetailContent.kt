@@ -47,6 +47,7 @@ import coil.compose.AsyncImage
 import com.Badnng.moe.R
 import com.Badnng.moe.helper.BrandIconResolver
 import com.Badnng.moe.helper.ScreenshotStorage
+import com.Badnng.moe.ui.miuix.miuixReadableCardShadow
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
@@ -159,6 +160,7 @@ fun MiuixOrderDetailContent(
                     modifier = Modifier
                         .padding(horizontal = 12.dp)
                         .fillMaxWidth()
+                        .miuixReadableCardShadow(cornerRadius = 15.dp)
                         .squircleClip(15.dp)
                         .clickable {
                             actions.performHaptic()
@@ -219,6 +221,7 @@ private fun MiuixOrderSummary(state: OrderDetailUiState, actions: OrderDetailAct
         modifier = Modifier
             .padding(horizontal = 12.dp)
             .fillMaxWidth()
+            .miuixReadableCardShadow(cornerRadius = 15.dp)
             .squircleSurface(MiuixTheme.colorScheme.surfaceContainer, 15.dp),
     ) {
         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -297,7 +300,7 @@ private fun MiuixOrderSummary(state: OrderDetailUiState, actions: OrderDetailAct
 private fun MiuixDetailSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column {
         SmallTitle(text = title)
-        Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
+        Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth().miuixReadableCardShadow()) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp), content = content)
         }
     }
@@ -339,6 +342,7 @@ private fun MiuixDiagnosticWarning(error: String?, usedOfflineFallback: Boolean)
         modifier = Modifier
             .padding(horizontal = 12.dp)
             .fillMaxWidth()
+            .miuixReadableCardShadow(cornerRadius = 15.dp)
             .squircleSurface(MiuixTheme.colorScheme.errorContainer, 15.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -371,7 +375,7 @@ private fun MiuixOriginalTextSection(
     val motionScheme = MaterialTheme.motionScheme
     Column {
         SmallTitle(text = "原文记录")
-        Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
+        Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth().miuixReadableCardShadow()) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(

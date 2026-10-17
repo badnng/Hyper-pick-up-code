@@ -318,16 +318,16 @@ fun MiuixCaptureScreen(
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
-            val topBarColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface
             com.Badnng.moe.ui.miuix.MiuixBlurredBar(
                 backdrop = backdrop,
                 blurEnabled = blurEnabled,
                 progressive = false,
+                collapseProgress = { topAppBarScrollBehavior.state.collapsedFraction },
             ) {
                 Column {
                     TopAppBar(
                         title = "澎湃记",
-                        color = topBarColor,
+                        color = Color.Transparent,
                         scrollBehavior = topAppBarScrollBehavior,
                         navigationIcon = {
                             onExpandNavigationRail?.let {
@@ -387,19 +387,8 @@ fun MiuixCaptureScreen(
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
-                // 底部渐变遮罩，让 tab 区域和内容过渡更自然
-                val gradientStartColor = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface
-                val gradientEndColor = Color.Transparent
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .background(
-                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(gradientStartColor, gradientEndColor)
-                            )
-                        )
-                )
+                // 渐变由 MiuixBlurredBar 统一绘制，保留原有底部间距。
+                Spacer(modifier = Modifier.height(8.dp))
             }
             }
         },
@@ -1374,66 +1363,60 @@ private fun MiuixOrderGroupCard(
                 }
             }
 
-            // 展开/折叠按钮
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .squircleSurface(
-                        if (isExpanded) MiuixTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-                        else Color.Transparent,
-                        12.dp,
-                    )
-                    .clickable {
-                        performHaptic()
-                        if (!isEditMode) onExpandedChange(!isExpanded)
-                    }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = if (isExpanded) "收起" else "展开查看详情",
-                        style = MiuixTheme.textStyles.body2,
-                        color = MiuixTheme.colorScheme.primary
-                    )
-                    val arrowRotation by animateFloatAsState(
-                        targetValue = if (isExpanded) 180f else 0f
-                    )
-                    Icon(
-                        MiuixIcons.Regular.ExpandMore,
-                        contentDescription = null,
-                        tint = MiuixTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .size(16.dp)
-                            .rotate(arrowRotation)
-                    )
-                }
-            }
-
-            // 与组详情页的订单列表共用卡片；只沿竖向展开。
-            AnimatedVisibility(
-                visible = isExpanded && !isEditMode,
-                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
-            ) {
-                Column(
-                    modifier = Modifier.padding(vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    groupOrders.forEach { order ->
-                        CardMorphCard(morphKey = orderMorphKey(order.id), payload = order) {
-                            MiuixGroupOrderItem(
-                                order = order,
-                                onClick = { performHaptic(); onOpenOrder(order) },
-                                onMarkCompleted = {
-                                    performHaptic()
-                                    viewModel.markAsCompleted(order.id)
-                                },
-                            )
+            // 按钮和展开区共用容器，内容间距由子卡片进度收回，避免最后一帧突然跳高。
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .squircleSurface(
+                            if (isExpanded) MiuixTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+                            else Color.Transparent,
+                            12.dp,
+                        )
+                        .clickable {
+                            performHaptic()
+                            if (!isEditMode) onExpandedChange(!isExpanded)
                         }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = if (isExpanded) "收起" else "展开查看详情",
+                            style = MiuixTheme.textStyles.body2,
+                            color = MiuixTheme.colorScheme.primary
+                        )
+                        val arrowRotation by animateFloatAsState(
+                            targetValue = if (isExpanded) 180f else 0f
+                        )
+                        Icon(
+                            MiuixIcons.Regular.ExpandMore,
+                            contentDescription = null,
+                            tint = MiuixTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .rotate(arrowRotation)
+                        )
+                    }
+                }
+
+                MiuixGroupExpansion(
+                    expanded = isExpanded && !isEditMode,
+                    items = groupOrders,
+                    itemKey = { it.id },
+                ) { order ->
+                    CardMorphCard(morphKey = orderMorphKey(order.id), payload = order) {
+                        MiuixGroupOrderItem(
+                            order = order,
+                            onClick = { performHaptic(); onOpenOrder(order) },
+                            onMarkCompleted = {
+                                performHaptic()
+                                viewModel.markAsCompleted(order.id)
+                            },
+                        )
                     }
                 }
             }

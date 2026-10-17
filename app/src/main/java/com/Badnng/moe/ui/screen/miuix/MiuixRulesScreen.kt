@@ -10,22 +10,18 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.component.SimpleRuleCenterContent
 import com.Badnng.moe.ui.component.SimpleRuleCenterPage
 import com.Badnng.moe.ui.component.rememberSimpleRuleCenterState
 import com.Badnng.moe.ui.miuix.MiuixBlurredBar
+import com.Badnng.moe.ui.miuix.MiuixTopBar
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.rememberMiuixBackdrop
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun MiuixRulesScreen(
@@ -46,10 +42,14 @@ fun MiuixRulesScreen(
 
     Scaffold(
         topBar = {
-            MiuixBlurredBar(backdrop = backdrop, blurEnabled = backdrop != null, progressive = false) {
+            MiuixBlurredBar(
+                backdrop = backdrop,
+                blurEnabled = backdrop != null,
+                collapseProgress = { scrollBehavior.state.collapsedFraction },
+            ) {
                 TopAppBar(
                     title = "规则",
-                    color = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
+                    color = Color.Transparent,
                     scrollBehavior = scrollBehavior,
                     navigationIcon = {
                         onExpandNavigationRail?.let { MiuixNavigationRailExpandButton(onClick = it) }
@@ -89,18 +89,18 @@ fun MiuixRuleSubPageScreen(
 
     Scaffold(
         topBar = {
-            MiuixBlurredBar(backdrop = backdrop, blurEnabled = blurEnabled) {
-                TopAppBar(
+            MiuixBlurredBar(
+                backdrop = backdrop,
+                blurEnabled = blurEnabled,
+                collapseProgress = { scrollBehavior.state.collapsedFraction },
+            ) {
+                MiuixTopBar(
                     title = state.title,
-                    color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
+                    color = Color.Transparent,
                     scrollBehavior = scrollBehavior,
+                    expandedTitleTopPadding = if (supportingPane) 0.dp else 12.dp,
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = if (supportingPane) MiuixIcons.Regular.Close else MiuixIcons.Regular.Back,
-                                contentDescription = if (supportingPane) "关闭" else "返回",
-                            )
-                        }
+                        LocalAppUi.current.topBarBackButton(onBack, supportingPane)
                     },
                 )
             }

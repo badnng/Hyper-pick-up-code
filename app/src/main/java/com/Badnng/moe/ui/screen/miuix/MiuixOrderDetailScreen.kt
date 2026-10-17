@@ -10,20 +10,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.Badnng.moe.data.db.OrderEntity
+import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.miuix.MiuixBlurredBar
+import com.Badnng.moe.ui.miuix.MiuixTopBar
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.rememberMiuixBackdrop
 import com.Badnng.moe.ui.screen.OrderDetailHost
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun MiuixOrderDetailScreen(
@@ -40,24 +35,15 @@ fun MiuixOrderDetailScreen(
             MiuixBlurredBar(
                 backdrop = backdrop,
                 blurEnabled = blurEnabled,
-                blurRadius = 18f,
-                blendAlpha = 0.62f,
+                collapseProgress = { topAppBarScrollBehavior.state.collapsedFraction },
             ) {
-                TopAppBar(
+                MiuixTopBar(
                     title = "识别详情",
-                    color = if (blurEnabled) Color.Transparent else MiuixTheme.colorScheme.surface,
+                    color = Color.Transparent,
                     scrollBehavior = topAppBarScrollBehavior,
+                    expandedTitleTopPadding = if (supportingPane) 0.dp else 12.dp,
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = if (supportingPane) {
-                                    MiuixIcons.Regular.Close
-                                } else {
-                                    MiuixIcons.Regular.Back
-                                },
-                                contentDescription = if (supportingPane) "关闭" else "返回",
-                            )
-                        }
+                        LocalAppUi.current.topBarBackButton(onBack, supportingPane)
                     },
                 )
             }
