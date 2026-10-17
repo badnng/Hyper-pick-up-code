@@ -7,6 +7,71 @@ import org.junit.Test
 
 class SimpleRuleTemplateCompilerTest {
     @Test
+    fun pickupLabelSeparatorsAreOutsideTheCodeCapture() {
+        val regex = SimpleRuleTemplateCompiler.compile("取件码{{code:alnum:1-40}}")
+
+        for (label in listOf("取件码", "取货码", "提货码")) {
+            for (separator in listOf("", ":", "： ", "-", " - ", "：-")) {
+                assertEquals(
+                    "$label$separator",
+                    "1-2-3333",
+                    regex.find("$label${separator}1-2-3333，请及时领取")?.groupValues?.get(1),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun separatorDoesNotCountTowardFixedCodeLength() {
+        val regex = SimpleRuleTemplateCompiler.compile("取件码{{code:alnum:8}}")
+
+        assertEquals("1-2-3333", regex.find("取件码-1-2-3333")?.groupValues?.get(1))
+        assertEquals(
+            "1234",
+            SimpleRuleTemplateCompiler.compile("取件码{{code:digits:4}}")
+                .find("取件码-1234")?.groupValues?.get(1),
+        )
+    }
+
+    @Test
+    fun codeWithSuffixKeepsInternalHyphensAndHashPrefix() {
+        val regex = SimpleRuleTemplateCompiler.compile("取件码{{code}}待取件")
+
+        assertEquals("A-2-3333", regex.find("取件码-A-2-3333待取件")?.groupValues?.get(1))
+        assertEquals("#1234", regex.find("取件码#1234待取件")?.groupValues?.get(1))
+    }
+
+    @Test
+    fun runtimeSkipsLeadingHyphenForEveryTemplateSourceAndTextFallback() {
+        val brand = SimpleBrandRule(
+            category = SimpleRuleCategory.EXPRESS,
+            name = "快递",
+            keywords = listOf("取件码"),
+            templates = listOf(SimpleTemplateRule(template = "取件码{{code:alnum:1-40}}")),
+        )
+        SimpleRuleRuntime.replace(SimpleRulePack(brands = listOf(brand)))
+        for (source in SimpleRuleSource.entries) {
+            assertEquals(
+                source.name,
+                listOf("1-2-3333"),
+                SimpleRuleRuntime.recognizeCurrent("取件码-1-2-3333", source).map { it.code },
+            )
+        }
+
+        // 品牌已命中，但没有适用于当前来源的模板时，会走内置标签兜底。
+        SimpleRuleRuntime.replace(SimpleRulePack(brands = listOf(brand.copy(
+            templates = brand.templates.map { it.copy(sources = setOf(SimpleRuleSource.IMAGE)) },
+        ))))
+        for (source in listOf(SimpleRuleSource.TEXT, SimpleRuleSource.SMS, SimpleRuleSource.NOTIFICATION)) {
+            assertEquals(
+                source.name,
+                listOf("1-2-3333"),
+                SimpleRuleRuntime.recognizeCurrent("取件码-1-2-3333", source).map { it.code },
+            )
+        }
+    }
+
+    @Test
     fun ambiguousPickupLabelUsesFoodContextButExplicitParcelLabelStaysExpress() {
         SimpleRuleRuntime.replace(SimpleRulePack.empty())
 

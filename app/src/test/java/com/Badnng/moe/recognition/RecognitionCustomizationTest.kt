@@ -8,6 +8,37 @@ import org.junit.Test
 
 class RecognitionCustomizationTest {
     @Test
+    fun customPickupLocationOverridesRecognizedLocationWhenPresent() {
+        assertEquals(
+            "南门驿站",
+            RecognitionPickupLocationPolicy.resolve(
+                "包裹已放南门驿站，取件码-1-2-3333",
+                " , 北门驿站, 南门驿站 ",
+                "自动识别地点",
+            ),
+        )
+    }
+
+    @Test
+    fun customPickupLocationMatchesAcrossOcrWhitespace() {
+        assertEquals(
+            "南门驿站",
+            RecognitionPickupLocationPolicy.resolve("请到南门\n驿 站取件", "南门驿站", null),
+        )
+    }
+
+    @Test
+    fun unmatchedOrEmptyCustomLocationsPreserveRecognizedLocation() {
+        for (locations in listOf("", " , ", "北门驿站")) {
+            assertEquals(
+                "南门驿站",
+                RecognitionPickupLocationPolicy.resolve("南门驿站取件", locations, "南门驿站"),
+            )
+            assertNull(RecognitionPickupLocationPolicy.resolve("南门驿站取件", locations, null))
+        }
+    }
+
+    @Test
     fun normalizeBlockedWordsTrimsDeduplicatesAndPreservesOrder() {
         val result = RecognitionBlockedWordsPolicy.normalize(
             listOf("  广告  ", "", "ADVERTISEMENT", "advertisement", "推广"),

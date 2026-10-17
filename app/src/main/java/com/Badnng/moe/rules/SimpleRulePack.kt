@@ -174,12 +174,14 @@ object SimpleRuleTemplateCompiler {
             var cursor = 0
             placeholder.findAll(template).forEach { match ->
                 val literal = template.substring(cursor, match.range.first)
-                appendLiteral(literal)
                 val codeTag = literal.trimEnd()
                 // 快递短信里同一个位置会写「取件码 / 取货码 / 提货码」，
                 // 模板统一按「取件码」书写即可，不必为每种叫法各写一条规则。
                 if (codeTag.endsWith("取件码")) {
-                    replace(length - "取件码".length, length, "(?:取件码|取货码|提货码)")
+                    appendLiteral(codeTag.dropLast("取件码".length))
+                    append("(?:取件码|取货码|提货码)")
+                } else {
+                    appendLiteral(literal)
                 }
                 // OCR 的逻辑行会用空格连接；模板无需手动为每个换行补空格。
                 // 冒号紧随标签是快递短信的常见写法（“取件码：1-2-3456”），统一允许：
@@ -188,8 +190,16 @@ object SimpleRuleTemplateCompiler {
                 // 快递短信既有“凭 6-8-1234 取件”，也有“请凭取件码A-2-7261前往”：
                 // 「凭」后面可以再带一次取件码标签，模板里不必为此单写一条规则。
                 if (codeTag.endsWith("凭")) append("(?:取件码|取货码|提货码)?\\s*")
+                // 标签与码值之间的连字符是分隔符，码值内部的连字符仍由捕获组保留。
+                if (match.groupValues[1] == "code" && codeTag.isNotBlank()) {
+                    append("(?:-\\s*)*")
+                }
                 when (match.groupValues[1]) {
-                    "code" -> appendCodePattern(match.groupValues[2], codeDigitsOnly)
+                    "code" -> appendCodePattern(
+                        match.groupValues[2],
+                        codeDigitsOnly,
+                        atTemplateEnd = template.substring(match.range.last + 1).isBlank(),
+                    )
                     "location" -> append("(.{1,100}?)")
                     // 用于吞掉链接、时间等会变化但不需要保存的片段，不创建捕获组。
                     "any" -> append("(?:.*?)")
@@ -255,7 +265,11 @@ object SimpleRuleTemplateCompiler {
         return null
     }
 
-    private fun StringBuilder.appendCodePattern(optionsText: String, codeDigitsOnly: Boolean) {
+    private fun StringBuilder.appendCodePattern(
+        optionsText: String,
+        codeDigitsOnly: Boolean,
+        atTemplateEnd: Boolean,
+    ) {
         val options = optionsText.split(':').map(String::trim).filter(String::isNotBlank)
         val mode = options.firstOrNull()?.lowercase()?.takeIf { it == "digits" || it == "alnum" }
         require(options.isEmpty() || mode != null) {
@@ -271,7 +285,8 @@ object SimpleRuleTemplateCompiler {
         val quantifier = if (length.first == length.last) {
             "{${length.first}}"
         } else {
-            "{${length.first},${length.last}}?"
+            // 末尾没有后续锚点时应取完整码值，否则非贪婪匹配只会取到最短长度。
+            "{${length.first},${length.last}}" + if (atTemplateEnd) "" else "?"
         }
         append("(").append(characterClass).append(quantifier).append(")")
     }
@@ -571,7 +586,7 @@ private fun builtInLabelMatches(text: String, pack: SimpleRulePack): List<Simple
  *
  * 刻意不用正则：码值边界是「遇到第一个非字母数字字符」，逐字符扫描比正则更直观，
  * 也避免依赖平台正则引擎对字符类交集等写法的支持差异。
- * 标签后的冒号、空格先跳过；紧跟在码值后面的动作词（到/请/领…）会被剪掉。
+ * 标签后的冒号、空格和连字符先跳过；紧跟在码值后面的动作词（到/请/领…）会被剪掉。
  */
 private fun extractLabeledCodes(text: String, template: String): List<Pair<String, String>> {
     val placeholderAt = template.indexOf("{{")
@@ -591,8 +606,8 @@ private fun extractLabeledCodes(text: String, template: String): List<Pair<Strin
         var index = text.indexOf(candidate)
         while (index >= 0) {
             var cursor = index + candidate.length
-            // 标签与码值之间允许冒号/空格。
-            while (cursor < text.length && (text[cursor].isWhitespace() || text[cursor] == ':' || text[cursor] == '：')) cursor++
+            // 只跳过码值前面的分隔符，保留 1-2-3333 内部的连字符。
+            while (cursor < text.length && (text[cursor].isWhitespace() || text[cursor] in ":：-")) cursor++
             val start = cursor
             while (cursor < text.length && isCodeCharacter(text[cursor])) cursor++
             val raw = text.substring(start, cursor)

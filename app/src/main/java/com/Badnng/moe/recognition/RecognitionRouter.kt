@@ -81,7 +81,7 @@ class RecognitionRouter(context: Context) {
                 throw OnlineRecognitionException(message)
             }
             RoutedRecognitionResult(
-                orders = mergeBarcodeResult(orders, qrCode, qrBrand),
+                orders = applyCustomPickupLocations(mergeBarcodeResult(orders, qrCode, qrBrand)),
                 metadata = RecognitionExecutionMetadata(
                     mode = RecognitionMode.ONLINE,
                     inputType = RecognitionInputType.IMAGE,
@@ -157,11 +157,14 @@ class RecognitionRouter(context: Context) {
             provider = selectedProvider
             model = selectedModel
             RoutedRecognitionResult(
-                orders = OnlineRecognitionClient(appContext).recognizeText(
-                    text = text,
-                    provider = selectedProvider,
-                    model = selectedModel,
-                    mimoBillingMode = OnlineRecognitionPreferences.mimoBillingMode(appContext),
+                orders = applyCustomPickupLocations(
+                    orders = OnlineRecognitionClient(appContext).recognizeText(
+                        text = text,
+                        provider = selectedProvider,
+                        model = selectedModel,
+                        mimoBillingMode = OnlineRecognitionPreferences.mimoBillingMode(appContext),
+                    ),
+                    sourceText = text,
                 ),
                 metadata = RecognitionExecutionMetadata(
                     mode = RecognitionMode.ONLINE,
@@ -308,7 +311,7 @@ class RecognitionRouter(context: Context) {
                 ocr = if (OcrDiagnosticsPreferences.shouldCapture(appContext)) ocrResult.diagnosticResult else null,
                 engine = engineSummary,
             )
-            OfflineImageRecognition(orders, diagnosticData)
+            OfflineImageRecognition(applyCustomPickupLocations(orders), diagnosticData)
         } finally {
             helper.close()
             if (recognitionBitmap !== bitmap && !recognitionBitmap.isRecycled) {
@@ -342,13 +345,32 @@ class RecognitionRouter(context: Context) {
         }
         val helper = TextRecognitionHelper(appContext)
         return try {
-            helper.recognizeFromText(text, when (source) {
+            val orders = helper.recognizeFromText(text, when (source) {
                 RecognitionTextSource.Sms -> com.Badnng.moe.rules.SimpleRuleSource.SMS
                 RecognitionTextSource.Notification -> com.Badnng.moe.rules.SimpleRuleSource.NOTIFICATION
                 RecognitionTextSource.General -> com.Badnng.moe.rules.SimpleRuleSource.TEXT
             })
+            applyCustomPickupLocations(orders, text)
         } finally {
             helper.close()
+        }
+    }
+
+    private fun applyCustomPickupLocations(
+        orders: List<RecognitionResult>,
+        sourceText: String? = null,
+    ): List<RecognitionResult> {
+        // 在各识别引擎返回后统一应用，避免模板或词汇引擎提前返回时绕过自定义地点。
+        val configuredLocations = settings.getString(RecognitionPickupLocationPolicy.SETTINGS_KEY, "").orEmpty()
+        if (configuredLocations.isBlank()) return orders
+        return orders.map { order ->
+            order.copy(
+                pickupLocation = RecognitionPickupLocationPolicy.resolve(
+                    text = sourceText ?: order.fullText,
+                    configuredLocations = configuredLocations,
+                    recognizedLocation = order.pickupLocation,
+                ),
+            )
         }
     }
 
