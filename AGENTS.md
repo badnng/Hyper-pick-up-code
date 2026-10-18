@@ -84,7 +84,12 @@ Keep 规则对运行时至关重要 — ML Kit（`com.google.mlkit.**`）、Padd
 
 ## CI
 
-GitHub Actions（`.github/workflows/Build and Release.yml`）：仅在推送 tag（`v*`）时触发构建，使用 JDK 17，通过 `KEYSTORE_BASE64` secret 解码签名。分支推送不触发任何 workflow。
+GitHub Actions 使用 JDK 21，与当前项目 JVM toolchain 一致。
+
+- `.github/workflows/CI.yml`：每次分支 push / PR / 手动触发构建及单元测试；本仓库 master/dev 使用正式签名生成压缩 APK，其余分支和 PR 使用 Debug 签名；仅保存 Actions 产物，可选推送 Telegram，不创建 Release、不更新版本 JSON。
+- `.github/workflows/Build and Release.yml`：仅推送 `v*` tag 时发布 APK + 手表 RPK，附件上传完成后才更新 master 的版本 JSON。`-Dev` / `-alpha` / `-beta` / `-rc` / `-preview` 后缀进入 Dev 通道，`-DevUI` 进入 DevUI 通道，其余为 Stable；新版本须递增 versionCode。
+- Gradle 缓存由 `gradle/actions/setup-gradle` 管理，本地仍使用 `D:\GradleCache`，Ubuntu runner 使用工作区外的 `GRADLE_USER_HOME`。
+- Telegram 配置、签名和发布流程见 [docs/ci-and-release.md](docs/ci-and-release.md)。
 
 ## 手表端 Vela 快应用（app\wear）
 
