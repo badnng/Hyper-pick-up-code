@@ -18,7 +18,9 @@ jobs:
   build:
     name: Android CI
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      DISTRIBUTION_BUILD: ${{ github.repository == 'badnng/Hyper-pick-up-code' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') }}
     outputs:
       artifact_name: ${{ steps.package.outputs.artifact_name }}
       artifact_url: ${{ steps.upload.outputs.artifact-url }}
@@ -27,73 +29,19 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Keep Gradle caches outside the workspace
-        run: echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle-user-home" >> "$GITHUB_ENV"
-
-      - name: Check CI helper scripts
-        run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - name: Build Android release
+        uses: ./.github/actions/build-android-release
         with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Set up Gradle and cache
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
-        with:
+          signing-mode: ${{ env.DISTRIBUTION_BUILD == 'true' && 'release' || 'unsigned' }}
           cache-read-only: ${{ github.event_name == 'pull_request' || (github.ref != 'refs/heads/master' && github.ref != 'refs/heads/dev') }}
-
-      - name: Set up Android SDK and install packages
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
-        with:
-          packages: 'platform-tools platforms;android-37.0 build-tools;36.1.0'
-          log-accepted-android-sdk-licenses: false
-
-      - name: Select build variant
-        id: variant
-        env:
-          SIGNED_BUILD: ${{ github.repository == 'badnng/Hyper-pick-up-code' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') }}
-        run: |
-          if [[ "$SIGNED_BUILD" == 'true' ]]; then
-            echo 'name=release' >> "$GITHUB_OUTPUT"
-            echo 'tasks=:app:assembleRelease :app:testReleaseUnitTest' >> "$GITHUB_OUTPUT"
-          else
-            echo 'name=debug' >> "$GITHUB_OUTPUT"
-            echo 'tasks=:app:assembleDebug :app:testDebugUnitTest' >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Decode signing key
-        if: steps.variant.outputs.name == 'release'
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          test -n "$KEYSTORE_BASE64" || { echo 'Missing KEYSTORE_BASE64'; exit 1; }
-          umask 077
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
-          echo "KEY_STORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-
-      - name: Build APK and run unit tests
-        env:
-          GRADLE_TASKS: ${{ steps.variant.outputs.tasks }}
-          KEY_ALIAS: ${{ steps.variant.outputs.name == 'release' && secrets.KEY_ALIAS || '' }}
-          KEY_PASSWORD: ${{ steps.variant.outputs.name == 'release' && secrets.KEY_PASSWORD || '' }}
-          STORE_PASSWORD: ${{ steps.variant.outputs.name == 'release' && secrets.STORE_PASSWORD || '' }}
-        run: |
-          chmod +x gradlew
-          # GRADLE_TASKS 仅来自上一步的固定任务名。
-          read -r -a tasks <<< "$GRADLE_TASKS"
-          ./gradlew "${tasks[@]}" --build-cache --stacktrace --no-daemon --project-cache-dir "$RUNNER_TEMP/gradle-project-cache"
-
-      - name: Verify distribution signature
-        if: steps.variant.outputs.name == 'release'
-        run: bash .github/scripts/verify_apk.sh app/build/outputs/apk/release/app-release.apk
+          keystore-base64: ${{ env.DISTRIBUTION_BUILD == 'true' && secrets.KEYSTORE_BASE64 || '' }}
+          key-alias: ${{ env.DISTRIBUTION_BUILD == 'true' && secrets.KEY_ALIAS || '' }}
+          key-password: ${{ env.DISTRIBUTION_BUILD == 'true' && secrets.KEY_PASSWORD || '' }}
+          store-password: ${{ env.DISTRIBUTION_BUILD == 'true' && secrets.STORE_PASSWORD || '' }}
 
       - name: Package CI artifacts
         id: package
-        env:
-          BUILD_VARIANT: ${{ steps.variant.outputs.name }}
-        run: python3 .github/scripts/build_metadata.py ci --variant "$BUILD_VARIANT" --output "$RUNNER_TEMP/ci-dist"
+        run: python3 .github/scripts/build_metadata.py ci --variant release --output "$RUNNER_TEMP/ci-dist"
 
       - name: Upload APK, checksum and build information
         id: upload
@@ -105,19 +53,13 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-      - name: Upload test reports
-        if: always()
+      - name: Save R8 mapping for CI crash analysis
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: test-reports-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            app/build/reports/tests/
-            app/build/test-results/
-          retention-days: 7
-
-      - name: Remove signing key
-        if: always()
-        run: rm -f "$RUNNER_TEMP/release.jks"
+          name: ci-mapping-${{ github.run_id }}-${{ github.run_attempt }}
+          path: app/build/outputs/mapping/release/
+          if-no-files-found: error
+          retention-days: 14
 
   telegram:
     name: Send CI APK to Telegram

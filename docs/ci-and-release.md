@@ -4,16 +4,20 @@
 
 | 操作 | 构建 | 分发 | 更新 App 内版本索引 |
 | --- | --- | --- | --- |
-| 本仓库 master / dev 分支 push | 正式签名、混淆压缩 APK + JVM 单元测试 | Actions；启用后发送 Telegram | 否 |
-| 其他分支 push、PR、fork | Debug APK + JVM 单元测试 | Actions | 否 |
+| 本仓库 master / dev 分支 push | 与 tag 发布相同的正式签名 Release APK | Actions；启用后发送 Telegram | 否 |
+| 其他分支 push、PR、fork | 未签名 Release APK，仅构建检查 | Actions | 否 |
 | 手动运行 CI | 按所选分支采用以上规则 | Actions；master/dev 可发 Telegram | 否 |
-| 推送 `v*` tag | 正式签名 APK + 单元测试 + 手表 RPK | GitHub Release | 是 |
+| 推送 `v*` tag | 正式签名 Release APK + 手表 RPK | GitHub Release | 是 |
 
 GitHub Actions 在代码 **push 到 GitHub** 时触发，不会感知本地 commit。如果一次 push 包含多个 commit，构建的是这次 push 的最后一个提交；需要每个 commit 都有包时，逐次 push。普通 push 不取消旧构建；PR 的旧构建会被新提交取消。同仓库分支同时有 PR 时，两种事件都会检查。
 
-CI APK 保存 14 天，测试报告保存 7 天。APK 文件名包含版本、CI 运行编号、Git 短提交号和构建类型，同时保存 `SHA256SUMS` 与 `build-info.json`。App 已有 Git 提交号展示，不改正式版本号规则。CI 使用 Gradle 的 release 构建类型只为获得签名和压缩优化，**不会创建 GitHub Release**。
+CI 与 tag 发布的 Android 构建步骤共用 `.github/actions/build-android-release/action.yml`：相同 JDK/SDK、Gradle Wrapper、`:app:assembleRelease`、R8 混淆、资源压缩、arm64 配置；master/dev 分发包也使用相同的签名密钥和证书校验。CI 包就是供用户安装测试的 Release 包，**不会创建 GitHub Release**。两个 workflow 保留各自的触发和分发步骤，手表 RPK 仍随 tag 发布。
 
-master/dev CI 包与正式包签名一致，满足 Android 的版本限制时可以覆盖安装；版本号不会为每次 CI 自动递增，旧版本号的包不能覆盖较新的安装包。其他分支/PR 的临时 Debug 签名通常不能覆盖正式版，也不保证不同 runner 间可覆盖，供代码检查与独立测试使用。
+CI APK 和独立的 R8 mapping artifact 保存 14 天，便于测试用户交付包时还原崩溃堆栈。APK 文件名包含版本、CI 运行编号、Git 短提交号和构建类型，同时保存 `SHA256SUMS` 与 `build-info.json`。App 已有 Git 提交号展示，不改正式版本号规则。
+
+master/dev CI 包与正式包签名一致，满足 Android 的版本限制时可以覆盖安装；版本号不会为每次 CI 自动递增，旧版本号的包不能覆盖较新的安装包。其他分支/PR/fork 不注入正式密钥，使用同一 Release 构建但生成未签名 APK，不能直接安装，也不会发到 Telegram。
+
+交付包构建只执行 `:app:assembleRelease`，不附加 `testReleaseUnitTest` 或 `testDebugUnitTest`。当前项目没有前者，之前同时请求它会让 Gradle 在选择任务时直接失败。仓库现有的 Android 单元测试代码保留；分发脚本的 Python 离线测试继续在共用步骤中运行。
 
 ## 无需自建更新服务器
 
@@ -63,6 +67,6 @@ Telegram 使用官方托管 Bot API，无需部署机器人进程。当前 `send
 - 不再执行额外的 `gradlew dependencies`，不在 CI 调用 `clean`，APK artifact 关闭重复 ZIP 压缩。
 - 不启用未经本项目验证的配置缓存；已有任务构建缓存保持启用。
 - Actions 固定完整提交 SHA，由 Dependabot 每周提出更新。
-- 本地遵守仓库约定，不自动编译；脚本可运行 `python -B -m unittest discover -s .github/scripts -p 'test_*.py'`，工作流可使用 `actionlint` 检查。首次远程 CI 仍需验证完整 Android 工具链和所有单元测试。
+- 本地遵守仓库约定，不自动编译；脚本可运行 `python -B -m unittest discover -s .github/scripts -p 'test_*.py'`，工作流可使用 `actionlint` 检查。完整 APK 构建与签名结果以远程 Actions 为准，安装后的功能仍需实机验证。
 
 参考：[Gradle Actions 缓存](https://github.com/gradle/actions/blob/main/docs/setup-gradle.md)、[GitHub artifact 下载与权限](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)、[Telegram Bot API](https://core.telegram.org/bots/api#senddocument)。
