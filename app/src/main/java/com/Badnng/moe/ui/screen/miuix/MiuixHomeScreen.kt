@@ -1357,6 +1357,7 @@ private fun MiuixMainContent(
                                 onAddClick = { showBottomSheet = true },
                                 navAlignment = effectiveNavAlignment,
                                 useFloatingNavBar = useFloatingNavBar,
+                                reserveToolbarSpace = !isLargeScreen,
                                 onQrDialogVisibilityChange = { isQrDialogVisible = it },
                                 onNavigateToOrderDetail = onNavigateToOrderDetail,
                                 onNavigateToGroupDetail = onNavigateToGroupDetail,

@@ -6,44 +6,56 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.LayerOutsets
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-// 借用外层卡片的 16dp 内边距绘制阴影，不改变子卡片的测量宽度和位置。
+private const val GroupExpansionStaggerMillis = 80L
+private const val GroupExpansionMaxStaggerMillis = 400L
+private val GroupExpansionLiftDistance = 6.dp
 private val GroupExpansionLayerOutsets = LayerOutsets(16.dp)
+internal val GroupOrderContentPadding = 16.dp
 
-/** 外层高度由各子卡片的进度合成，子卡片保持完整尺寸，只沿竖向展开和收回。 */
+/**
+ * 卡片外壳、间距和内容托起同步进行，文字图标作为整体渐显，不参与尺寸压缩。
+ * content 接收的 Modifier 应放在卡片内部的内容行上，已包含内容内边距。
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun <T> MiuixGroupExpansion(
     expanded: Boolean,
     items: List<T>,
     itemKey: (T) -> Any,
-    content: @Composable (T) -> Unit,
+    onAnimationStateChange: (Boolean) -> Unit = {},
+    content: @Composable (T, Modifier) -> Unit,
 ) {
     val motionScheme = MaterialTheme.motionScheme
-    // 已展开的列表重建或详情转场镜像直接显示终态，不重播入场动画。
+    // 列表重建和详情镜像直接使用当前展开态，不重播入场。
     val initiallyExpanded = remember { expanded }
     val itemStates = items.map { item ->
-        key(itemKey(item)) { remember { GroupExpansionItemState(initiallyExpanded) } }
+        key(itemKey(item)) {
+            remember { GroupExpansionItemState(initiallyExpanded) }
+        }
     }
     val retainContent by remember(expanded, itemStates) {
         derivedStateOf {
@@ -53,25 +65,47 @@ internal fun <T> MiuixGroupExpansion(
             }
         }
     }
+    val isAnimating by remember(expanded, itemStates) {
+        derivedStateOf {
+            val target = if (expanded) 1f else 0f
+            itemStates.any {
+                it.progress.isRunning || it.opacity.isRunning ||
+                    it.progress.value != target || it.opacity.value != target
+            }
+        }
+    }
+    val latestOnAnimationStateChange by rememberUpdatedState(onAnimationStateChange)
+    if (!LocalCardMorphIsMirror.current) {
+        DisposableEffect(Unit) {
+            onDispose { latestOnAnimationStateChange(false) }
+        }
+        LaunchedEffect(isAnimating) {
+            // 最后一帧高度先完成布局，再恢复列表位移动画，避免把最后一次尺寸变化当成重排。
+            // 快速反向会取消此等待；状态切换过程中不再先报告一次 false。
+            if (!isAnimating) withFrameNanos { }
+            latestOnAnimationStateChange(isAnimating)
+        }
+    }
 
     LaunchedEffect(expanded, itemStates, motionScheme) {
         val target = if (expanded) 1f else 0f
-        val lastIndex = itemStates.lastIndex
-        val staggerSpanMillis = minOf(lastIndex.coerceAtLeast(0) * 40L, 160L)
+        // 复用一镜到底的临界阻尼弹簧：展开舒缓，收起稍快，末段自然减速。
+        val spatialSpec = if (expanded) CardMorphExpandSpring else CardMorphCollapseSpring
+        val lastIndex = itemStates.lastIndex.coerceAtLeast(0)
+        val staggerSpan = minOf(lastIndex * GroupExpansionStaggerMillis, GroupExpansionMaxStaggerMillis)
         itemStates.forEachIndexed { index, state ->
             launch {
                 if (state.progress.value == target && state.opacity.value == target) return@launch
-                // 展开从上往下、收起从下往上；中途反向接着当前值，不重新排队。
-                when {
-                    expanded && state.progress.value == 0f && state.opacity.value == 0f ->
-                        delay(24L + staggerSpanMillis * index / lastIndex.coerceAtLeast(1))
-                    !expanded && state.progress.value == 1f && state.opacity.value == 1f ->
-                        delay(staggerSpanMillis * (lastIndex - index) / lastIndex.coerceAtLeast(1))
+                // 已在运动中的行立即反向；停在端点的行才依次启动，快速连点不重置进度。
+                val atOppositeEnd = state.progress.value == 1f - target &&
+                    state.opacity.value == 1f - target
+                if (atOppositeEnd) {
+                    val sequenceIndex = if (expanded) index else lastIndex - index
+                    delay(staggerSpan * sequenceIndex / lastIndex.coerceAtLeast(1))
                 }
                 coroutineScope {
-                    launch {
-                        state.progress.animateTo(target, motionScheme.defaultSpatialSpec<Float>())
-                    }
+                    // 高度与显隐一起启动，不再等待预留空间或淡出完成才执行下一阶段。
+                    launch { state.progress.animateTo(target, spatialSpec) }
                     launch {
                         state.opacity.animateTo(target, motionScheme.defaultEffectsSpec<Float>())
                     }
@@ -81,43 +115,58 @@ internal fun <T> MiuixGroupExpansion(
     }
 
     if (!retainContent) return
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            // 上下继续跟随展开高度裁剪，左右留出阴影空间，并保留裁剪区的点击边界。
-            .clipScrollableContainer(Orientation.Vertical),
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         items.forEachIndexed { index, item ->
             key(itemKey(item)) {
                 val state = itemStates[index]
+                val contentModifier = Modifier
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(
+                            constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity),
+                        )
+                        val progress = state.progress.value.coerceIn(0f, 1f)
+                        val height = (placeable.height * progress).roundToInt()
+                        val lift = (GroupExpansionLiftDistance.toPx() * (1f - progress)).roundToInt()
+                        val padding = GroupOrderContentPadding.roundToPx()
+                        // 最下面一行内容始终落在卡片内；空间不足时淡出整个内容块，不能拦腰裁字。
+                        // 随底部内边距连续恢复可见度，外壳仍在运动时内容就开始出现，无阶段切换。
+                        val contentBottom = placeable.height - padding + lift
+                        val visibility = ((height - contentBottom).toFloat() / padding.coerceAtLeast(1))
+                            .coerceIn(0f, 1f)
+                        layout(placeable.width, height) {
+                            placeable.placeRelativeWithLayer(0, lift) {
+                                alpha = state.opacity.value.coerceIn(0f, 1f) * visibility
+                                outsets = GroupExpansionLayerOutsets
+                            }
+                        }
+                    }
+                    .padding(GroupOrderContentPadding)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 收回的下方卡片滑到上方卡片背后，不盖住尚未收起的内容。
-                        .zIndex(-index.toFloat())
+                        // 只作行边界保护；卡片外壳根据内容行的实时高度绘制，不再裁切整张满高卡片。
+                        .clipScrollableContainer(Orientation.Vertical)
                         .layout { measurable, constraints ->
                             val placeable = measurable.measure(
                                 constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity),
                             )
                             val progress = state.progress.value.coerceIn(0f, 1f)
-                            // 首项含展开按钮后的 8dp 间隔，随内容一起收完，避免末帧跳高。
-                            val leading = (if (index == 0) 14.dp else 12.dp).toPx()
-                            val trailing = (if (index == items.lastIndex) 6.dp else 0.dp).toPx()
-                            val visibleBottom = ((leading + placeable.height) * progress).roundToInt()
-                            val height = ((leading + placeable.height + trailing) * progress).roundToInt()
+                            val top = ((if (index == 0) 14.dp else 4.dp).toPx() * progress).roundToInt()
+                            val bottom = ((if (index == items.lastIndex) 6.dp else 8.dp).toPx() * progress)
+                                .roundToInt()
+                            // 子卡片已返回当前高度，这里只同步收放行间距，不能再乘一次进度。
+                            val height = top + placeable.height + bottom
                             layout(placeable.width, height) {
-                                // 子卡片底边和占用高度共用进度，外层不会抢先裁掉底部。
-                                // x 始终为 0；完整宽度、文字和圆角不参与缩放或横向过渡。
-                                placeable.placeRelative(x = 0, y = visibleBottom - placeable.height)
+                                placeable.placeRelative(0, top)
                             }
                         }
                         .graphicsLayer {
-                            alpha = state.opacity.value.coerceIn(0f, 1f)
-                            // 淡入淡出的离屏图层也需要留白，否则仍会把卡片边缘阴影裁掉。
+                            // 完全收起时不留下零高度卡片的阴影；其余帧外壳始终跟随高度显示。
+                            alpha = if (state.progress.value > 0f) 1f else 0f
                             outsets = GroupExpansionLayerOutsets
                         },
                 ) {
-                    content(item)
+                    content(item, contentModifier)
                 }
             }
         }

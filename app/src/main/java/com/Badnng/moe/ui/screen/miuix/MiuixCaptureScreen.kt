@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -67,7 +68,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -148,6 +148,8 @@ fun MiuixCaptureScreen(
     onAddClick: () -> Unit = {},
     navAlignment: String = "center",
     useFloatingNavBar: Boolean = false,
+    /** 手机端在列表末尾预留工具栏的滚动避让空间，大屏沿用现有布局。 */
+    reserveToolbarSpace: Boolean = true,
     onQrDialogVisibilityChange: (Boolean) -> Unit = {},
     onNavigateToOrderDetail: (String) -> Unit = {},
     onNavigateToGroupDetail: (Long) -> Unit = {},
@@ -222,6 +224,9 @@ fun MiuixCaptureScreen(
     }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var selectedGroupIds by remember { mutableStateOf(setOf<Long>()) }
+    val animatingGroups = remember { mutableStateMapOf<Long, Boolean>() }
+    // 高度动画直接推动后续行；期间移除 animateItem，清除旧位移，不能只把 placementSpec 设为 null。
+    val groupExpansionRunning = animatingGroups.isNotEmpty()
 
     val currentSelectableOrders = if (selectedTab == 0) {
         filteredIncompleteOrders.filter { it.groupId == null }
@@ -241,6 +246,12 @@ fun MiuixCaptureScreen(
     val hasSelection = selectedIds.isNotEmpty() || selectedGroupIds.isNotEmpty()
 
     val density = LocalDensity.current
+    var homeToolbarHeightPx by remember(useFloatingNavBar) { mutableIntStateOf(0) }
+    val homeToolbarHeight = if (homeToolbarHeightPx > 0) {
+        with(density) { homeToolbarHeightPx.toDp() }
+    } else {
+        if (useFloatingNavBar) 152.dp else 56.dp
+    }
     var editActionToolbarHeightPx by remember { mutableIntStateOf(0) }
     var editSelectionToolbarHeightPx by remember { mutableIntStateOf(0) }
     val editActionToolbarHeight = if (editActionToolbarHeightPx > 0) {
@@ -268,6 +279,11 @@ fun MiuixCaptureScreen(
         MiuixHomeBottomLayoutDefaults.ContentSpacing
     val pageContentBottomPadding = if (isEditMode) {
         editContentBottomPadding
+    } else if (reserveToolbarSpace && selectedTab == 0) {
+        // 留白随内容滚动，让末尾按钮能滚到工具栏上方；不能缩短整个列表视口。
+        // 工具栏临时隐藏时仍保持此值，避免滚动中或详情返回时内容跳位。
+        bottomLayoutInfo.toolbarBottomPadding + homeToolbarHeight +
+            MiuixHomeBottomLayoutDefaults.ContentSpacing
     } else {
         bottomLayoutInfo.pageContentBottomPadding
     }
@@ -420,8 +436,10 @@ fun MiuixCaptureScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .animateItem(
-                                    placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                .then(
+                                    if (groupExpansionRunning) Modifier else Modifier.animateItem(
+                                        placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                    )
                                 )
                                 .padding(bottom = 12.dp)
                         ) {
@@ -451,7 +469,12 @@ fun MiuixCaptureScreen(
                                     group = group,
                                     viewModel = viewModel,
                                     isExpanded = group.id in expandedGroupIds,
+                                    onExpansionAnimationChange = { running ->
+                                        if (running) animatingGroups[group.id] = true
+                                        else animatingGroups.remove(group.id)
+                                    },
                                     onExpandedChange = { expanded ->
+                                        animatingGroups[group.id] = true
                                         onExpandedGroupsChange(
                                             if (expanded) expandedGroupIds + group.id
                                             else expandedGroupIds - group.id
@@ -482,8 +505,10 @@ fun MiuixCaptureScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .animateItem(
-                                    placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                .then(
+                                    if (groupExpansionRunning) Modifier else Modifier.animateItem(
+                                        placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                    )
                                 )
                                 .padding(bottom = 12.dp)
                         ) {
@@ -556,8 +581,10 @@ fun MiuixCaptureScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .animateItem(
-                                    placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                .then(
+                                    if (groupExpansionRunning) Modifier else Modifier.animateItem(
+                                        placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                    )
                                 )
                                 .padding(bottom = 12.dp)
                         ) {
@@ -586,7 +613,12 @@ fun MiuixCaptureScreen(
                                     group = group,
                                     viewModel = viewModel,
                                     isExpanded = group.id in expandedGroupIds,
+                                    onExpansionAnimationChange = { running ->
+                                        if (running) animatingGroups[group.id] = true
+                                        else animatingGroups.remove(group.id)
+                                    },
                                     onExpandedChange = { expanded ->
+                                        animatingGroups[group.id] = true
                                         onExpandedGroupsChange(
                                             if (expanded) expandedGroupIds + group.id
                                             else expandedGroupIds - group.id
@@ -615,8 +647,10 @@ fun MiuixCaptureScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .animateItem(
-                                    placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                .then(
+                                    if (groupExpansionRunning) Modifier else Modifier.animateItem(
+                                        placementSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                                    )
                                 )
                                 .padding(bottom = 12.dp)
                         ) {
@@ -678,7 +712,10 @@ fun MiuixCaptureScreen(
         VerticalScrollBar(
             adapter = rememberScrollBarAdapter(lazyListState),
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            trackPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = pageContentBottomPadding),
+            trackPadding = PaddingValues(
+                top = innerPadding.calculateTopPadding(),
+                bottom = if (isEditMode) editContentBottomPadding else bottomLayoutInfo.pageContentBottomPadding,
+            ),
         )
         }
     }
@@ -869,6 +906,7 @@ fun MiuixCaptureScreen(
             .graphicsLayer { alpha = bottomFade() }
     ) {
         FloatingToolbar(
+            modifier = Modifier.onSizeChanged { homeToolbarHeightPx = it.height },
             color = MiuixTheme.colorScheme.surfaceContainer,
             cornerRadius = 16.dp,
         ) {
@@ -1264,6 +1302,7 @@ private fun MiuixOrderGroupCard(
     /** 展开态由外部持有：列表卡片与一镜到底叠加层里的镜像卡片必须共用同一份状态。 */
     isExpanded: Boolean = group.id in LocalCardMorphExpandedGroups.current,
     onExpandedChange: (Boolean) -> Unit = {},
+    onExpansionAnimationChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1389,7 +1428,7 @@ private fun MiuixOrderGroupCard(
                             style = MiuixTheme.textStyles.body2,
                             color = MiuixTheme.colorScheme.primary
                         )
-                        val arrowRotation by animateFloatAsState(
+                        val arrowRotation = animateFloatAsState(
                             targetValue = if (isExpanded) 180f else 0f
                         )
                         Icon(
@@ -1398,7 +1437,7 @@ private fun MiuixOrderGroupCard(
                             tint = MiuixTheme.colorScheme.primary,
                             modifier = Modifier
                                 .size(16.dp)
-                                .rotate(arrowRotation)
+                                .graphicsLayer { rotationZ = arrowRotation.value }
                         )
                     }
                 }
@@ -1407,10 +1446,12 @@ private fun MiuixOrderGroupCard(
                     expanded = isExpanded && !isEditMode,
                     items = groupOrders,
                     itemKey = { it.id },
-                ) { order ->
+                    onAnimationStateChange = onExpansionAnimationChange,
+                ) { order, contentModifier ->
                     CardMorphCard(morphKey = orderMorphKey(order.id), payload = order) {
                         MiuixGroupOrderItem(
                             order = order,
+                            contentModifier = contentModifier,
                             onClick = { performHaptic(); onOpenOrder(order) },
                             onMarkCompleted = {
                                 performHaptic()

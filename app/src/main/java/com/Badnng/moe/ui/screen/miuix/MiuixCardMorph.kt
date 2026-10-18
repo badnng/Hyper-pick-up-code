@@ -55,10 +55,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -103,6 +105,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 data class CardMorphBounds(
     val rect: Rect,
     val cornerRadius: Dp,
+    /** 命中测试使用裁剪后的可见区域；形变仍使用完整卡片尺寸。 */
+    val visibleRect: Rect = rect,
 )
 
 /**
@@ -172,6 +176,9 @@ internal val LocalCardMorphExpandedGroups = compositionLocalOf<Set<Long>> { empt
 /** 活跃会话的源卡片由形变层绘制阴影，列表和镜像卡片不再各画一份。 */
 internal val LocalCardMorphActiveKeys = compositionLocalOf<Set<String>> { emptySet() }
 
+/** 源卡片镜像仅绘制，不登记点击目标或回写列表动画状态。 */
+internal val LocalCardMorphIsMirror = compositionLocalOf { false }
+
 /** 与 miuix `Card` 的默认圆角保持一致（转场起始帧要和真实卡片完全重合）。 */
 private val CardMorphCornerRadius = 16.dp
 private val CardMorphHorizontalClearance = 6.dp
@@ -218,6 +225,7 @@ internal fun CardMorphCard(morphKey: String, payload: Any? = null, content: @Com
                         bottom = position.y + size.height,
                     ),
                     cornerRadius = CardMorphCornerRadius,
+                    visibleRect = coordinates.boundsInRoot(),
                 )
                 if (boundsState.value != next) boundsState.value = next
             },
@@ -237,33 +245,29 @@ internal fun CardMorphCard(morphKey: String, payload: Any? = null, content: @Com
     }
 }
 
-/** 展开（入栈）：临界阻尼，刚度按体感放慢（逆向原值 380，用户反馈偏快）。 */
-private val CardMorphExpandSpring = spring<Float>(
+/** 卡片展开共用曲线：临界阻尼，一镜到底与组内逐张展开保持相同节奏。 */
+internal val CardMorphExpandSpring = spring<Float>(
     dampingRatio = 1.0f,
     stiffness = 220f,
     visibilityThreshold = 0.001f,
 )
 
-/** 收起（出栈）：刚度更高，回程更快（与放慢后的展开保持同一比例）。 */
-private val CardMorphCollapseSpring = spring<Float>(
+/** 卡片收起共用曲线：回程稍快，保持平滑减速且不回弹。 */
+internal val CardMorphCollapseSpring = spring<Float>(
     dampingRatio = 1.0f,
     stiffness = 300f,
     visibilityThreshold = 0.001f,
 )
 
 /**
- * 内容淡入区间：t 到 [CONTENT_FADE_END] 时完全显影。
- *
- * 窗口从 [0.10, 0.35] 收到 [0.15, 0.45]：这段窗口在 `CardMorphExpandSpring`（stiffness 220）下
- * 只有约 8 帧@120Hz / 4 帧@60Hz，源卡片与详情页两份完全不同的内容在这几帧里互相穿透（双影）。
- * 起点推到 0.15 让「卡片先稳住」再开始换页，终点放到 0.45 让换页更平缓。
- * 注意 [SOURCE_LAYER_EXIT] = 0.4 与 [RADIUS_RAMP_END] = 0.5 的既有语义不变。
+ * 先淡出源卡片，再淡入详情；返回沿同一进度反向执行。
+ * 两份内容不能同时显影，否则取件码会叠到「识别详情」标题和截图上。
  */
-private const val CONTENT_FADE_START = 0.15f
+private const val CONTENT_FADE_START = 0.2f
 private const val CONTENT_FADE_END = 0.45f
 
-/** 源卡片层退场点：t 超过它之后内容已经完全接管。 */
-private const val SOURCE_LAYER_EXIT = 0.4f
+/** 源卡片完全退场后详情才开始显影，两个透明度区间不重叠。 */
+private const val SOURCE_LAYER_EXIT = CONTENT_FADE_START
 
 /**
  * 源卡片层的**最大绘制进度**：t 到达它之后连同休息态一起不再组合源卡片层。
@@ -465,7 +469,7 @@ class CardMorphController internal constructor(
     fun cardAt(position: Offset): String? {
         val visibleOwner = restingSession()?.key
         val matches: (CardMorphRegistration) -> Boolean = { item ->
-            item.ownerKey == visibleOwner && item.bounds()?.rect?.contains(position) == true
+            item.ownerKey == visibleOwner && item.bounds()?.visibleRect?.contains(position) == true
         }
         // 展开后的组卡片与子订单卡片区域重叠，命中范围更小的子卡片应优先。
         val candidates = visibleCards.filter(matches).ifEmpty { retainedCards.filter(matches) }
@@ -1006,7 +1010,7 @@ fun MiuixCardMorphOverlay(
                     .pointerInput(overlaySize, targetRadiusPx) {
                         detectTapGestures(onPress = { position ->
                             val owner = latestCollapsingSession.value
-                            if (owner != null && (owner.bounds.rect.contains(position) || sessionContains(
+                            if (owner != null && (owner.bounds.visibleRect.contains(position) || sessionContains(
                                     owner, position, overlaySize, targetRadiusPx,
                                     with(density) { CardMorphHorizontalClearance.toPx() },
                                     with(density) { owner.bounds.cornerRadius.toPx() },
@@ -1061,15 +1065,10 @@ private fun CardMorphLayer(
     val sourceRadiusPx = with(density) { session.bounds.cornerRadius.toPx() }
     val cardWidthDp = with(density) { from.width.toDp() }
     val cardHeightDp = with(density) { from.height.toDp() }
-    // 镜像卡片仍在最上层时带有原卡的点击回调，必须拦截；
-    // 同卡片的反向进入由叠加层统一命中，从当前进度接续。
-    val blockSourceTouches by remember {
-        derivedStateOf { session.progress < SOURCE_LAYER_EXIT }
-    }
     val detailInteractive by remember(session, isTopSession) {
         derivedStateOf { isTopSession && !session.collapsing && session.progress >= 0.999f }
     }
-    // 铺满之后不再组合卡片（它在 t≥0.4 就全透明了），只在收回时重新挂回来。
+    // 铺满之后不再组合卡片，只在收回时重新挂回来。
     // 休息态（progress = 1.0，会话仍留在 sessions 里由叠加层独占绘制）**必须**不挂：
     // 叠加层里的卡片是列表那张卡的**另一份 Compose 实例**，它的
     // `rememberSaveable { mutableStateOf(false) }` 与列表那份各持一份状态，
@@ -1231,11 +1230,18 @@ private fun CardMorphLayer(
                         // （真机实测：展开卡底边超屏 617px，加了补偿之后整卡下移 617px，
                         //  起始帧出现空白带、收回后留下一张错位的「幽灵卡」）。
                         translationY = frame.curY
-                        alpha = (1f - frame.contentAlpha).coerceIn(0f, 1f)
+                        alpha = (1f - t / SOURCE_LAYER_EXIT).coerceIn(0f, 1f)
                     }
-                    .then(if (blockSourceTouches) Modifier.blockMorphCardTouches() else Modifier),
+                    .clearAndSetSemantics { }
+                    .blockMorphCardTouches(),
             ) {
-                session.card.invoke()
+                // 镜像仅用于绘制。组内子卡片不能再次登记，覆盖主页的真实坐标和返回落点。
+                CompositionLocalProvider(
+                    LocalCardMorphSource provides null,
+                    LocalCardMorphIsMirror provides true,
+                ) {
+                    session.card.invoke()
+                }
             }
         }
     }

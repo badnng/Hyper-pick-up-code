@@ -444,6 +444,7 @@ internal fun MiuixGroupOrderItem(
     order: OrderEntity,
     onClick: () -> Unit,
     onMarkCompleted: () -> Unit,
+    contentModifier: Modifier = Modifier.padding(GroupOrderContentPadding),
 ) {
     val context = LocalContext.current
     val customIcon = remember(order.brandName) {
@@ -455,7 +456,7 @@ internal fun MiuixGroupOrderItem(
     val shadowEnabled = orderMorphKey(order.id) !in LocalCardMorphActiveKeys.current
     Card(modifier = Modifier.fillMaxWidth().miuixReadableCardShadow(shadowEnabled), onClick = onClick) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier.fillMaxWidth().then(contentModifier),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (customIcon != null) {

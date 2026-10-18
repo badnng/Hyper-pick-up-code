@@ -16,8 +16,10 @@ import com.Badnng.moe.wearable.WearableSyncManager
 import com.Badnng.moe.wearable.WearableSyncSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class OrderViewModel(application: Application) : AndroidViewModel(application), WearableSyncSource {
@@ -45,6 +47,9 @@ class OrderViewModel(application: Application) : AndroidViewModel(application), 
 
     private val _completedGroups = MutableStateFlow<List<OrderGroup>>(emptyList())
     val completedGroups: StateFlow<List<OrderGroup>> = _completedGroups.asStateFlow()
+
+    // 列表重组和详情转场镜像共用最新值，不能每次调用都从空列表重新订阅。
+    private val groupOrderFlows = mutableMapOf<Long, StateFlow<List<OrderEntity>>>()
 
     init {
         val database = OrderDatabase.getDatabase(application)
@@ -165,15 +170,15 @@ class OrderViewModel(application: Application) : AndroidViewModel(application), 
         return groupRepository.insertGroup(group)
     }
 
-    fun getOrdersByGroupId(groupId: Long): StateFlow<List<OrderEntity>> {
-        val result = MutableStateFlow<List<OrderEntity>>(emptyList())
-        viewModelScope.launch {
-            groupRepository.getOrdersByGroupId(groupId).collect { orders ->
-                result.value = orders
-            }
+    fun getOrdersByGroupId(groupId: Long): StateFlow<List<OrderEntity>> =
+        groupOrderFlows.getOrPut(groupId) {
+            groupRepository.getOrdersByGroupId(groupId).stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+                initialValue = _orders.value.filter { it.groupId == groupId }
+                    .sortedByDescending { it.createdAt },
+            )
         }
-        return result.asStateFlow()
-    }
 
     fun markGroupAsCompleted(groupId: Long) {
         viewModelScope.launch {

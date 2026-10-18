@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -52,10 +51,6 @@ internal fun MiuixTopBarBackButton(
     val colorMixingAllowed = rememberMiuixIconColorMixingAllowed()
     val backdrop = LocalMiuixTopBarBackdrop.current.takeIf { colorMixingAllowed }
     val collapseProgress = LocalMiuixTopBarCollapseProgress.current
-    // 组合期只观察是否完全收起；逐帧的阴影透明度在绘制阶段读取。
-    val showShadow by remember(collapseProgress) {
-        derivedStateOf { collapseProgress() < 0.999f }
-    }
     val buttonSize = 44.dp
     // 半径取边长的一半，Miuix Squircle 的着色器会自行过渡为正圆。
     val cornerRadius = buttonSize / 2
@@ -76,17 +71,13 @@ internal fun MiuixTopBarBackButton(
     val highlightAlpha = if (isDarkTheme) 0.18f else 1f
     val shadowColor = if (isDarkTheme) colorScheme.surface else colorScheme.onSurface
     val shadowAlpha = if (isDarkTheme) 0.4f else 0.16f
-    val shadowModifier = if (showShadow) {
-        Modifier.dropShadow(shape = effectShape) {
-            radius = 6.dp.toPx()
-            // 正面来光：阴影居中衬托按钮，四周均匀扩散。
-            offset = Offset.Zero
-            color = shadowColor
-            alpha = shadowAlpha * (1f - collapseProgress().coerceIn(0f, 1f))
-        }
-    } else {
-        // 完全收起后移除阴影节点，不保留透明阴影的绘制开销。
-        Modifier
+    val shadowModifier = Modifier.dropShadow(shape = effectShape) {
+        radius = 6.dp.toPx()
+        // 正面来光：阴影居中衬托按钮，四周均匀扩散。
+        offset = Offset.Zero
+        color = shadowColor
+        // 收起时仍保留 75% 强度；进度只在绘制阶段读取，滚动不会逐帧重组按钮。
+        alpha = shadowAlpha * (1f - 0.25f * collapseProgress().coerceIn(0f, 1f))
     }
     val glassModifier = if (backdrop != null) {
         Modifier.textureBlur(
