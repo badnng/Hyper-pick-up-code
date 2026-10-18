@@ -9,7 +9,9 @@
 | 手动运行 CI | 按所选分支采用以上规则 | Actions；master/dev 可发 Telegram | 否 |
 | 推送 `v*` tag | 正式签名 Release APK + 手表 RPK | GitHub Release | 是 |
 
-GitHub Actions 在代码 **push 到 GitHub** 时触发，不会感知本地 commit。如果一次 push 包含多个 commit，构建的是这次 push 的最后一个提交；需要每个 commit 都有包时，逐次 push。普通 push 不取消旧构建；PR 的旧构建会被新提交取消。同仓库分支同时有 PR 时，两种事件都会检查。
+GitHub Actions 在代码 **push 到 GitHub** 时触发，不会感知本地 commit。如果一次 push 包含多个 commit，构建的是这次 push 的最后一个提交；需要每个 commit 都有包时，逐次 push。普通 push 不取消旧构建；PR 的旧构建会被新提交取消。同仓库人工分支同时有 PR 时，两种事件都会检查；`dependabot/**` 分支只执行 PR 检查，不重复执行 push 构建。
+
+Actions 列表中，`Dependabot Updates` 是 GitHub 检查 Action 依赖并提出升级 PR 的任务，不构建或发布 App。它创建 PR 后会触发一次 `CI`；`Build and Release` 只在推送 `v*` tag 时运行。共用步骤里的 `release` 是 Android 构建类型，不代表创建 GitHub Release。
 
 CI 与 tag 发布的 Android 构建步骤共用 `.github/actions/build-android-release/action.yml`：相同 JDK/SDK、Gradle Wrapper、`:app:assembleRelease`、R8 混淆、资源压缩、arm64 配置；master/dev 分发包也使用相同的签名密钥和证书校验。CI 包就是供用户安装测试的 Release 包，**不会创建 GitHub Release**。两个 workflow 保留各自的触发和分发步骤，手表 RPK 仍随 tag 发布。
 
@@ -63,6 +65,7 @@ Telegram 使用官方托管 Bot API，无需部署机器人进程。当前 `send
 
 - JDK 21 与当前项目 toolchain 对齐；使用仓库 Gradle Wrapper。
 - SDK 包使用 Google 仓库中的 `platforms;android-37.0`，Gradle 同时设置 `compileSdk = 37` 和 `compileSdkMinor = 0`；不要简化为不存在的 `platforms;android-37`。
+- APK 签名校验固定使用已安装的 Build Tools `36.1.0`，不自动挑选 runner 的最高版本；解析同时兼容旧版 `Signer #1` 和新版 `V2 Signer:` 等格式，读取失败与证书不匹配均会中止分发。
 - `setup-gradle` 缓存 wrapper、依赖、转换结果及 Gradle 本地构建缓存。master/dev 可写；PR/其他分支/tag 只读，避免 PR 写入共享构建缓存。
 - 不再执行额外的 `gradlew dependencies`，不在 CI 调用 `clean`，APK artifact 关闭重复 ZIP 压缩。
 - 不启用未经本项目验证的配置缓存；已有任务构建缓存保持启用。

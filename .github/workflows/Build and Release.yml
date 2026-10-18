@@ -31,7 +31,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/build_metadata.py check-release
 
-      - name: Build Android release
+      - name: Assemble and verify Android APK
         uses: ./.github/actions/build-android-release
         with:
           signing-mode: release

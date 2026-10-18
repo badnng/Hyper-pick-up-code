@@ -1,5 +1,5 @@
-name: Build Android release
-description: Shared Android release build for CI distribution and tagged releases
+name: Assemble and verify Android APK
+description: Shared compilation, signing and verification for Android release APKs
 
 inputs:
   signing-mode:

@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    # Dependabot 的更新由 PR 检查，避免同一提交再构建一次。
+    branches: ['**', '!dependabot/**']
   pull_request:
   workflow_dispatch:
 
@@ -29,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build Android release
+      - name: Assemble and verify Android APK
         uses: ./.github/actions/build-android-release
         with:
           signing-mode: ${{ env.DISTRIBUTION_BUILD == 'true' && 'release' || 'unsigned' }}
