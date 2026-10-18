@@ -29,6 +29,8 @@ val generatePrivacyAssets by tasks.registering(Copy::class) {
 android {
     namespace = "com.Badnng.moe"
     compileSdk = 37
+    // Google SDK 仓库以 android-37.0 发布，明确 minor，避免解析为 android-37。
+    compileSdkMinor = 0
 
     lint {
         checkReleaseBuilds = false

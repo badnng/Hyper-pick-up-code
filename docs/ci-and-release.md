@@ -58,6 +58,7 @@ Telegram 使用官方托管 Bot API，无需部署机器人进程。当前 `send
 ## 缓存与检查
 
 - JDK 21 与当前项目 toolchain 对齐；使用仓库 Gradle Wrapper。
+- SDK 包使用 Google 仓库中的 `platforms;android-37.0`，Gradle 同时设置 `compileSdk = 37` 和 `compileSdkMinor = 0`；不要简化为不存在的 `platforms;android-37`。
 - `setup-gradle` 缓存 wrapper、依赖、转换结果及 Gradle 本地构建缓存。master/dev 可写；PR/其他分支/tag 只读，避免 PR 写入共享构建缓存。
 - 不再执行额外的 `gradlew dependencies`，不在 CI 调用 `clean`，APK artifact 关闭重复 ZIP 压缩。
 - 不启用未经本项目验证的配置缓存；已有任务构建缓存保持启用。
