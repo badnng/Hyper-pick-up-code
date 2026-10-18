@@ -22,6 +22,7 @@ class HyperNoteApp : Application(), Application.ActivityLifecycleCallbacks {
         super.onCreate()
         AppLogger.init(this)
         AppMemoryPressureState.initialize(this)
+        com.Badnng.moe.widget.OrderWidgetUpdates.start(this)
         FairMemoryManager.initialize(this)
         registerActivityLifecycleCallbacks(this)
         AppLogger.app("Application onCreate, process=${android.os.Process.myPid()}")
@@ -76,6 +77,8 @@ class HyperNoteApp : Application(), Application.ActivityLifecycleCallbacks {
         startedActivityCount += 1
         if (enteringForeground) {
             AppMemoryPressureState.onAppForegrounded()
+            com.Badnng.moe.widget.OrderWidgetUpdates.start(this)
+            com.Badnng.moe.widget.OrderWidgetUpdates.publishPreviews(this)
         }
         AppLogger.app("Activity started: ${activity.javaClass.simpleName}")
     }

@@ -227,6 +227,35 @@
                 android:resource="@xml/volume_shortcut_accessibility_service" />
         </service>
 
+        <receiver
+            android:name=".widget.SquareOrderWidgetReceiver"
+            android:label="@string/widget_square_name"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/order_widget_square" />
+        </receiver>
+        <receiver
+            android:name=".widget.WideOrderWidgetReceiver"
+            android:label="@string/widget_wide_name"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/order_widget_wide" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.TallOrderWidgetReceiver"
+            android:label="@string/widget_tall_name"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/order_widget_tall" />
+        </receiver>
+
         <receiver android:name=".receiver.NotificationReceiver" android:exported="false" />
         <receiver android:name=".receiver.TestNotificationDismissReceiver" android:exported="false" />
         <receiver android:name=".receiver.ScheduledNotificationReceiver" android:exported="false" />

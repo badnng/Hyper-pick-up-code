@@ -48,4 +48,10 @@ interface OrderDao {
 
     @Query("SELECT * FROM orders ORDER BY createdAt DESC")
     suspend fun getAllOrdersList(): List<OrderEntity>
+
+    @Query("SELECT * FROM orders WHERE groupId = :groupId ORDER BY createdAt DESC")
+    suspend fun getOrdersInGroup(groupId: Long): List<OrderEntity>
+
+    @Query("UPDATE orders SET groupId = NULL WHERE groupId = :groupId")
+    suspend fun detachGroupMembers(groupId: Long)
 }

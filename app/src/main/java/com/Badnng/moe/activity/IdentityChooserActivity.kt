@@ -52,6 +52,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 class IdentityChooserActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val widgetPlatform = intent.getStringExtra(com.Badnng.moe.widget.OrderWidgetNavigation.IDENTITY_PLATFORM)
+        if (widgetPlatform == "taobao" || widgetPlatform == "pdd") {
+            com.Badnng.moe.widget.OrderWidgetNavigation.haptic(this)
+            if (widgetPlatform == "taobao") openTaobaoIdentityEntry() else openPddIdentityEntry()
+            finish()
+            return
+        }
         EdgeToEdgeHelper.applyQuickViewEdgeToEdge(this)
         setContent {
             澎湃记Theme(transparentBackground = true) {
@@ -85,6 +92,7 @@ class IdentityChooserActivity : ComponentActivity() {
             i.setClassName(pkg, "com.taobao.browser.BrowserActivity")
             startActivity(i)
         } catch (_: Exception) {
+            showIdentityUnavailable("淘宝")
         }
     }
 
@@ -109,9 +117,16 @@ class IdentityChooserActivity : ComponentActivity() {
             if (i != null) {
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(i)
+            } else {
+                showIdentityUnavailable("拼多多")
             }
         } catch (_: Exception) {
+            showIdentityUnavailable("拼多多")
         }
+    }
+
+    private fun showIdentityUnavailable(platform: String) {
+        android.widget.Toast.makeText(this, "无法打开${platform}身份码，请确认已安装对应应用", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 

@@ -42,10 +42,11 @@ object BrandIconResolver {
 
     data class IconMapping(val iconPath: String, val keywords: String)
 
-    fun resolveCustomIconBitmap(context: Context, brandName: String?): Bitmap? {
+    // 小组件每次刷新可跳过内存缓存，确保自定义映射修改或恢复后读取最新文件。
+    fun resolveCustomIconBitmap(context: Context, brandName: String?, useCache: Boolean = true): Bitmap? {
         if (brandName.isNullOrBlank()) return null
         val cacheKey = "custom_${brandName}"
-        bitmapCache.get(cacheKey)?.let { return it }
+        if (useCache) bitmapCache.get(cacheKey)?.let { return it }
         val mappings = getCustomMappings(context)
         for (mapping in mappings) {
             if (mapping.iconPath.isEmpty()) continue
@@ -54,7 +55,7 @@ object BrandIconResolver {
                 val file = File(mapping.iconPath)
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
-                    if (bmp != null) bitmapCache.put(cacheKey, bmp)
+                    if (useCache && bmp != null) bitmapCache.put(cacheKey, bmp)
                     return bmp
                 }
             }

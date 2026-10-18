@@ -46,3 +46,8 @@
 # Xiaomi Wearable AIDL contract and Parcelable callback models.
 -keep class com.xiaomi.xms.wearable.** { *; }
 -keep interface com.xiaomi.xms.wearable.** { *; }
+# 桌面 action / Worker 会以类名持久化并反射创建，升级后也应保持入口稳定。
+-keep class com.Badnng.moe.widget.** implements androidx.glance.appwidget.action.ActionCallback { public <init>(); }
+-keep class com.Badnng.moe.widget.SquareOrderWidgetReceiver { public <init>(); }
+-keep class com.Badnng.moe.widget.WideOrderWidgetReceiver { public <init>(); }
+-keep class com.Badnng.moe.widget.TallOrderWidgetReceiver { public <init>(); }

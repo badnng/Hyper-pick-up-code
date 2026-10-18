@@ -68,6 +68,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     var intentToProcess by mutableStateOf<Intent?>(null)
+    private var widgetHomeGeneration by mutableIntStateOf(0)
     private lateinit var projectionManager: MediaProjectionManager
     private var isFromNotification = false
     private lateinit var settingsPrefs: SharedPreferences
@@ -176,7 +177,8 @@ class MainActivity : ComponentActivity() {
             .getBoolean("persistent_notification_enabled", false) || wearableSyncEnabled
 
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        intentToProcess = intent
+        widgetHomeGeneration = savedInstanceState?.getInt("widget_home_generation") ?: 0
+        processHomeIntent(intent)
 
         val shouldShowOnboarding =
             !settingsPrefs.getBoolean("onboarding_completed", false) ||
@@ -283,7 +285,11 @@ class MainActivity : ComponentActivity() {
                             ),
                         color = MaterialTheme.colorScheme.background,
                     ) {
-                        HomeScreen(intentToProcess = intentToProcess)
+                        // 小组件要求回到主页：为两套 UI 统一重建主页局部导航状态，
+                        // 不改各自的详情栈、Pager 或大屏布局逻辑。
+                        key(widgetHomeGeneration) {
+                            HomeScreen(intentToProcess = intentToProcess)
+                        }
                     }
 
                     PrivacyConsentBottomSheet(
@@ -459,7 +465,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intentToProcess = intent
+        processHomeIntent(intent)
         AppLogger.app("MainActivity onNewIntent, fromNotification=${intent?.getBooleanExtra("from_notification", false)}")
         // 检查是否从通知进入
         isFromNotification = intent?.getBooleanExtra("from_notification", false) == true
@@ -500,6 +506,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("widget_home_generation", widgetHomeGeneration)
         super.onSaveInstanceState(outState)
         outState.putBoolean("isFromNotification", isFromNotification)
     }
@@ -507,6 +514,19 @@ class MainActivity : ComponentActivity() {
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
         isFromNotification = savedInstanceState.getBoolean("isFromNotification", false)
+    }
+
+    private fun processHomeIntent(incoming: Intent?) {
+        if (incoming?.getBooleanExtra(com.Badnng.moe.widget.OrderWidgetNavigation.OPEN_HOME, false) == true) {
+            widgetHomeGeneration += 1
+            isFromNotification = false
+            com.Badnng.moe.ui.component.BlurState.hide()
+            incoming.removeExtra(com.Badnng.moe.widget.OrderWidgetNavigation.OPEN_HOME)
+            com.Badnng.moe.widget.OrderWidgetNavigation.haptic(this)
+            intentToProcess = null
+        } else {
+            intentToProcess = incoming
+        }
     }
 
     fun isFromNotification(): Boolean = isFromNotification

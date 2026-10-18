@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">澎湃记</string>
+    <string name="widget_square_name">待取清单 · 2×2</string>
+    <string name="widget_wide_name">待取清单 · 4×2</string>
+    <string name="widget_tall_name">待取清单 · 3×4</string>
+    <string name="widget_description">查看取餐取件码、勾选完成，快捷打开淘宝和拼多多身份码。外观跟随应用。</string>
 </resources>

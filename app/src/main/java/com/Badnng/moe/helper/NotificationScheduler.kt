@@ -39,7 +39,10 @@ object NotificationScheduler {
 
     fun cancel(context: Context, requestCode: Int) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val intent = Intent(context, ScheduledNotificationReceiver::class.java)
+        val intent = Intent(context, ScheduledNotificationReceiver::class.java).apply {
+            // action 参与 PendingIntent 身份匹配，必须与 schedule/getPendingIntent 一致。
+            action = ScheduledNotificationReceiver.ACTION_SCHEDULED_NOTIFICATION
+        }
         val pendingIntent = PendingIntent.getBroadcast(
             context, requestCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

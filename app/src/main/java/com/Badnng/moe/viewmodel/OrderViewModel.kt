@@ -11,7 +11,7 @@ import com.Badnng.moe.data.db.OrderGroupDao
 import com.Badnng.moe.data.repository.OrderGroupRepository
 import com.Badnng.moe.data.repository.OrderRepository
 import com.Badnng.moe.helper.NotificationHelper
-import com.Badnng.moe.helper.NotificationScheduler
+import com.Badnng.moe.data.repository.OrderCompletionService
 import com.Badnng.moe.wearable.WearableSyncManager
 import com.Badnng.moe.wearable.WearableSyncSource
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +29,7 @@ class OrderViewModel(application: Application) : AndroidViewModel(application), 
     private val repository: OrderRepository
     private val groupRepository: OrderGroupRepository
     private val notificationHelper = NotificationHelper(application)
+    private val completionService = OrderCompletionService(application)
 
     private val _orders = MutableStateFlow<List<OrderEntity>>(emptyList())
     val orders: StateFlow<List<OrderEntity>> = _orders.asStateFlow()
@@ -115,26 +116,8 @@ class OrderViewModel(application: Application) : AndroidViewModel(application), 
         }
     }
 
-    override suspend fun markAsCompletedFromWearable(orderId: String): Boolean {
-        val order = orderDao.getOrderById(orderId) ?: return false
-        // 手表端完成操作不经过 NotificationReceiver，先清理手机端通知和对应闹钟。
-        runCatching { notificationHelper.cancelNotification(orderId) }
-        runCatching {
-            NotificationScheduler.cancel(getApplication(), NotificationScheduler.getOrderRequestCode(orderId))
-        }
-        if (order.isCompleted) return true
-
-        val groupId = order.groupId
-        repository.markAsCompleted(orderId)
-        if (groupId != null) {
-            try {
-                checkAndDissolveGroup(groupId)
-            } catch (_: Throwable) {
-                // 订单完成状态已经写入，分组整理失败不回滚主操作。
-            }
-        }
-        return orderDao.getOrderById(orderId)?.isCompleted == true
-    }
+    override suspend fun markAsCompletedFromWearable(orderId: String): Boolean =
+        completionService.completeOrder(orderId)
 
     /**
      * ViewModel 被销毁时解绑手表同步数据源，避免 Application 级单例
@@ -208,31 +191,6 @@ class OrderViewModel(application: Application) : AndroidViewModel(application), 
     }
 
     suspend fun checkAndDissolveGroup(groupId: Long) {
-        val group = orderGroupDao.getGroupById(groupId) ?: return
-        if (group.isCompleted) return
-        val incompleteCount = orderDao.getAllOrdersList().count { it.groupId == groupId && !it.isCompleted }
-        if (incompleteCount < 2) {
-            val remaining = orderDao.getAllOrdersList().filter { it.groupId == groupId }
-            remaining.forEach { order ->
-                orderDao.update(order.copy(groupId = null))
-            }
-            orderGroupDao.deleteGroup(group)
-            runCatching { notificationHelper.cancelGroupNotification(groupId) }
-            runCatching {
-                NotificationScheduler.cancel(getApplication(), NotificationScheduler.getGroupRequestCode(groupId))
-            }
-        } else {
-            orderGroupDao.updateOrderCount(groupId, incompleteCount)
-            // 手表完成组内一单后，重绘组通知，避免通知仍展示已完成取餐码。
-            val pendingOrders = orderDao.getAllOrdersList().filter {
-                it.groupId == groupId && !it.isCompleted
-            }
-            runCatching {
-                notificationHelper.showGroupNotification(
-                    group.copy(orderCount = incompleteCount),
-                    pendingOrders,
-                )
-            }
-        }
+        completionService.reconcileGroup(groupId)
     }
 }

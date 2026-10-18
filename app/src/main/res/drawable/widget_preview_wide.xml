@@ -1,0 +1,17 @@
+<!-- 不支持系统生成预览的桌面使用应用默认的 Miuix 外观。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="160dp" android:viewportWidth="320" android:viewportHeight="160">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M26,0 H294 C311,0 320,9 320,26 V134 C320,151 311,160 294,160 H26 C9,160 0,151 0,134 V26 C0,9 9,0 26,0 Z" />
+    <path android:strokeColor="#FF000000" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M17,24 H71" />
+    <path android:fillColor="#FFF7F7F7" android:pathData="M166,10 H294 Q308,10 308,24 Q308,38 294,38 H166 Q152,38 152,24 Q152,10 166,10 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M166,12 H190 Q202,12 202,24 Q202,36 190,36 H166 Q154,36 154,24 Q154,12 166,12 Z" />
+    <path android:strokeColor="#FF606060" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M164,24 H192 M216,24 H244 M268,24 H296" />
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FF3482FF" android:strokeWidth="2" android:pathData="M26,55 A9,9 0,1 1,26,73 A9,9 0,1 1,26,55 M26,93 A9,9 0,1 1,26,111 A9,9 0,1 1,26,93" />
+    <path android:strokeColor="#FF000000" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M48,59 H117 M48,97 H129" />
+    <path android:strokeColor="#FF707070" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M48,73 H85 M48,111 H90 M197,64 H284 M197,102 H270" />
+    <path android:strokeColor="#FFE0E0E0" android:strokeWidth="0.5" android:pathData="M44,83 H308 M44,121 H308" />
+    <path android:fillColor="#FFFFE5CE" android:pathData="M27,126 H143 Q158,126 158,138 Q158,150 143,150 H27 Q12,150 12,138 Q12,126 27,126 Z" />
+    <path android:strokeColor="#FF8F3D00" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M69,138 H101" />
+    <path android:fillColor="#FFFFE0E0" android:pathData="M177,126 H293 Q308,126 308,138 Q308,150 293,150 H177 Q162,150 162,138 Q162,126 177,126 Z" />
+    <path android:strokeColor="#FF9F1C1C" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M219,138 H251" />
+</vector>

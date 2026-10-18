@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 用户明确授权的局部 RemoteViews 例外：仅选择器，文字和点击仍由 Glance 提供。
+     用空白占位的显隐触发布局过渡，动画在桌面宿主执行，不逐帧发送小组件更新。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_filter_indicator_track"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:animateLayoutChanges="true"
+    android:importantForAccessibility="noHideDescendants"
+    android:clickable="false"
+    android:focusable="false">
+
+    <FrameLayout
+        android:id="@+id/widget_filter_offset_first"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/widget_filter_offset_second"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/widget_filter_indicator"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:contentDescription="@null" />
+</LinearLayout>
