@@ -1,6 +1,8 @@
 """Offline regression checks for publishing boundaries; never contacts Telegram/GitHub."""
 
 from contextlib import contextmanager
+from email import policy
+from email.parser import BytesParser
 import hashlib
 import io
 import json
@@ -211,6 +213,78 @@ class TelegramTests(unittest.TestCase):
         self.assertEqual(build_opener.call_args.args[0].proxies, {})
         self.assertEqual(result["message_id"], 1)
 
+    def test_hosted_api_uploads_actual_multipart_document(self):
+        opener = MagicMock()
+        opener.open.return_value.__enter__.return_value = io.BytesIO(b'{"ok":true,"result":{"message_id":2}}')
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {"TELEGRAM_CHAT_ID": "@test"}), \
+                patch.object(telegram_ci.urllib.request, "build_opener", return_value=opener):
+            apk = Path(temporary) / "test build.apk"
+            apk.write_bytes(b"APK\x00\xff\r\nbytes")
+            telegram_ci.publish_cloud("test-token", self.info, apk, "https://github.com/artifact")
+            opener.open.assert_called_once()
+            request = opener.open.call_args.args[0]
+            self.assertEqual(request.full_url, "https://api.telegram.org/bottest-token/sendDocument")
+            message = BytesParser(policy=policy.default).parsebytes(
+                f"Content-Type: {request.get_header('Content-type')}\r\n\r\n".encode() + request.data
+            )
+            parts = {part.get_param("name", header="content-disposition"): part for part in message.iter_parts()}
+            self.assertEqual(parts["document"].get_filename(), apk.name)
+            self.assertEqual(parts["document"].get_payload(decode=True), apk.read_bytes())
+            self.assertEqual(parts["parse_mode"].get_payload(decode=True), b"HTML")
+            self.assertEqual(parts["caption"].get_payload(decode=True).decode(), telegram_ci.caption(self.info))
+            self.assertIn(b"https://github.com/artifact", parts["reply_markup"].get_payload(decode=True))
+
+    def test_hosted_api_upload_limit_and_oversize_link_fallback(self):
+        with patch.dict(os.environ, {"TELEGRAM_CHAT_ID": "@test"}):
+            for size in (1, 50_000_000, 50_000_001, 2_000_000_001):
+                with self.subTest(size=size), patch.object(telegram_ci, "api_call") as api:
+                    apk = MagicMock()
+                    apk.stat.return_value.st_size = size
+                    telegram_ci.publish_cloud("test-token", self.info, apk, "https://github.com/artifact")
+                    api.assert_called_once()
+                    args, kwargs = api.call_args
+                    self.assertEqual(kwargs["endpoint"], telegram_ci.CLOUD_API)
+                    if size <= 50_000_000:
+                        self.assertEqual(args[1], "sendDocument")
+                        self.assertIs(kwargs["document"], apk)
+                    else:
+                        self.assertEqual(args[1], "sendMessage")
+                        self.assertIn("50 MB", args[2]["text"])
+                        self.assertNotIn("caption", args[2])
+                        self.assertNotIn("document", kwargs)
+                    self.assertIn("https://github.com/artifact", args[2]["reply_markup"])
+                    apk.read_bytes.assert_not_called()
+            with patch.object(telegram_ci, "api_call") as api:
+                apk.stat.return_value.st_size = 0
+                with self.assertRaisesRegex(ValueError, "nonempty"):
+                    telegram_ci.publish_cloud("test-token", self.info, apk, "https://github.com/artifact")
+                api.assert_not_called()
+
+    def test_cloud_main_needs_no_application_credentials_binary_or_runner(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {
+            "TELEGRAM_BOT_TOKEN": "test-token", "TELEGRAM_CHAT_ID": "@test",
+            "ARTIFACT_URL": "https://github.com/artifact",
+        }, clear=True), patch.object(telegram_ci, "api_call") as api, \
+                patch.object(telegram_ci, "local_server") as server:
+            directory = Path(temporary)
+            (directory / "app.apk").write_bytes(b"fake APK")
+            (directory / "build-info.json").write_text(json.dumps({**self.info, "apk": "app.apk"}), encoding="utf-8")
+            telegram_ci.main(directory)
+            server.assert_not_called()
+            api.assert_called_once()
+            self.assertEqual(api.call_args.args[1], "sendDocument")
+            self.assertEqual(api.call_args.kwargs["endpoint"], telegram_ci.CLOUD_API)
+
+    def test_cloud_failure_is_not_retried_or_replaced_with_another_message(self):
+        for size in (10, 50_000_001):
+            with self.subTest(size=size), patch.dict(os.environ, {"TELEGRAM_CHAT_ID": "@test"}), \
+                    patch.object(telegram_ci, "api_call", side_effect=telegram_ci.TelegramAPIError("sendDocument", 0)) as api:
+                apk = MagicMock()
+                apk.stat.return_value.st_size = size
+                with self.assertRaises(telegram_ci.TelegramAPIError):
+                    telegram_ci.publish_cloud("test-token", self.info, apk, "https://github.com/artifact")
+                api.assert_called_once()
+
     def test_cloud_logout_tolerates_only_already_logged_out_or_cooldown(self):
         for code in (401, 429, 403, 500, 0):
             with self.subTest(code=code), patch.object(telegram_ci, "api_call", side_effect=telegram_ci.TelegramAPIError("logOut", code)):
@@ -290,11 +364,44 @@ class TelegramTests(unittest.TestCase):
         process.terminate.assert_called_once()
         process.kill.assert_called_once()
 
-    def test_configuration_requires_application_credentials_without_echoing_values(self):
+    def test_configuration_falls_back_when_application_credentials_are_incomplete(self):
+        base = {"TELEGRAM_BOT_TOKEN": "secret-token", "TELEGRAM_CHAT_ID": "@test"}
+        for app_config in ({}, {"TELEGRAM_API_ID": "12345"}, {"TELEGRAM_API_HASH": "b" * 32},
+                           {"TELEGRAM_API_ID": "", "TELEGRAM_API_HASH": ""},
+                           {"TELEGRAM_API_ID": " \t", "TELEGRAM_API_HASH": "b" * 32},
+                           {"TELEGRAM_API_ID": "12345", "TELEGRAM_API_HASH": "\n"}):
+            with self.subTest(app_config=app_config), patch.dict(os.environ, {**base, **app_config}, clear=True):
+                self.assertEqual(telegram_ci.validate_config(), "cloud")
+
+    def test_missing_bot_credentials_still_fail_for_both_modes(self):
+        for app_config in ({}, {"TELEGRAM_API_ID": "12345", "TELEGRAM_API_HASH": "b" * 32}):
+            for missing in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+                with self.subTest(app_config=app_config, missing=missing), patch.dict(os.environ, {
+                    "TELEGRAM_BOT_TOKEN": "secret-token", "TELEGRAM_CHAT_ID": "@test", **app_config, missing: " ",
+                }, clear=True):
+                    with self.assertRaisesRegex(ValueError, missing):
+                        telegram_ci.validate_config()
+
+    def test_config_check_exports_mode_without_credentials(self):
+        for mode in ("cloud", "local"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary) / "outputs"
+                output.write_text("previous=value\n", encoding="utf-8")
+                config = {"TELEGRAM_BOT_TOKEN": "secret-token", "TELEGRAM_CHAT_ID": "@test",
+                          "GITHUB_OUTPUT": str(output)}
+                if mode == "local":
+                    config.update(TELEGRAM_API_ID="12345", TELEGRAM_API_HASH="b" * 32)
+                with patch.dict(os.environ, config, clear=True), patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                    self.assertEqual(telegram_ci.check_config(), mode)
+                self.assertEqual(output.read_text(encoding="utf-8"), f"previous=value\napi_mode={mode}\n")
+                for secret in ("secret-token", "12345", "b" * 32):
+                    self.assertNotIn(secret, stdout.getvalue())
+
+    def test_complete_application_credentials_are_validated_without_echoing_values(self):
         config = {"TELEGRAM_BOT_TOKEN": "secret-token", "TELEGRAM_CHAT_ID": "@test",
                   "TELEGRAM_API_ID": "12345", "TELEGRAM_API_HASH": "b" * 32}
         with patch.dict(os.environ, config, clear=True):
-            telegram_ci.validate_config()
+            self.assertEqual(telegram_ci.validate_config(), "local")
             for name in ("TELEGRAM_API_ID", "TELEGRAM_API_HASH"):
                 with patch.dict(os.environ, {name: "secret-invalid-value"}):
                     with self.assertRaises(ValueError) as captured:

@@ -87,6 +87,7 @@ jobs:
           persist-credentials: false
 
       - name: Check Telegram configuration
+        id: telegram-config
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -101,24 +102,25 @@ jobs:
 
       - name: Restore official Bot API binary
         id: bot-api-cache
+        if: steps.telegram-config.outputs.api_mode == 'local'
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/telegram-bot-api-bin
           key: telegram-bot-api-ubuntu24.04-${{ runner.arch }}-${{ env.TELEGRAM_BOT_API_COMMIT }}-v1
 
       - name: Build official Bot API server
-        if: steps.bot-api-cache.outputs.cache-hit != 'true'
+        if: steps.telegram-config.outputs.api_mode == 'local' && steps.bot-api-cache.outputs.cache-hit != 'true'
         timeout-minutes: 40
         run: bash .github/scripts/build_telegram_bot_api.sh
 
       - name: Cache official Bot API binary
-        if: steps.bot-api-cache.outputs.cache-hit != 'true'
+        if: steps.telegram-config.outputs.api_mode == 'local' && steps.bot-api-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/telegram-bot-api-bin
           key: ${{ steps.bot-api-cache.outputs.cache-primary-key }}
 
-      - name: Start temporary Bot API server and upload APK
+      - name: Send APK or download link through selected Bot API
         timeout-minutes: 25
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

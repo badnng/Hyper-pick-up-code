@@ -52,10 +52,10 @@ Dev 还接受 `alpha`、`rc`、`preview`；后缀大小写不敏感，可带数�
 3. 在 GitHub 仓库 → **Settings → Secrets and variables → Actions → Secrets** 添加：
    - `TELEGRAM_BOT_TOKEN`：BotFather 提供的 Token。
    - `TELEGRAM_CHAT_ID`：公开频道可直接用 `@频道用户名`；私有频道使用 `-100…` 数字 ID。
-   - `TELEGRAM_API_ID`：登录 [my.telegram.org/apps](https://my.telegram.org/apps)，在 **API development tools** 创建应用，复制数字 `api_id`。
-   - `TELEGRAM_API_HASH`：同一应用页面的 `api_hash`。这两个是运行官方 Bot API Server 的应用凭据，不是 BotFather Token；已有的 Bot Token 和频道 ID 继续使用。
+   - `TELEGRAM_API_ID`（可选）：登录 [my.telegram.org/apps](https://my.telegram.org/apps)，在 **API development tools** 创建应用，复制数字 `api_id`。
+   - `TELEGRAM_API_HASH`（可选）：同一应用页面的 `api_hash`。这两个是运行官方 Bot API Server 的应用凭据，不是 BotFather Token；已有的 Bot Token 和频道 ID 继续使用。两项均填写时使用 local 模式，任一缺失、为空或只有空白时自动回退到普通云端 Bot API。
 4. 在同页面 **Variables** 中添加 `TELEGRAM_ENABLED`，值为 `true`。未开启时不运行 Telegram 任务。
-5. 推送 master/dev，或在 Actions → CI → Run workflow 选择该分支。成功后，频道将收到 APK，附版本、构建号、分支、提交 hash、提交说明，以及 Actions 下载/构建详情按钮。
+5. 推送 master/dev，或在 Actions → CI → Run workflow 选择该分支。成功后，频道将收到 APK 或下载链接通知，附版本、构建号、分支、提交 hash、提交说明，以及 Actions 下载/构建详情按钮。
 
 私有频道 ID 可通过 Bot API 的 `getUpdates` 获取：机器人加入频道后，在频道发一条消息，读取返回的 `channel_post.chat.id`。已有 webhook 的机器人不能同时使用 `getUpdates`，建议为 CI 创建专用机器人。不要提交 Token，也不要把带 Token 的 API URL 放进公开日志或截图。
 
@@ -63,13 +63,15 @@ Dev 还接受 `alpha`、`rc`、`preview`；后缀大小写不敏感，可带数�
 
 应用注册表可填写：App title `HyperNote CI`、Short name `hypernoteci`、URL 为仓库地址或留空、Platform 选择 **Bot / Server**、Description 填写 `Upload HyperNote CI APK builds to my channel using a temporary local Bot API server in GitHub Actions.`。CI 不需要你的手机号、登录验证码、账户密码或用户会话文件。
 
-Telegram job 在 GitHub 托管的 Ubuntu 24.04 runner 上临时运行官方 **Local Bot API Server**：校验配置 → 恢复服务程序缓存（未命中则编译官方固定提交及其 TDLib 子模块）→ 在 `127.0.0.1:8081` 启动 local 服务 → 从云端 Bot API 注销并验证本地机器人登录 → 直接上传 APK → 从本地服务注销并停止进程。无需自建常驻服务器，不开放公网端口。Telegram job 不编译手机 App，直接下载前面 Android job 的同一份 APK。
+Telegram job 先校验配置并输出所选模式。App API ID/Hash 完整时，在 GitHub 托管的 Ubuntu 24.04 runner 上临时运行官方 **Local Bot API Server**：恢复服务程序缓存（未命中则编译官方固定提交及其 TDLib 子模块）→ 在 `127.0.0.1:8081` 启动 local 服务 → 从云端 Bot API 注销并验证本地机器人登录 → 直接上传 APK → 从本地服务注销并停止进程。无需自建常驻服务器，不开放公网端口。Telegram job 不编译手机 App，直接下载前面 Android job 的同一份 APK。
 
-超过 50 MB 的文件仍以附件发送，保留富文本、Git hash、提交说明和 Actions 下载按钮；local 模式支持最高 2000 MB，脚本采用 2,000,000,000 字节的保守上限，不会拆分 APK 或悄悄退回只发链接。使用本地文件 URI 交给服务读取，不把整个 APK 载入 Python 内存。
+local 模式下超过 50 MB 的文件仍以附件发送，保留富文本、Git hash、提交说明和 Actions 下载按钮；最高支持 2000 MB，脚本采用 2,000,000,000 字节的保守上限，不会拆分 APK 或因上传失败改发链接。使用本地文件 URI 交给服务读取，不把整个 APK 载入 Python 内存。
+
+App API ID/Hash 任一为空时，跳过服务程序的缓存恢复、编译、缓存保存及本地服务启动，直接使用 Bot Token 调用 `https://api.telegram.org`，也不会执行 `logOut`。APK 不超过 50,000,000 字节时以附件发送；超过这个阈值时发送构建信息和 Actions 下载按钮，并在通知和日志中明确说明普通 Bot API 的 50 MB 限制。Actions 下载需要登录 GitHub，产物保留 14 天。
 
 仅缓存无凭据的服务程序；首次编译较慢，后续命中缓存即可复用。机器人会话保存在 runner 的临时目录，任务结束时清理，不进入 cache/artifact。Telegram job 使用同一个并发组串行发送并最多排队 100 个任务；Android 构建仍可并行。此机器人应专用于 CI：迁移会调用 `logOut`，退出云端后 10 分钟内不能登录回官方托管 Bot API，但可以立即使用 local 服务。
 
-缺少新的 API ID/Hash 时会明确报错，不会影响已完成的 Android 构建和 Actions 产物。Telegram 发送失败后可以重跑失败的 Telegram job；上传超时时脚本不会自动重复发包，手动重跑前先检查频道是否已收到附件。
+Bot Token / Chat ID 仍为必填；两项 App API 均非空但格式错误时仍明确报错。自动回退只针对 App API 凭据不完整，不会掩盖鉴权、网络或发送失败。Telegram 发送失败不会影响已完成的 Android 构建和 Actions 产物，可以重跑失败的 Telegram job；上传超时时脚本不会自动重复发包，手动重跑前先检查频道是否已收到附件。此前使用过 local 模式的机器人若仍处于云端登录冷却期，需等冷却结束后再重跑云端发送。
 
 ## 缓存与检查
 
