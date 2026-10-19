@@ -107,6 +107,7 @@ import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
+import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
 import top.yukonga.miuix.kmp.nav.transition.navDirectionalTransition
 import com.Badnng.moe.data.db.OrderEntity
@@ -540,6 +541,8 @@ fun MiuixHomeScreen(
             }
         }
     } else {
+        // 只开 enableCornerClip 时库默认半径仍为 0；跟随屏幕圆角，未上报时与卡片转场保持一致。
+        val navCornerRadius = rememberNavSystemCornerRadius().takeIf { it > 0.dp } ?: 40.dp
         Box(modifier = Modifier.fillMaxSize()) {
         NavDisplay(
             backStack = backStack,
@@ -558,6 +561,7 @@ fun MiuixHomeScreen(
             },
             effects = NavDisplayEffects(
                 enableCornerClip = true,
+                cornerClipRadius = navCornerRadius,
                 // 一镜到底进行中，栈顶详情入口是空实现，底层主页不该被导航层再压暗一次：
                 // 转场自己画的遮罩随进度淡入，双重压暗会让起始帧明显偏灰。
                 dimAmount = if (cardMorph.overlayVisible) 0f else 0.5f,

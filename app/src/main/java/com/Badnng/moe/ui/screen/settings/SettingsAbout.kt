@@ -61,6 +61,7 @@ import com.Badnng.moe.ui.component.SettingsListItem
 import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.miuix.LocalMiuixTopBarBackdrop
 import com.Badnng.moe.ui.miuix.LocalMiuixTopBarCollapseProgress
+import com.Badnng.moe.ui.miuix.MiuixTopBarButtonOverlay
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.miuix.miuixScrollModifiers
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
@@ -511,13 +512,14 @@ private fun MiuixAboutPage(
 
         if (!collapsed) {
             // 首屏保持透明顶栏，让动态背景延伸到页面顶部。
-            topBarContent()
+            MiuixTopBarButtonOverlay(content = topBarContent)
         } else {
             com.Badnng.moe.ui.miuix.MiuixBlurredBar(
                 backdrop = backdrop,
                 blurEnabled = blurActive,
-                content = topBarContent,
-            )
+            ) {
+                MiuixTopBarButtonOverlay(content = topBarContent)
+            }
         }
     }
     val headerScrollOffsetPx by remember {

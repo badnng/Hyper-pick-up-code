@@ -306,6 +306,27 @@ fun MiuixTopBar(
     navigationIcon: @Composable () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    MiuixTopBarButtonOverlay {
+        MiuixTopBarContent(
+            title = title,
+            scrollBehavior = scrollBehavior,
+            color = color,
+            expandedTitleTopPadding = expandedTitleTopPadding,
+            navigationIcon = navigationIcon,
+            actions = actions,
+        )
+    }
+}
+
+@Composable
+private fun MiuixTopBarContent(
+    title: String,
+    scrollBehavior: ScrollBehavior,
+    color: Color,
+    expandedTitleTopPadding: Dp,
+    navigationIcon: @Composable () -> Unit,
+    actions: @Composable RowScope.() -> Unit,
+) {
     if (expandedTitleTopPadding <= 0.dp) {
         TopAppBar(
             title = title,

@@ -51,6 +51,7 @@ internal fun MiuixTopBarBackButton(
     val colorMixingAllowed = rememberMiuixIconColorMixingAllowed()
     val backdrop = LocalMiuixTopBarBackdrop.current.takeIf { colorMixingAllowed }
     val collapseProgress = LocalMiuixTopBarCollapseProgress.current
+    val overlayModifier = rememberMiuixTopBarButtonOverlayModifier()
     val buttonSize = 44.dp
     // 半径取边长的一半，Miuix Squircle 的着色器会自行过渡为正圆。
     val cornerRadius = buttonSize / 2
@@ -97,52 +98,59 @@ internal fun MiuixTopBarBackButton(
     Box(
         modifier = Modifier
             .size(buttonSize)
-            // 动画只更新绘制层：底座、模糊、高光和箭头一起缩放，不挤动标题。
-            .graphicsLayer {
-                scaleX = scale.value
-                scaleY = scale.value
-            }
-            .then(shadowModifier)
-            .squircleSurface(
-                color = if (backdrop == null) buttonColor else Color.Transparent,
-                cornerRadius = cornerRadius,
-            )
-            .then(glassModifier)
-            .drawWithCache {
-                val outline = effectShape.createOutline(size, layoutDirection, this)
-                val highlightBrush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = highlightAlpha),
-                        Color.White.copy(alpha = 0.2f * highlightAlpha),
-                        Color.White.copy(alpha = 0.7f * highlightAlpha),
-                    ),
-                    start = Offset.Zero,
-                    end = Offset(size.width, size.height),
-                )
-                val softStroke = Stroke(width = 5.dp.toPx())
-                val innerStroke = Stroke(width = 3.dp.toPx())
-                val edgeStroke = Stroke(width = 2.dp.toPx())
-                onDrawWithContent {
-                    drawContent()
-                    // 柔光沿圆形轮廓绘制；外半边由 squircleSurface 裁掉，内边缘保持 1dp。
-                    drawOutline(outline, highlightBrush, alpha = 0.08f, style = softStroke)
-                    drawOutline(outline, highlightBrush, alpha = 0.14f, style = innerStroke)
-                    drawOutline(outline, highlightBrush, alpha = 0.85f, style = edgeStroke)
-                }
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = LocalIndication.current,
-                role = Role.Button,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+            // 外层保持未缩放的坐标，供顶栏外回放定位；缩放只作用于内层绘制。
+            .then(overlayModifier),
     ) {
-        Icon(
-            imageVector = if (supportingPane) MiuixIcons.Regular.Close else MiuixIcons.Regular.Back,
-            contentDescription = if (supportingPane) "关闭" else "返回",
-            tint = iconColor,
-            modifier = Modifier.size(27.dp),
-        )
+        Box(
+            modifier = Modifier
+                .size(buttonSize)
+                // 动画只更新绘制层：底座、模糊、高光和箭头一起缩放，不挤动标题。
+                .graphicsLayer {
+                    scaleX = scale.value
+                    scaleY = scale.value
+                }
+                .then(shadowModifier)
+                .squircleSurface(
+                    color = if (backdrop == null) buttonColor else Color.Transparent,
+                    cornerRadius = cornerRadius,
+                )
+                .then(glassModifier)
+                .drawWithCache {
+                    val outline = effectShape.createOutline(size, layoutDirection, this)
+                    val highlightBrush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = highlightAlpha),
+                            Color.White.copy(alpha = 0.2f * highlightAlpha),
+                            Color.White.copy(alpha = 0.7f * highlightAlpha),
+                        ),
+                        start = Offset.Zero,
+                        end = Offset(size.width, size.height),
+                    )
+                    val softStroke = Stroke(width = 5.dp.toPx())
+                    val innerStroke = Stroke(width = 3.dp.toPx())
+                    val edgeStroke = Stroke(width = 2.dp.toPx())
+                    onDrawWithContent {
+                        drawContent()
+                        // 柔光沿圆形轮廓绘制；外半边由 squircleSurface 裁掉，内边缘保持 1dp。
+                        drawOutline(outline, highlightBrush, alpha = 0.08f, style = softStroke)
+                        drawOutline(outline, highlightBrush, alpha = 0.14f, style = innerStroke)
+                        drawOutline(outline, highlightBrush, alpha = 0.85f, style = edgeStroke)
+                    }
+                }
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = LocalIndication.current,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (supportingPane) MiuixIcons.Regular.Close else MiuixIcons.Regular.Back,
+                contentDescription = if (supportingPane) "关闭" else "返回",
+                tint = iconColor,
+                modifier = Modifier.size(27.dp),
+            )
+        }
     }
 }

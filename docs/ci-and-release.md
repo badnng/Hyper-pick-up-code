@@ -52,6 +52,8 @@ Dev 还接受 `alpha`、`rc`、`preview`；后缀大小写不敏感，可带数�
 3. 在 GitHub 仓库 → **Settings → Secrets and variables → Actions → Secrets** 添加：
    - `TELEGRAM_BOT_TOKEN`：BotFather 提供的 Token。
    - `TELEGRAM_CHAT_ID`：公开频道可直接用 `@频道用户名`；私有频道使用 `-100…` 数字 ID。
+   - `TELEGRAM_API_ID`：登录 [my.telegram.org/apps](https://my.telegram.org/apps)，在 **API development tools** 创建应用，复制数字 `api_id`。
+   - `TELEGRAM_API_HASH`：同一应用页面的 `api_hash`。这两个是运行官方 Bot API Server 的应用凭据，不是 BotFather Token；已有的 Bot Token 和频道 ID 继续使用。
 4. 在同页面 **Variables** 中添加 `TELEGRAM_ENABLED`，值为 `true`。未开启时不运行 Telegram 任务。
 5. 推送 master/dev，或在 Actions → CI → Run workflow 选择该分支。成功后，频道将收到 APK，附版本、构建号、分支、提交 hash、提交说明，以及 Actions 下载/构建详情按钮。
 
@@ -59,7 +61,15 @@ Dev 还接受 `alpha`、`rc`、`preview`；后缀大小写不敏感，可带数�
 
 现有签名 secrets 继续复用：`KEYSTORE_BASE64`、`KEY_ALIAS`、`KEY_PASSWORD`、`STORE_PASSWORD`；tag 发布还需要 `RPK_CERT_BASE64`、`RPK_PRIVATE_KEY_BASE64`。PR 不注入发布签名密钥，fork 不向本项目频道推送。
 
-Telegram 使用官方托管 Bot API，无需部署机器人进程。当前 `sendDocument` 上限为 50 MB，脚本采用 50,000,000 字节的保守阈值；超限自动发送带 Actions 下载链接的消息，不截断 APK。频道文件大小与当前构建有关，不保证始终低于上限。Telegram 任务失败会显示失败，但已完成的构建和 Actions 产物仍然保留；重新运行失败的 Telegram 任务即可，避免重跑所有任务导致重复发包。
+应用注册表可填写：App title `HyperNote CI`、Short name `hypernoteci`、URL 为仓库地址或留空、Platform 选择 **Bot / Server**、Description 填写 `Upload HyperNote CI APK builds to my channel using a temporary local Bot API server in GitHub Actions.`。CI 不需要你的手机号、登录验证码、账户密码或用户会话文件。
+
+Telegram job 在 GitHub 托管的 Ubuntu 24.04 runner 上临时运行官方 **Local Bot API Server**：校验配置 → 恢复服务程序缓存（未命中则编译官方固定提交及其 TDLib 子模块）→ 在 `127.0.0.1:8081` 启动 local 服务 → 从云端 Bot API 注销并验证本地机器人登录 → 直接上传 APK → 从本地服务注销并停止进程。无需自建常驻服务器，不开放公网端口。Telegram job 不编译手机 App，直接下载前面 Android job 的同一份 APK。
+
+超过 50 MB 的文件仍以附件发送，保留富文本、Git hash、提交说明和 Actions 下载按钮；local 模式支持最高 2000 MB，脚本采用 2,000,000,000 字节的保守上限，不会拆分 APK 或悄悄退回只发链接。使用本地文件 URI 交给服务读取，不把整个 APK 载入 Python 内存。
+
+仅缓存无凭据的服务程序；首次编译较慢，后续命中缓存即可复用。机器人会话保存在 runner 的临时目录，任务结束时清理，不进入 cache/artifact。Telegram job 使用同一个并发组串行发送并最多排队 100 个任务；Android 构建仍可并行。此机器人应专用于 CI：迁移会调用 `logOut`，退出云端后 10 分钟内不能登录回官方托管 Bot API，但可以立即使用 local 服务。
+
+缺少新的 API ID/Hash 时会明确报错，不会影响已完成的 Android 构建和 Actions 产物。Telegram 发送失败后可以重跑失败的 Telegram job；上传超时时脚本不会自动重复发包，手动重跑前先检查频道是否已收到附件。
 
 ## 缓存与检查
 
@@ -71,5 +81,6 @@ Telegram 使用官方托管 Bot API，无需部署机器人进程。当前 `send
 - 不启用未经本项目验证的配置缓存；已有任务构建缓存保持启用。
 - Actions 固定完整提交 SHA，由 Dependabot 每周提出更新。
 - 本地遵守仓库约定，不自动编译；脚本可运行 `python -B -m unittest discover -s .github/scripts -p 'test_*.py'`，工作流可使用 `actionlint` 检查。完整 APK 构建与签名结果以远程 Actions 为准，安装后的功能仍需实机验证。
+- `concurrency.queue: max` 使用 [GitHub 官方排队语法](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idconcurrency)，用于保留待发送任务；actionlint 1.7.12 的旧 schema 尚不识别该字段，检查时只需排除这一条已确认的兼容性提示。
 
-参考：[Gradle Actions 缓存](https://github.com/gradle/actions/blob/main/docs/setup-gradle.md)、[GitHub artifact 下载与权限](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)、[Telegram Bot API](https://core.telegram.org/bots/api#senddocument)。
+参考：[Gradle Actions 缓存](https://github.com/gradle/actions/blob/main/docs/setup-gradle.md)、[GitHub artifact 下载与权限](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)、[官方 Local Bot API Server](https://github.com/tdlib/telegram-bot-api)、[Telegram 应用凭据](https://core.telegram.org/api/obtaining_api_id)。

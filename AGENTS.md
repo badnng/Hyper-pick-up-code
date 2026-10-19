@@ -92,6 +92,7 @@ GitHub Actions 使用 JDK 21，与当前项目 JVM toolchain 一致。
 - `.github/workflows/Build and Release.yml`：仅推送 `v*` tag 时发布 APK + 手表 RPK，附件上传完成后才更新 master 的版本 JSON。`-Dev` / `-alpha` / `-beta` / `-rc` / `-preview` 后缀进入 Dev 通道，`-DevUI` 进入 DevUI 通道，其余为 Stable；新版本须递增 versionCode。
 - Gradle 缓存由 `gradle/actions/setup-gradle` 管理，本地仍使用 `D:\GradleCache`，Ubuntu runner 使用工作区外的 `GRADLE_USER_HOME`。
 - Telegram 配置、签名和发布流程见 [docs/ci-and-release.md](docs/ci-and-release.md)。
+- Telegram 在 Actions runner 上临时启动官方 Local Bot API Server，直接上传最大 2000 MB 的 APK；需要 `TELEGRAM_API_ID`、`TELEGRAM_API_HASH` 以及原有 Bot Token / Chat ID。仅缓存固定源码编译的服务程序，严禁缓存或上传机器人会话；发送 job 串行排队，结束时注销并关闭服务。
 
 ## 手表端 Vela 快应用（app\wear）
 
