@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">澎湃记</string>
+    <string name="capture_shortcut_short_label">截图识别</string>
+    <string name="capture_shortcut_long_label">澎湃记截图识别</string>
     <string name="widget_square_name">待取清单 · 2×2</string>
     <string name="widget_wide_name">待取清单 · 4×2</string>
     <string name="widget_tall_name">待取清单 · 3×4</string>

@@ -9,23 +9,49 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.Badnng.moe.helper.AccessibilityShortcutHelper
 import com.Badnng.moe.helper.EdgeToEdgeHelper
 import com.Badnng.moe.service.ScreenCaptureService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class PermissionActivity : ComponentActivity() {
+    companion object {
+        private const val ACTION_CAPTURE = "com.Badnng.moe.action.CAPTURE_SCREEN"
+
+        fun createCaptureIntent(context: Context): Intent =
+            Intent(context, PermissionActivity::class.java).apply {
+                action = ACTION_CAPTURE
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         EdgeToEdgeHelper.applyGestureEdgeToEdge(this)
         
-        val useShizuku = intent.getBooleanExtra("use_shizuku", false)
-        val useRoot = intent.getBooleanExtra("use_root", false)
+        // 磁贴与 App 长按快捷操作在点击时读取设置，避免快捷方式保存过期的截图模式。
+        val useCurrentCaptureMode = intent.action == ACTION_CAPTURE
+        val captureMode = if (useCurrentCaptureMode) {
+            getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getString("capture_mode", "media_projection")
+        } else {
+            null
+        }
+        val useShizuku = if (useCurrentCaptureMode) {
+            captureMode == "shizuku" && AccessibilityShortcutHelper.isShizukuReady()
+        } else {
+            intent.getBooleanExtra("use_shizuku", false)
+        }
+        val useRoot = if (useCurrentCaptureMode) {
+            captureMode == "root"
+        } else {
+            intent.getBooleanExtra("use_root", false)
+        }
         val triggeredByAccessibilityShortcut = intent.getBooleanExtra("triggered_by_accessibility_shortcut", false)
         
         if (useShizuku || useRoot) {
-            // Shizuku 模式：由于此 Activity 已通过 startActivityAndCollapse 拉起
-            // 系统控制中心已自动收起。现在我们直接启动后台服务并退出 Activity。
+            // Shizuku / Root 模式复用同一后台服务，退出透明 Activity 后截图。
             val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
                 putExtra("use_shizuku", useShizuku)
                 putExtra("use_root", useRoot)
