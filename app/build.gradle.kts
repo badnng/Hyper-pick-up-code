@@ -40,7 +40,7 @@ android {
         applicationId = "com.Badnng.moe"
         minSdk = 35
         targetSdk = 37
-        versionCode = 20260930_01
+        versionCode = 20261024_01
         versionName = "26.10.24.C01"
         buildConfigField("String", "GIT_HASH", "\"$buildGitHash\"")
 
