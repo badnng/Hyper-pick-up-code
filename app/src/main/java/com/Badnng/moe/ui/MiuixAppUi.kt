@@ -22,6 +22,7 @@ import com.Badnng.moe.ui.miuix.MiuixTopBarBackButton
 import com.Badnng.moe.ui.component.MiuixBlockedWordsEditor
 import com.Badnng.moe.ui.component.MiuixPromptEditor
 import com.Badnng.moe.ui.component.MiuixOrderDetailContent
+import com.Badnng.moe.ui.component.MiuixUpdateDownloadButton
 import com.Badnng.moe.ui.screen.settings.MiuixMessageBlock
 import com.Badnng.moe.ui.screen.settings.MiuixPrimaryActionButton
 import com.Badnng.moe.ui.screen.settings.MiuixSecurePasswordDialog
@@ -110,6 +111,9 @@ val miuixAppUi = AppUi(
     },
     primaryActionButton = { text, enabled, onClick ->
         MiuixPrimaryActionButton(text, enabled, onClick)
+    },
+    updateDownloadButton = { text, enabled, onClick ->
+        MiuixUpdateDownloadButton(text, enabled, onClick)
     },
     messageBlock = { text, isError ->
         MiuixMessageBlock(text, isError)

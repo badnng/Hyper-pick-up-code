@@ -11,14 +11,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.Badnng.moe.helper.UpdateHelper
 import com.Badnng.moe.helper.UpdateInfo
+import com.Badnng.moe.ui.LocalAppUi
 import com.Badnng.moe.ui.miuix.miuixReadableCardShadow
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
 import com.Badnng.moe.ui.theme.NonPredictiveBackInterceptor
@@ -101,6 +107,47 @@ fun UpdateProgressSheet(
             onResume = onResume,
             onDismiss = onDismiss,
         )
+    }
+}
+
+@Composable
+private fun QuarkUpdateDownloadButton(modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val preferences = remember(context) {
+        context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+    }
+    Box(modifier.fillMaxWidth()) {
+        LocalAppUi.current.updateDownloadButton("复制口令并打开夸克下载", enabled) {
+            if (preferences.getBoolean("haptic_enabled", true)) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+            UpdateHelper.copyAndOpenQuarkDownload(context)
+        }
+    }
+}
+
+@Composable
+internal fun MiuixUpdateDownloadButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    MiuixButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+        colors = MiuixButtonDefaults.buttonColorsPrimary(),
+    ) {
+        MiuixText(text, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+internal fun Md3eUpdateDownloadButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+        shape = RoundedCornerShape(15.dp),
+    ) {
+        Text(text, textAlign = TextAlign.Center)
     }
 }
 
@@ -223,6 +270,9 @@ private fun MiuixUpdateSheet(
                             )
                         }
                     }
+                }
+                item {
+                    QuarkUpdateDownloadButton(Modifier.padding(bottom = 12.dp))
                 }
                 item {
                     Row(
@@ -497,6 +547,7 @@ private fun Md3eUpdateSheet(
                     )
                 }
             }
+            QuarkUpdateDownloadButton(enabled = installEnabled)
             if (largeFont) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),

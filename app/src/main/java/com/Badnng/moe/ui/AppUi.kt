@@ -53,6 +53,8 @@ data class AppUi(
     val fullScreenImageCloseButton: @Composable (onClick: () -> Unit) -> Unit,
     // 设置子页面通用操作与安全输入
     val primaryActionButton: @Composable (text: String, enabled: Boolean, onClick: () -> Unit) -> Unit,
+    // 更新弹窗的下载入口允许文字换行并自然增高。
+    val updateDownloadButton: @Composable (text: String, enabled: Boolean, onClick: () -> Unit) -> Unit,
     val messageBlock: @Composable (text: String, isError: Boolean) -> Unit,
     // 品牌特征词表单：输入控件由当前 UI 实现提供。
     val ruleTextInput: @Composable (

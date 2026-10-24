@@ -31,6 +31,7 @@ import com.Badnng.moe.ui.component.Md3eSettingsListItem
 import com.Badnng.moe.ui.component.Md3eBlockedWordsEditor
 import com.Badnng.moe.ui.component.Md3ePromptEditor
 import com.Badnng.moe.ui.component.Md3eOrderDetailContent
+import com.Badnng.moe.ui.component.Md3eUpdateDownloadButton
 import com.Badnng.moe.ui.screen.settings.Md3eMessageBlock
 import com.Badnng.moe.ui.screen.settings.Md3ePrimaryActionButton
 import com.Badnng.moe.ui.screen.settings.Md3eSecurePasswordDialog
@@ -98,6 +99,9 @@ val md3eAppUi = AppUi(
     },
     primaryActionButton = { text, enabled, onClick ->
         Md3ePrimaryActionButton(text, enabled, onClick)
+    },
+    updateDownloadButton = { text, enabled, onClick ->
+        Md3eUpdateDownloadButton(text, enabled, onClick)
     },
     messageBlock = { text, isError ->
         Md3eMessageBlock(text, isError)

@@ -1,5 +1,7 @@
 package com.Badnng.moe.helper
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -42,7 +44,11 @@ object UpdateHelper {
 
     private const val STABLE_URL = "https://badnng.dpdns.org/https://raw.githubusercontent.com/badnng/Hyper-pick-up-code/refs/heads/master/Stable.json"
     private const val DEV_URL = "https://badnng.dpdns.org/https://raw.githubusercontent.com/badnng/Hyper-pick-up-code/refs/heads/master/Dev.json"
-    private const val DOWNLOAD_BASE_URL = "https://badnng.dpdns.org/"
+    private const val QUARK_DOWNLOAD_URL = "https://pan.quark.cn/s/7fcd3ef164e0"
+    private const val QUARK_DOWNLOAD_SHARE_TEXT =
+        "我用夸克网盘给你分享了「澎湃记」，点击链接或复制整段内容，打开「夸克APP」即可获取。\n" +
+            "/~e0113bBocF~:/\n" +
+            "链接： $QUARK_DOWNLOAD_URL"
     // 下载状态跟踪
     @Volatile
     var isDownloading = false
@@ -235,7 +241,7 @@ object UpdateHelper {
             // 降低线程优先级，减少对 UI 线程的影响
             Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
 
-            val downloadUrl = DOWNLOAD_BASE_URL + updateInfo.downloadUrl
+            val downloadUrl = updateInfo.downloadUrl
             AppLogger.update("UpdateHelper download start: ${updateInfo.versionName}, url=$downloadUrl")
             Log.d(TAG, "开始下载: $downloadUrl")
 
@@ -358,6 +364,27 @@ object UpdateHelper {
             null
         } finally {
             finishDownload(completedFile)
+        }
+    }
+
+    fun copyAndOpenQuarkDownload(context: Context) {
+        try {
+            val clipboard = context.getSystemService(ClipboardManager::class.java)
+                ?: error("Clipboard unavailable")
+            clipboard.setPrimaryClip(ClipData.newPlainText("澎湃记夸克下载口令", QUARK_DOWNLOAD_SHARE_TEXT))
+        } catch (_: Exception) {
+            Toast.makeText(context, "无法复制口令，请重试", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(QUARK_DOWNLOAD_URL)).apply {
+            setPackage("com.quark.browser")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(context, "口令已复制，无法打开夸克，请确认已安装", Toast.LENGTH_LONG).show()
         }
     }
 
