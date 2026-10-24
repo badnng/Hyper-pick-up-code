@@ -7,7 +7,6 @@ import androidx.compose.ui.unit.dp
 import com.Badnng.moe.data.db.OrderEntity
 import com.Badnng.moe.ocr.EngineRecognitionSummary
 import com.Badnng.moe.ocr.OcrDiagnosticSnapshotCodec
-import com.Badnng.moe.recognition.OnlineRecognitionCatalog
 import com.Badnng.moe.recognition.OnlineRecognitionProvider
 import com.Badnng.moe.recognition.RecognitionInputType
 import com.Badnng.moe.recognition.RecognitionMode
@@ -101,19 +100,7 @@ fun recognitionProviderLabel(order: OrderEntity): String {
 fun recognitionModelLabel(order: OrderEntity): String {
     return when (RecognitionMode.fromKey(order.recognitionMode)) {
         RecognitionMode.OFFLINE, RecognitionMode.MANUAL -> "不适用"
-        RecognitionMode.ONLINE -> {
-            val modelId = order.recognitionModel ?: return LEGACY_DIAGNOSTIC_VALUE
-            val provider = OnlineRecognitionProvider.entries.firstOrNull {
-                it.key == order.recognitionProvider
-            }
-            provider?.let {
-                runCatching {
-                    OnlineRecognitionCatalog.modelsFor(it)
-                        .firstOrNull { model -> model.id == modelId }
-                        ?.displayName
-                }.getOrNull()
-            } ?: modelId
-        }
+        RecognitionMode.ONLINE -> order.recognitionModel ?: LEGACY_DIAGNOSTIC_VALUE
         null -> LEGACY_DIAGNOSTIC_VALUE
     }
 }

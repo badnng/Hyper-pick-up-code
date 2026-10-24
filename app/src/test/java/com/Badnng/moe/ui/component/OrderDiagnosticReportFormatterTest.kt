@@ -34,7 +34,7 @@ class OrderDiagnosticReportFormatterTest {
 
         assertTrue(report.contains("识别路径: 在线识别"))
         assertTrue(report.contains("供应商: 智谱开放平台"))
-        assertTrue(report.contains("模型: GLM-4.6V-FlashX"))
+        assertTrue(report.contains("模型: glm-4.6v-flashx"))
         assertTrue(report.contains("错误摘要: 无"))
     }
 

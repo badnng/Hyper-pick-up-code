@@ -101,18 +101,16 @@ import com.Badnng.moe.npu.NpuSupport
 import com.Badnng.moe.ui.component.NpuDownloadSheet
 import com.Badnng.moe.recognition.CustomRequestMode
 import com.Badnng.moe.recognition.MimoBillingMode
-import com.Badnng.moe.recognition.OnlineRecognitionClient
-import com.Badnng.moe.recognition.OnlineRecognitionCatalog
 import com.Badnng.moe.recognition.OnlineRecognitionModel
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.recognition.OnlineRecognitionProvider
 import com.Badnng.moe.recognition.SecureApiKeyStore
 import com.Badnng.moe.privacy.PrivacyConsent
 import com.Badnng.moe.ui.component.OnlineRecognitionProviderIcon
+import com.Badnng.moe.ui.component.rememberOnlineRecognitionModels
 import com.Badnng.moe.ui.component.PrivacyConsentBottomSheet
 import com.Badnng.moe.ui.miuix.MiuixSettingsLazyColumn
 import com.Badnng.moe.ui.miuix.rememberMiuixStyle
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.Badnng.moe.ui.miuix.MiuixReadableCard as MiuixCard
 import top.yukonga.miuix.kmp.basic.DropdownEntry
@@ -183,15 +181,20 @@ fun RecognitionSettingsContent(
         val savedUrl = OnlineRecognitionPreferences.customBaseUrl(context)
         mutableStateOf(TextFieldValue(savedUrl, TextRange(savedUrl.length)))
     }
-    var customModels by remember { mutableStateOf(emptyList<OnlineRecognitionModel>()) }
-    var customModelsLoading by remember { mutableStateOf(false) }
-    var customModelsError by remember { mutableStateOf<String?>(null) }
     var apiKeyInput by remember(provider) {
         val savedKey = keyStore.get(provider).orEmpty()
         mutableStateOf(TextFieldValue(savedKey, TextRange(savedKey.length)))
     }
     var apiKeyVisible by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
+    val modelDirectory = rememberOnlineRecognitionModels(
+        provider = provider,
+        mimoBillingMode = mimoBillingMode,
+        customBaseUrl = customBaseUrl.text,
+        apiKey = apiKeyInput.text,
+        enabled = recognitionMode == OnlineRecognitionPreferences.MODE_ONLINE &&
+            PrivacyConsent.isCurrentPolicyAccepted(preferences),
+    )
 
     // NPU 加速状态
     var npuEnabled by remember { mutableStateOf(NpuAccelerator.isEnabled(context)) }
@@ -260,28 +263,6 @@ fun RecognitionSettingsContent(
         apiKeyVisible = false
     }
 
-    LaunchedEffect(provider, customBaseUrl.text, apiKeyInput.text) {
-        if (provider != OnlineRecognitionProvider.CUSTOM) return@LaunchedEffect
-        customModels = emptyList()
-        customModelsError = null
-        if (customBaseUrl.text.isBlank() || apiKeyInput.text.isBlank()) return@LaunchedEffect
-        delay(700)
-        customModelsLoading = true
-        runCatching {
-            OnlineRecognitionClient(context).fetchCustomModels(customBaseUrl.text)
-        }.onSuccess { fetchedModels ->
-            customModels = fetchedModels
-            val savedModel = OnlineRecognitionPreferences.model(context, provider)
-            val selectedModel = fetchedModels.firstOrNull { it.id == savedModel.id }
-                ?: fetchedModels.first()
-            model = selectedModel
-            OnlineRecognitionPreferences.saveModel(context, provider, selectedModel.id)
-        }.onFailure { error ->
-            customModelsError = error.message ?: "获取模型失败"
-        }
-        customModelsLoading = false
-    }
-
     fun setMode(mode: String) {
         performHaptic()
         if (mode == OnlineRecognitionPreferences.MODE_ONLINE &&
@@ -304,8 +285,8 @@ fun RecognitionSettingsContent(
 
     fun setModel(newModel: OnlineRecognitionModel) {
         performHaptic()
-        model = newModel
         OnlineRecognitionPreferences.saveModel(context, provider, newModel.id)
+        model = OnlineRecognitionPreferences.model(context, provider)
     }
 
     fun updateApiKey(value: TextFieldValue) {
@@ -375,7 +356,7 @@ fun RecognitionSettingsContent(
                 mimoBillingMode = mimoBillingMode,
                 customRequestMode = customRequestMode,
                 customBaseUrl = customBaseUrl,
-                customModels = customModels,
+                availableModels = modelDirectory.models,
                 apiKeyInput = apiKeyInput,
                 apiKeyVisible = apiKeyVisible,
                 npuEnabled = npuEnabled,
@@ -435,9 +416,9 @@ fun RecognitionSettingsContent(
                 mimoBillingMode = mimoBillingMode,
                 customRequestMode = customRequestMode,
                 customBaseUrl = customBaseUrl,
-                customModels = customModels,
-                customModelsLoading = customModelsLoading,
-                customModelsError = customModelsError,
+                availableModels = modelDirectory.models,
+                modelsLoading = modelDirectory.loading,
+                modelsError = modelDirectory.error,
                 apiKeyInput = apiKeyInput,
                 apiKeyVisible = apiKeyVisible,
                 onModeSelected = ::setMode,
@@ -601,7 +582,7 @@ private fun MiuixRecognitionSettingsSections(
     mimoBillingMode: MimoBillingMode,
     customRequestMode: CustomRequestMode,
     customBaseUrl: TextFieldValue,
-    customModels: List<OnlineRecognitionModel>,
+    availableModels: List<OnlineRecognitionModel>,
     apiKeyInput: TextFieldValue,
     apiKeyVisible: Boolean,
     npuEnabled: Boolean,
@@ -772,7 +753,7 @@ private fun MiuixRecognitionSettingsSections(
                     OverlayDropdownPreference(
                         title = "模型",
                         entries = listOf(DropdownEntry(
-                            items = customModels.map { item ->
+                            items = availableModels.map { item ->
                                 DropdownItem(
                                     text = item.displayName,
                                     selected = model.id == item.id,
@@ -785,7 +766,7 @@ private fun MiuixRecognitionSettingsSections(
                     OverlayDropdownPreference(
                         title = "模型",
                         entries = listOf(DropdownEntry(
-                            items = OnlineRecognitionCatalog.modelsFor(provider).map { item ->
+                            items = availableModels.map { item ->
                                 DropdownItem(
                                     text = item.displayName,
                                     selected = model.id == item.id,
@@ -969,9 +950,9 @@ private fun Md3eRecognitionSettings(
     mimoBillingMode: MimoBillingMode,
     customRequestMode: CustomRequestMode,
     customBaseUrl: TextFieldValue,
-    customModels: List<OnlineRecognitionModel>,
-    customModelsLoading: Boolean,
-    customModelsError: String?,
+    availableModels: List<OnlineRecognitionModel>,
+    modelsLoading: Boolean,
+    modelsError: String?,
     apiKeyInput: TextFieldValue,
     apiKeyVisible: Boolean,
     onModeSelected: (String) -> Unit,
@@ -1120,19 +1101,19 @@ private fun Md3eRecognitionSettings(
                         Spacer(Modifier.height(12.dp))
                         Md3eModelDropdown(
                             model = model,
-                            models = customModels,
+                            models = availableModels,
                             summary = customModelSummary(
                                 model,
-                                customModels,
-                                customModelsLoading,
-                                customModelsError,
+                                availableModels,
+                                modelsLoading,
+                                modelsError,
                             ),
                             onSelected = onModelSelected,
                         )
                     } else {
                         Md3eModelDropdown(
                             model = model,
-                            models = OnlineRecognitionCatalog.modelsFor(provider),
+                            models = availableModels,
                             onSelected = onModelSelected,
                         )
                     }

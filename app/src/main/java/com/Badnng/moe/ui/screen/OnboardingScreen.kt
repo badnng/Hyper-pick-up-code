@@ -73,9 +73,6 @@ import kotlinx.coroutines.withContext
 import com.Badnng.moe.helper.EdgeToEdgeHelper
 import com.Badnng.moe.recognition.CustomRequestMode
 import com.Badnng.moe.recognition.MimoBillingMode
-import com.Badnng.moe.recognition.OnlineRecognitionCatalog
-import com.Badnng.moe.recognition.OnlineRecognitionClient
-import com.Badnng.moe.recognition.OnlineRecognitionModel
 import com.Badnng.moe.recognition.OnlineRecognitionPreferences
 import com.Badnng.moe.recognition.OnlineRecognitionProvider
 import com.Badnng.moe.recognition.SecureApiKeyStore
@@ -83,6 +80,7 @@ import com.Badnng.moe.privacy.PrivacyConsent
 import com.Badnng.moe.service.CaptureTileService
 import com.Badnng.moe.ui.component.OnlineRecognitionProviderIcon
 import com.Badnng.moe.ui.component.PrivacyConsentBottomSheet
+import com.Badnng.moe.ui.component.rememberOnlineRecognitionModels
 import com.Badnng.moe.ui.screen.settings.ProviderUsageGuide
 import com.Badnng.moe.ui.oobe.OOBE_PAGE_TRANSITION_MILLIS
 import com.Badnng.moe.ui.oobe.OobeAccelerateDecelerateEasing
@@ -836,9 +834,13 @@ private fun OobeOnlineRecognitionSetup(
         mutableStateOf(TextFieldValue(savedKey, TextRange(savedKey.length)))
     }
     var apiKeyVisible by remember { mutableStateOf(false) }
-    var customModels by remember { mutableStateOf(emptyList<OnlineRecognitionModel>()) }
-    var customModelsLoading by remember { mutableStateOf(false) }
-    var customModelsError by remember { mutableStateOf<String?>(null) }
+    val modelsState = rememberOnlineRecognitionModels(
+        provider = provider,
+        mimoBillingMode = mimoBillingMode,
+        customBaseUrl = customBaseUrl.text,
+        apiKey = apiKeyInput.text,
+    )
+    val availableModels = modelsState.models
 
     LaunchedEffect(provider) {
         model = OnlineRecognitionPreferences.model(context, provider)
@@ -847,38 +849,10 @@ private fun OobeOnlineRecognitionSetup(
         apiKeyVisible = false
     }
 
-    LaunchedEffect(provider, customBaseUrl.text, apiKeyInput.text) {
-        if (provider != OnlineRecognitionProvider.CUSTOM) return@LaunchedEffect
-        customModels = emptyList()
-        customModelsError = null
-        customModelsLoading = false
-        if (customBaseUrl.text.isBlank() || apiKeyInput.text.isBlank()) return@LaunchedEffect
-        delay(700)
-        customModelsLoading = true
-        runCatching {
-            OnlineRecognitionClient(context).fetchCustomModels(customBaseUrl.text)
-        }.onSuccess { fetchedModels ->
-            customModels = fetchedModels
-            val savedModel = OnlineRecognitionPreferences.model(context, provider)
-            val selectedModel = fetchedModels.firstOrNull { it.id == savedModel.id }
-                ?: fetchedModels.first()
-            model = selectedModel
-            OnlineRecognitionPreferences.saveModel(context, provider, selectedModel.id)
-        }.onFailure { error ->
-            customModelsError = error.message ?: "获取模型失败"
-        }
-        customModelsLoading = false
-    }
-
-    val availableModels = if (provider == OnlineRecognitionProvider.CUSTOM) {
-        customModels
-    } else {
-        OnlineRecognitionCatalog.modelsFor(provider)
-    }
     val configurationReady = apiKeyInput.text.isNotBlank() &&
         model.id.isNotBlank() &&
         (provider != OnlineRecognitionProvider.CUSTOM ||
-            (customBaseUrl.text.isNotBlank() && customModels.any { it.id == model.id }))
+            customBaseUrl.text.isNotBlank())
 
     LaunchedEffect(configurationReady) {
         onConfigurationReady(configurationReady)
@@ -924,10 +898,6 @@ private fun OobeOnlineRecognitionSetup(
                                                 TextRange(savedKey.length),
                                             )
                                             apiKeyVisible = false
-                                            if (item == OnlineRecognitionProvider.CUSTOM) {
-                                                customModels = emptyList()
-                                                customModelsError = null
-                                            }
                                             prefs.edit()
                                                 .putString(
                                                     OnlineRecognitionPreferences.PROVIDER_KEY,
@@ -1013,12 +983,15 @@ private fun OobeOnlineRecognitionSetup(
                     WindowDropdownPreference(
                         title = "模型",
                         items = availableModels.map { it.displayName },
-                        selectedIndex = availableModels.indexOfFirst { it.id == model.id }
-                            .coerceAtLeast(0),
+                        selectedIndex = availableModels.indexOfFirst { it.id == model.id },
                         onSelectedIndexChange = { index ->
                             performHaptic()
-                            model = availableModels[index]
-                            OnlineRecognitionPreferences.saveModel(context, provider, model.id)
+                            OnlineRecognitionPreferences.saveModel(
+                                context,
+                                provider,
+                                availableModels[index].id,
+                            )
+                            model = OnlineRecognitionPreferences.model(context, provider)
                         },
                     )
                 }
@@ -1029,8 +1002,6 @@ private fun OobeOnlineRecognitionSetup(
                     value = customBaseUrl,
                     onValueChange = { value ->
                         customBaseUrl = value
-                        customModels = emptyList()
-                        customModelsError = null
                         prefs.edit()
                             .putString(
                                 OnlineRecognitionPreferences.CUSTOM_BASE_URL_KEY,
@@ -1049,10 +1020,6 @@ private fun OobeOnlineRecognitionSetup(
                 value = apiKeyInput,
                 onValueChange = { value ->
                     apiKeyInput = value
-                    if (provider == OnlineRecognitionProvider.CUSTOM) {
-                        customModels = emptyList()
-                        customModelsError = null
-                    }
                     keyStore.save(provider, value.text)
                 },
                 label = "${provider.displayName} API 密钥",
@@ -1084,13 +1051,12 @@ private fun OobeOnlineRecognitionSetup(
             )
 
             val statusText = when {
-                provider == OnlineRecognitionProvider.CUSTOM && customModelsLoading ->
-                    "正在获取模型…"
-                provider == OnlineRecognitionProvider.CUSTOM && customModelsError != null ->
-                    customModelsError.orEmpty()
-                provider == OnlineRecognitionProvider.CUSTOM && customModels.isEmpty() ->
+                modelsState.loading -> "正在获取模型…"
+                modelsState.error != null -> modelsState.error.orEmpty()
+                provider == OnlineRecognitionProvider.CUSTOM && availableModels.isEmpty() ->
                     "填写 API 请求地址和密钥后将自动获取模型。"
                 apiKeyInput.text.isBlank() -> "填写 API 密钥后即可继续。"
+                model.id.isBlank() -> "请选择识别模型后继续。"
                 else -> "密钥已通过 Android Keystore 加密保存在当前设备。"
             }
             MiuixText(
@@ -1109,7 +1075,7 @@ private fun OobeOnlineRecognitionSetup(
                 )
                 MiuixText(
                     text = "您应该使用多模态模型作为识别模型。为了保证使用体验，请选择参数量相对较小、" +
-                        "非思考模式下也足够聪明且速度较快的模型，如 GLM-V4.7-Flash、MiMo 2.5 等。",
+                        "非思考模式下也足够聪明且速度较快的模型。",
                     style = MiuixTheme.textStyles.body2,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(horizontal = 4.dp),

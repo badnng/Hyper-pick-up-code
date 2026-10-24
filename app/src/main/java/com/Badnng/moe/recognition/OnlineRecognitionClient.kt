@@ -8,16 +8,27 @@ import android.util.Base64
 import android.util.Log
 import com.Badnng.moe.ocr.RecognitionResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class OnlineRecognitionClient(context: Context) {
     private val appContext = context.applicationContext
@@ -65,41 +76,101 @@ class OnlineRecognitionClient(context: Context) {
     )
 
     suspend fun fetchCustomModels(baseUrl: String): List<OnlineRecognitionModel> =
-        withContext(Dispatchers.IO) {
-            val apiKey = apiKeyStore.get(OnlineRecognitionProvider.CUSTOM)
-                ?.takeIf { it.isNotBlank() }
-                ?: throw OnlineRecognitionException("请先填写自定义供应商 API 密钥")
-            val normalizedBaseUrl = normalizeCustomBaseUrl(baseUrl)
-            val request = Request.Builder()
-                .url("$normalizedBaseUrl/models")
-                .get()
-                .header("Authorization", "Bearer $apiKey")
-                .build()
+        fetchModels(OnlineRecognitionProvider.CUSTOM, customBaseUrl = baseUrl)
 
-            HTTP_CLIENT.newCall(request).execute().use { response ->
-                val responseText = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    throw OnlineRecognitionException(
-                        "获取模型失败（HTTP ${response.code}）"
-                    )
+    suspend fun fetchModels(
+        provider: OnlineRecognitionProvider,
+        mimoBillingMode: MimoBillingMode = OnlineRecognitionPreferences.mimoBillingMode(appContext),
+        customBaseUrl: String = OnlineRecognitionPreferences.customBaseUrl(appContext),
+    ): List<OnlineRecognitionModel> = withContext(Dispatchers.IO) {
+        val apiKey = apiKeyStore.get(provider)?.takeIf { it.isNotBlank() }
+            ?: throw OnlineRecognitionException("请先填写 ${provider.displayName} API 密钥")
+        val requestIdentity = OnlineRecognitionPreferences.modelCacheIdentity(
+            appContext, provider, mimoBillingMode, customBaseUrl, apiKey,
+        ) ?: throw OnlineRecognitionException("请先填写有效的 API 请求地址")
+        val selectedProviderAtStart = OnlineRecognitionPreferences.provider(appContext)
+        val configuredIdentityAtStart = currentModelCacheIdentity(provider)
+        // 公共能力索引与供应商目录并行加载；模型是否可选仍由供应商返回的 ID 决定。
+        val metadata = async { ModelsDevMetadataRepository(appContext).load() }
+        val request = Request.Builder()
+            .url(OnlineRecognitionModelDirectory.modelsUrl(provider, mimoBillingMode, customBaseUrl))
+            .get()
+            .apply {
+                if (provider == OnlineRecognitionProvider.MIMO) {
+                    header("api-key", apiKey)
+                } else {
+                    header("Authorization", "Bearer $apiKey")
                 }
-                val root = runCatching { JSONObject(responseText) }
-                    .getOrElse { throw OnlineRecognitionException("模型列表格式不正确") }
-                val data = root.optJSONArray("data")
-                    ?: throw OnlineRecognitionException("供应商没有返回模型列表")
-                buildList {
-                    for (index in 0 until data.length()) {
-                        val id = data.optJSONObject(index)
-                            ?.optString("id")
-                            ?.trim()
-                            ?.takeIf { it.isNotBlank() }
-                            ?: continue
-                        add(OnlineRecognitionModel(id, id, ReasoningControl.NONE))
-                    }
-                }.distinctBy { it.id }.sortedBy { it.displayName.lowercase() }
-                    .takeIf { it.isNotEmpty() }
-                    ?: throw OnlineRecognitionException("供应商没有返回可用模型")
+                if (provider.isOpenCode()) {
+                    header("User-Agent", openCodeUserAgent())
+                    header("x-opencode-session", openCodeSessionId())
+                }
             }
+            .build()
+        val providerResponse = try {
+            Result.success(MODEL_HTTP_CLIENT.newCall(request).awaitModelDirectory())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Result.failure<Pair<Int, String>>(error)
+        }
+        currentCoroutineContext().ensureActive()
+        // 供应商目录暂时不可用时，公共索引仍需缓存以补充已保存模型的能力与协议。
+        val index = metadata.await()
+        currentCoroutineContext().ensureActive()
+        val (status, body) = providerResponse.getOrElse {
+            throw OnlineRecognitionException("获取 ${provider.displayName} 模型失败：网络请求失败，请检查网络连接")
+        }
+        if (status !in 200..299) {
+            val detail = when (status) {
+                401, 403 -> "API 密钥无效或无权读取模型目录"
+                404, 405, 501 -> "当前接口不提供模型目录"
+                else -> "HTTP $status"
+            }
+            throw OnlineRecognitionException("获取 ${provider.displayName} 模型失败：$detail")
+        }
+        val models = OnlineRecognitionModelDirectory.parse(
+            provider, body, index, mimoBillingMode, customBaseUrl,
+        )
+        currentCoroutineContext().ensureActive()
+        if (requestIdentity != OnlineRecognitionPreferences.modelCacheIdentity(
+                appContext, provider, mimoBillingMode, customBaseUrl,
+            ) || configuredIdentityAtStart != currentModelCacheIdentity(provider) ||
+            selectedProviderAtStart != OnlineRecognitionPreferences.provider(appContext)
+        ) {
+            throw CancellationException("模型目录配置已变更")
+        }
+        // 始终写到请求开始时的身份，不会把旧密钥/旧地址的响应写入新配置。
+        OnlineRecognitionPreferences.saveCachedModelsForIdentity(appContext, requestIdentity, models)
+        models
+    }
+
+    private fun currentModelCacheIdentity(provider: OnlineRecognitionProvider): String? =
+        OnlineRecognitionPreferences.modelCacheIdentity(
+            appContext, provider, OnlineRecognitionPreferences.mimoBillingMode(appContext),
+            OnlineRecognitionPreferences.customBaseUrl(appContext),
+        )
+
+    private suspend fun Call.awaitModelDirectory(): Pair<Int, String> =
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { cancel() }
+            enqueue(object : Callback {
+                override fun onFailure(call: Call, error: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val result = response.use {
+                            if (!continuation.isActive) return
+                            it.code to it.body?.string().orEmpty()
+                        }
+                        if (continuation.isActive) continuation.resume(result)
+                    } catch (error: Exception) {
+                        if (continuation.isActive) continuation.resumeWithException(error)
+                    }
+                }
+            })
         }
 
     private suspend fun request(
@@ -119,24 +190,24 @@ class OnlineRecognitionClient(context: Context) {
         )
 
         try {
+            val requestModel = OnlineRecognitionPreferences.enrichModel(
+                appContext, provider, model, allowMetadataDiskRead = true, mimoBillingMode = mimoBillingMode,
+            )
+            OnlineRecognitionModelDirectory.validateForRequest(requestModel, imageDataUrl != null)
             val apiKey = apiKeyStore.get(provider)
                 ?.takeIf { it.isNotBlank() }
                 ?: throw OnlineRecognitionException("尚未配置 ${provider.displayName} API 密钥")
-            if (provider == OnlineRecognitionProvider.CUSTOM && model.id.isBlank()) {
-                throw OnlineRecognitionException("尚未获取或选择自定义供应商模型")
-            }
-
-            val kind = apiKind(provider, model)
+            val kind = apiKind(provider, requestModel)
             val requestUrl = endpoint(provider, mimoBillingMode, kind)
             val body = when (kind) {
                 ApiKind.RESPONSES -> {
-                    createResponsesBody(model, imageDataUrl, sourceText, imageHint, provider)
+                    createResponsesBody(requestModel, imageDataUrl, sourceText, imageHint, provider)
                 }
                 ApiKind.ANTHROPIC -> {
-                    createAnthropicMessagesBody(model, imageDataUrl, sourceText, imageHint)
+                    createAnthropicMessagesBody(requestModel, imageDataUrl, sourceText, imageHint)
                 }
                 ApiKind.CHAT -> {
-                    createChatCompletionsBody(model, imageDataUrl, sourceText, imageHint)
+                    createChatCompletionsBody(requestModel, imageDataUrl, sourceText, imageHint)
                 }
             }
             logFullPayload("request url", requestUrl)
@@ -406,11 +477,8 @@ class OnlineRecognitionClient(context: Context) {
                 ApiKind.CHAT
             }
         }
-        OnlineRecognitionProvider.OPENCODE_GO -> when (model.id) {
-            "gpt-5.6-luna" -> ApiKind.RESPONSES
-            "minimax-m3", "qwen3.8-max", "qwen3.7-plus", "qwen3.6-plus" -> ApiKind.ANTHROPIC
-            else -> ApiKind.CHAT
-        }
+        OnlineRecognitionProvider.OPENCODE_GO ->
+            ApiKind.valueOf(OnlineRecognitionModelDirectory.openCodeApiKind(model).name)
         else -> ApiKind.CHAT
     }
 
@@ -427,14 +495,14 @@ class OnlineRecognitionClient(context: Context) {
         OnlineRecognitionProvider.OPENAI -> "https://api.openai.com/v1/responses"
         OnlineRecognitionProvider.MOONSHOT -> "https://api.moonshot.cn/v1/chat/completions"
         OnlineRecognitionProvider.MINIMAX -> if (apiKind == ApiKind.RESPONSES) {
-            "https://api.minimaxi.com/v1/responses"
+            "https://api.minimax.cn/v1/responses"
         } else {
-            "https://api.minimaxi.com/v1/chat/completions"
+            "https://api.minimax.cn/v1/chat/completions"
         }
         OnlineRecognitionProvider.OPENCODE_GO -> when (apiKind) {
-            ApiKind.RESPONSES -> "https://opencode.ai/zen/go/v1/responses"
-            ApiKind.ANTHROPIC -> "https://opencode.ai/zen/go/v1/messages"
-            ApiKind.CHAT -> "https://opencode.ai/zen/go/v1/chat/completions"
+            ApiKind.RESPONSES -> "https://opencode.ai/inference/go/openai/v1/responses"
+            ApiKind.ANTHROPIC -> "https://opencode.ai/inference/go/anthropic/v1/messages"
+            ApiKind.CHAT -> "https://opencode.ai/inference/go/openai/v1/chat/completions"
         }
         OnlineRecognitionProvider.DEEPSEEK -> "https://api.deepseek.com/chat/completions"
         OnlineRecognitionProvider.CUSTOM -> {
@@ -473,22 +541,8 @@ class OnlineRecognitionClient(context: Context) {
         return generated
     }
 
-    private fun normalizeCustomBaseUrl(value: String): String {
-        val normalized = value.trim().trimEnd('/')
-        if (!normalized.startsWith("https://", ignoreCase = true) &&
-            !normalized.startsWith("http://", ignoreCase = true)
-        ) {
-            throw OnlineRecognitionException("API 请求地址必须以 http:// 或 https:// 开头")
-        }
-        if (normalized.endsWith("/responses", ignoreCase = true) ||
-            normalized.endsWith("/chat/completions", ignoreCase = true)
-        ) {
-            throw OnlineRecognitionException(
-                "API 请求地址请填写到 /responses 或 /chat/completions 之前"
-            )
-        }
-        return normalized
-    }
+    private fun normalizeCustomBaseUrl(value: String): String =
+        OnlineRecognitionModelDirectory.normalizeCustomBaseUrl(value)
 
     private fun extractChatContent(responseText: String): String {
         val root = runCatching { JSONObject(responseText) }
@@ -717,6 +771,10 @@ class OnlineRecognitionClient(context: Context) {
             .writeTimeout(30, TimeUnit.SECONDS)
             .callTimeout(75, TimeUnit.SECONDS)
             .retryOnConnectionFailure(false)
+            .build()
+        private val MODEL_HTTP_CLIENT = HTTP_CLIENT.newBuilder()
+            .readTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(25, TimeUnit.SECONDS)
             .build()
 
         private const val IMAGE_REQUEST_PROMPT =

@@ -53,79 +53,30 @@ enum class ReasoningControl {
     ANTHROPIC_DISABLED,
 }
 
+enum class OnlineRecognitionApiKind {
+    RESPONSES,
+    CHAT,
+    ANTHROPIC,
+}
+
 data class OnlineRecognitionModel(
     val id: String,
     val displayName: String,
     val reasoningControl: ReasoningControl,
+    val apiKind: OnlineRecognitionApiKind? = null,
+    val supportsImages: Boolean? = null,
+    val supportsTextOutput: Boolean? = null,
+    val unsupportedProtocol: Boolean = false,
 )
 
 object OnlineRecognitionCatalog {
-    private val models = mapOf(
-        OnlineRecognitionProvider.MIMO to listOf(
-            OnlineRecognitionModel("mimo-v2.5", "MiMo-V2.5", ReasoningControl.THINKING_DISABLED),
-        ),
-        OnlineRecognitionProvider.ZHIPU to listOf(
-            OnlineRecognitionModel("glm-4.6v", "GLM-4.6V", ReasoningControl.THINKING_DISABLED),
-            OnlineRecognitionModel("glm-4.6v-flashx", "GLM-4.6V-FlashX", ReasoningControl.THINKING_DISABLED),
-            OnlineRecognitionModel("glm-4.6v-flash", "GLM-4.6V-Flash", ReasoningControl.THINKING_DISABLED),
-            OnlineRecognitionModel("glm-4v-flash", "GLM-4V-Flash", ReasoningControl.NONE),
-        ),
-        OnlineRecognitionProvider.OPENAI to listOf(
-            OnlineRecognitionModel("gpt-5.6-sol", "GPT-5.6 Sol", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5.6-terra", "GPT-5.6 Terra", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5.6-luna", "GPT-5.6 Luna", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5.5", "GPT-5.5", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5.4", "GPT-5.4", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5.4-mini", "GPT-5.4 mini", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5.4-nano", "GPT-5.4 nano", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5.2", "GPT-5.2", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5.1", "GPT-5.1", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5", "GPT-5", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5-mini", "GPT-5 mini", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-5-nano", "GPT-5 nano", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("gpt-4.1", "GPT-4.1", ReasoningControl.NONE),
-            OnlineRecognitionModel("gpt-4.1-mini", "GPT-4.1 mini", ReasoningControl.NONE),
-            OnlineRecognitionModel("gpt-4.1-nano", "GPT-4.1 nano", ReasoningControl.NONE),
-            OnlineRecognitionModel("gpt-4o", "GPT-4o", ReasoningControl.NONE),
-            OnlineRecognitionModel("gpt-4o-mini", "GPT-4o mini", ReasoningControl.NONE),
-        ),
-        OnlineRecognitionProvider.MOONSHOT to listOf(
-            OnlineRecognitionModel("kimi-k2.6", "Kimi K2.6", ReasoningControl.THINKING_DISABLED),
-            OnlineRecognitionModel("kimi-k2.5", "Kimi K2.5", ReasoningControl.THINKING_DISABLED),
-            OnlineRecognitionModel("moonshot-v1-8k-vision-preview", "Moonshot V1 8K Vision Preview", ReasoningControl.NONE),
-            OnlineRecognitionModel("moonshot-v1-32k-vision-preview", "Moonshot V1 32K Vision Preview", ReasoningControl.NONE),
-            OnlineRecognitionModel("moonshot-v1-128k-vision-preview", "Moonshot V1 128K Vision Preview", ReasoningControl.NONE),
-        ),
-        OnlineRecognitionProvider.MINIMAX to listOf(
-            OnlineRecognitionModel("MiniMax-M3", "MiniMax M3", ReasoningControl.MINIMAX_EFFORT_NONE),
-        ),
-        OnlineRecognitionProvider.OPENCODE_GO to listOf(
-            OnlineRecognitionModel("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", ReasoningControl.OPENCODE_COMBINED),
-            OnlineRecognitionModel("deepseek-v4-flash-vision-exp", "DeepSeek V4 Flash Vision Exp", ReasoningControl.OPENCODE_COMBINED),
-            OnlineRecognitionModel("gpt-5.6-luna", "GPT 5.6 Luna", ReasoningControl.OPENAI_EFFORT_NONE),
-            OnlineRecognitionModel("kimi-k2.6", "Kimi K2.6", ReasoningControl.OPENCODE_COMBINED),
-            OnlineRecognitionModel("mimo-v2.5", "MiMo-V2.5", ReasoningControl.OPENCODE_COMBINED),
-            OnlineRecognitionModel("minimax-m3", "MiniMax M3", ReasoningControl.ANTHROPIC_DISABLED),
-            OnlineRecognitionModel("qwen3.8-max", "Qwen3.8 Max", ReasoningControl.ANTHROPIC_DISABLED),
-            OnlineRecognitionModel("qwen3.7-plus", "Qwen3.7 Plus", ReasoningControl.ANTHROPIC_DISABLED),
-            OnlineRecognitionModel("qwen3.6-plus", "Qwen3.6 Plus", ReasoningControl.ANTHROPIC_DISABLED),
-        ),
-        OnlineRecognitionProvider.DEEPSEEK to listOf(
-            OnlineRecognitionModel("deepseek-flash", "DeepSeek V4.1 Flash", ReasoningControl.THINKING_DISABLED),
-        ),
-        OnlineRecognitionProvider.CUSTOM to listOf(
-            OnlineRecognitionModel("", "等待获取模型", ReasoningControl.NONE),
-        ),
-    )
-
-    fun modelsFor(provider: OnlineRecognitionProvider): List<OnlineRecognitionModel> =
-        models.getValue(provider)
-
-    fun defaultModel(provider: OnlineRecognitionProvider): OnlineRecognitionModel =
-        modelsFor(provider).first()
-
-    fun resolveModel(provider: OnlineRecognitionProvider, modelId: String?): OnlineRecognitionModel =
-        modelsFor(provider).firstOrNull { it.id == modelId } ?: defaultModel(provider)
+    fun resolveModel(
+        @Suppress("UNUSED_PARAMETER") provider: OnlineRecognitionProvider,
+        modelId: String?,
+    ): OnlineRecognitionModel {
+        val id = modelId?.trim().orEmpty()
+        return OnlineRecognitionModel(id, id, ReasoningControl.NONE)
+    }
 }
 
 object OnlineRecognitionPreferences {
@@ -191,12 +142,92 @@ object OnlineRecognitionPreferences {
     }
 
     fun model(context: Context, provider: OnlineRecognitionProvider): OnlineRecognitionModel {
-        val savedModelId = settings(context).getString(modelKey(provider), null)
-        if (provider == OnlineRecognitionProvider.CUSTOM && !savedModelId.isNullOrBlank()) {
-            return OnlineRecognitionModel(savedModelId, savedModelId, ReasoningControl.NONE)
-        }
-        return OnlineRecognitionCatalog.resolveModel(provider, savedModelId)
+        val savedModelId = settings(context).getString(modelKey(provider), null)?.trim()
+        return enrichModel(context, provider, OnlineRecognitionCatalog.resolveModel(provider, savedModelId))
     }
+
+    fun enrichModel(
+        context: Context,
+        provider: OnlineRecognitionProvider,
+        selected: OnlineRecognitionModel,
+        allowMetadataDiskRead: Boolean = false,
+        mimoBillingMode: MimoBillingMode = mimoBillingMode(context),
+        customBaseUrl: String = customBaseUrl(context),
+    ): OnlineRecognitionModel {
+        if (selected.id.isBlank()) return selected
+        cachedModels(context, provider, mimoBillingMode, customBaseUrl)
+            .firstOrNull { it.id == selected.id }?.let { return it }
+        // UI 仅使用内存索引；后台识别可读本地磁盘，两个入口均不会发起网络请求。
+        val repository = ModelsDevMetadataRepository(context)
+        val index = if (allowMetadataDiskRead) repository.cached() else repository.memoryCached()
+        val metadata = index?.find(provider, selected.id, mimoBillingMode, customBaseUrl) ?: return selected
+        return selected.copy(
+            displayName = if (selected.displayName.isBlank() || selected.displayName == selected.id) {
+                metadata.displayName ?: selected.displayName
+            } else selected.displayName,
+            reasoningControl = when {
+                provider == OnlineRecognitionProvider.CUSTOM -> ReasoningControl.NONE
+                selected.reasoningControl != ReasoningControl.NONE -> selected.reasoningControl
+                else -> metadata.reasoningControl
+            },
+            apiKind = if (provider == OnlineRecognitionProvider.CUSTOM) null else selected.apiKind ?: metadata.apiKind,
+            supportsImages = selected.supportsImages ?: metadata.supportsImages,
+            supportsTextOutput = selected.supportsTextOutput ?: metadata.supportsTextOutput,
+            unsupportedProtocol = provider == OnlineRecognitionProvider.OPENCODE_GO &&
+                (selected.unsupportedProtocol || (selected.apiKind == null && metadata.unsupportedProtocol)),
+        )
+    }
+
+    fun cachedModels(
+        context: Context,
+        provider: OnlineRecognitionProvider,
+        mimoBillingMode: MimoBillingMode = mimoBillingMode(context),
+        customBaseUrl: String = customBaseUrl(context),
+    ): List<OnlineRecognitionModel> {
+        val identity = modelCacheIdentity(context, provider, mimoBillingMode, customBaseUrl)
+            ?: return emptyList()
+        val cached = modelCache(context).getString(identity, null) ?: return emptyList()
+        return runCatching { OnlineRecognitionModelDirectory.decodeCache(cached) }
+            .getOrDefault(emptyList())
+    }
+
+    fun saveCachedModels(
+        context: Context,
+        provider: OnlineRecognitionProvider,
+        models: List<OnlineRecognitionModel>,
+        mimoBillingMode: MimoBillingMode = mimoBillingMode(context),
+        customBaseUrl: String = customBaseUrl(context),
+    ) {
+        val identity = modelCacheIdentity(context, provider, mimoBillingMode, customBaseUrl) ?: return
+        saveCachedModelsForIdentity(context, identity, models)
+    }
+
+    internal fun modelCacheIdentity(
+        context: Context,
+        provider: OnlineRecognitionProvider,
+        mimoBillingMode: MimoBillingMode,
+        customBaseUrl: String,
+        apiKey: String? = SecureApiKeyStore(context).get(provider),
+    ): String? = apiKey?.takeIf { it.isNotBlank() }?.let {
+        OnlineRecognitionModelDirectory.cacheIdentity(provider, mimoBillingMode, customBaseUrl, it)
+    }
+
+    internal fun saveCachedModelsForIdentity(
+        context: Context,
+        identity: String,
+        models: List<OnlineRecognitionModel>,
+    ) {
+        // 失败/空结果不会破坏上一次成功目录，当前已选模型也不在这里更改。
+        if (models.isEmpty()) return
+        modelCache(context).edit()
+            .putString(identity, OnlineRecognitionModelDirectory.encodeCache(models))
+            .apply()
+    }
+
+    private fun modelCache(context: Context) = context.applicationContext.getSharedPreferences(
+        "online_recognition_model_cache",
+        Context.MODE_PRIVATE,
+    )
 
     fun saveModel(context: Context, provider: OnlineRecognitionProvider, modelId: String) {
         settings(context).edit().putString(modelKey(provider), modelId).apply()
